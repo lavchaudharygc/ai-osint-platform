@@ -3,101 +3,397 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI-OSINT | Investigation Platform</title>
-    <style>
-        body {
-            background: #0a0a1a;
-            color: white;
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-        .container {
-            background: #1a1a3a;
-            padding: 40px;
-            border-radius: 10px;
-            width: 500px;
-        }
-        h1 { color: #e94560; text-align: center; }
-        input, select, button {
-            width: 100%;
-            padding: 12px;
-            margin: 10px 0;
-            border-radius: 5px;
-            border: 1px solid #333;
-            background: #0a0a2a;
-            color: white;
-            font-size: 16px;
-            box-sizing: border-box;
-        }
-        button {
-            background: #e94560;
-            border: none;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        button:hover { background: #ff6b81; }
-        #results {
-            margin-top: 20px;
-            padding: 20px;
-            background: #0a0a2a;
-            border-radius: 5px;
-            display: none;
-        }
-    </style>
+    <title>UP Cyber Crime | AI-OSINT Control Panel</title>
+    <!-- Google Fonts for elite, clean look -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <!-- Link External CSS -->
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
-        <h1>🔍 AI-OSINT Platform</h1>
-        <p style="text-align:center; color:#999;">Law Enforcement Investigation Tool v0.1</p>
-        
-        <label>Username:</label>
-        <input type="text" id="username" placeholder="Enter username to investigate...">
-        
-        <label>Platform:</label>
-        <select id="platform">
-            <option value="instagram">Instagram</option>
-            <option value="twitter">Twitter</option>
-            <option value="telegram">Telegram</option>
-        </select>
-        
-        <button onclick="startInvestigation()">Start Investigation</button>
-        
-        <div id="results">
-            <h3>Results:</h3>
-            <pre id="result-content"></pre>
+
+    <!-- PRELOADER -->
+    <div id="preloader">
+        <div class="preloader-shield-container">
+            <svg class="police-shield-svg" viewBox="0 0 100 100">
+                <defs>
+                    <linearGradient id="gold-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#ffe259" />
+                        <stop offset="100%" stop-color="#ffa751" />
+                    </linearGradient>
+                    <linearGradient id="blue-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#00c6ff" />
+                        <stop offset="100%" stop-color="#0072ff" />
+                    </linearGradient>
+                </defs>
+                <!-- Shield Base Outline -->
+                <path class="shield-gold-path" d="M50 5 L85 20 L80 60 C80 80 50 95 50 95 C50 95 20 80 20 60 L15 20 Z" />
+                <!-- Shield Inner Segment -->
+                <path fill="#050811" d="M50 10 L80 23 L75 58 C75 75 50 88 50 88 C50 88 25 75 25 58 L20 23 Z" />
+                <!-- Star Emblem inside -->
+                <polygon points="50,22 54,32 64,32 56,38 59,48 50,42 41,48 44,38 36,32 46,32" fill="url(#gold-grad)" />
+                <!-- UP Police text placeholder banner arc -->
+                <path d="M 30 65 Q 50 72 70 65" stroke="url(#gold-grad)" stroke-width="4" fill="none" />
+                <!-- Satyameva Jayate Pillar style center line -->
+                <line x1="50" y1="42" x2="50" y2="60" stroke="url(#gold-grad)" stroke-width="3" />
+            </svg>
+        </div>
+        <div class="preloader-title">U.P. POLICE CYBER CELL</div>
+        <div class="preloader-subtitle">STATE SECURITY AI-OSINT TERMINAL</div>
+        <div class="preloader-bar">
+            <div class="preloader-progress" id="preloader-bar-fill"></div>
+        </div>
+        <div class="preloader-status" id="preloader-status-text">INITIALIZING SYSTEM MODULES...</div>
+    </div>
+
+    <!-- AUTHORIZATION PORTAL -->
+    <div id="auth-portal">
+        <div class="auth-card" id="auth-card">
+            <div class="auth-header">
+                <div class="auth-shield-mini">
+                    <svg viewBox="0 0 100 100" style="width: 100%; height: 100%;">
+                        <path fill="url(#gold-grad)" d="M50 5 L85 20 L80 60 C80 80 50 95 50 95 C50 95 20 80 20 60 L15 20 Z" />
+                        <path fill="#050811" d="M50 10 L80 23 L75 58 C75 75 50 88 50 88 C50 88 25 75 25 58 L20 23 Z" />
+                        <polygon points="50,25 53,35 63,35 55,41 58,51 50,45 42,51 45,41 37,35 47,35" fill="url(#gold-grad)" />
+                    </svg>
+                </div>
+                <h1 class="auth-title">INTELLIGENCE TERMINAL</h1>
+                <p class="auth-subtitle">SECURE LOGIN REQUIRED</p>
+            </div>
+            
+            <div id="login-error-banner" style="display:none; color: var(--accent-crimson); font-size: 0.8rem; text-align: center; margin-bottom: 15px; font-weight: 600;">
+                ACCESS DENIED: INVALID INVESTIGATOR CREDENTIALS
+            </div>
+
+            <div class="form-group">
+                <label>Investigator ID / Username</label>
+                <input type="text" id="auth-username" class="form-control" placeholder="UPP-xxxxx" autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label>Security Keyphrase / Password</label>
+                <input type="password" id="auth-password" class="form-control" placeholder="••••••••••••" autocomplete="off">
+            </div>
+
+            <button class="auth-btn" onclick="attemptLogin()">Authorize Terminal</button>
+
+            <div class="security-banner">
+                WARNING: Authorized government personnel only. All access, scans, IP endpoints, and search operations are recorded under the Indian Information Technology Act.
+            </div>
         </div>
     </div>
-    
-    <script>
-        async function startInvestigation() {
-            const username = document.getElementById('username').value;
-            const platform = document.getElementById('platform').value;
-            
-            if (!username) {
-                alert('Please enter a username');
-                return;
-            }
-            
-            document.getElementById('results').style.display = 'block';
-            document.getElementById('result-content').textContent = '🔎 Investigating...';
-            
-            try {
-                const response = await fetch(
-                    `http://localhost:8000/investigate?username=${username}&platform=${platform}`,
-                    { method: 'POST' }
-                );
-                const data = await response.json();
-                document.getElementById('result-content').textContent = 
-                    JSON.stringify(data, null, 2);
-            } catch (error) {
-                document.getElementById('result-content').textContent = 
-                    '❌ Error: ' + error.message;
-            }
-        }
-    </script>
+
+    <!-- MAIN DASHBOARD -->
+    <div id="dashboard">
+        <!-- SIDEBAR -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-shield">
+                    <svg viewBox="0 0 100 100" style="width: 100%; height: 100%;">
+                        <path fill="url(#gold-grad)" d="M50 5 L85 20 L80 60 C80 80 50 95 50 95 C50 95 20 80 20 60 L15 20 Z" />
+                        <path fill="#050811" d="M50 10 L80 23 L75 58 C75 75 50 88 50 88 C50 88 25 75 25 58 L20 23 Z" />
+                        <polygon points="50,25 53,35 63,35 55,41 58,51 50,45 42,51 45,41 37,35 47,35" fill="url(#gold-grad)" />
+                    </svg>
+                </div>
+                <div class="sidebar-title-group">
+                    <h3>UP CYBER CELL</h3>
+                    <p>AI-OSINT SYSTEM</p>
+                </div>
+            </div>
+
+            <ul class="sidebar-menu">
+                <li class="menu-item active" onclick="switchTab('scan-console')" id="tab-btn-scan-console">
+                    <span class="menu-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
+                    <span>OSINT Console</span>
+                </li>
+                <li class="menu-item" onclick="switchTab('history-logs')" id="tab-btn-history-logs">
+                    <span class="menu-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
+                    <span>Investigation Logs</span>
+                </li>
+                <li class="menu-item" onclick="switchTab('diagnostics')" id="tab-btn-diagnostics">
+                    <span class="menu-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
+                    <span>Diagnostics</span>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="investigator-badge">
+                    <div class="investigator-dot"></div>
+                    <div>
+                        <div style="font-weight: 600;" id="badge-name">Ark Agrawal</div>
+                        <div style="font-size:0.6rem; color:var(--text-secondary);">CASE WORKSPACE ACTIVE</div>
+                    </div>
+                </div>
+                <button class="btn-action" style="width:100%; justify-content: center; gap: 8px;" onclick="logout()">
+                    <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    <span>Log Out Terminal</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- MAIN MAIN CONTAINER -->
+        <div class="main-container">
+            <div class="main-header">
+                <div class="main-header-left">
+                    <button class="sidebar-toggle-btn" id="sidebar-toggle">☰</button>
+                    <h2 id="view-title">OSINT Investigation Engine</h2>
+                </div>
+                <div class="system-badge mono">CLASSIFIED // NOFORN</div>
+            </div>
+
+            <div class="view-content">
+
+                <!-- TAB: OSINT CONSOLE -->
+                <div class="tab-view active" id="view-scan-console">
+                    <div class="scanner-layout">
+                        <!-- LEFT INPUT CARD -->
+                        <div class="glass-card">
+                            <div class="card-header-bar">
+                                <span class="card-title">Investigation Parameters</span>
+                                <span class="mono" style="font-size:0.7rem; color: var(--accent-gold);" id="active-case-id">UPP-CASE-xxxx</span>
+                            </div>
+
+                            <div id="console-loader">
+                                <div class="card-title" style="color:var(--accent-blue); margin-bottom: 8px;">Intercept Engine Active</div>
+                                <div class="console-stream" id="console-stream">
+                                    <!-- Dynamic scanner log lines appear here -->
+                                </div>
+                                <div style="font-family:'Share Tech Mono', monospace; font-size: 0.75rem; text-align: center; color: var(--accent-gold);">
+                                    PROCESSING PROFILES...
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <label>Target Profile Username</label>
+                                <input type="text" id="target-username" class="form-control" placeholder="e.g. Shubham_Singh811" style="background:var(--bg-input);">
+                            </div>
+
+                            <div class="form-row">
+                                <label>Primary Check Platform</label>
+                                <select id="target-platform" class="form-control" style="background:var(--bg-input); border-color:var(--border-glow);">
+                                    <option value="instagram">Instagram</option>
+                                    <option value="twitter">Twitter (X)</option>
+                                    <option value="telegram">Telegram</option>
+                                    <option value="linkedin">LinkedIn</option>
+                                </select>
+                            </div>
+
+                            <div class="form-row">
+                                <label>Correlation Depth</label>
+                                <div class="slider-group">
+                                    <input type="range" id="correlation-depth" min="1" max="5" value="2" oninput="document.getElementById('depth-val').innerText = this.value">
+                                    <span class="slider-val" id="depth-val">2</span>
+                                </div>
+                            </div>
+
+                            <div class="form-row" style="margin-bottom:25px;">
+                                <label>Investigation Ref / Case ID</label>
+                                <input type="text" id="case-reference" class="form-control" placeholder="Leave empty for auto-generate" style="background:var(--bg-input);">
+                            </div>
+
+                            <button class="btn-scan" onclick="triggerInvestigation()">Execute OSINT Scan</button>
+                        </div>
+
+                        <!-- RIGHT RESULTS SECTION -->
+                        <div class="results-workspace">
+                            <!-- EMPTY STATE -->
+                            <div class="workspace-empty" id="results-empty-state">
+                                <span class="workspace-empty-icon" style="opacity: 0.4;">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width: 55px; height: 55px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                                </span>
+                                <p style="font-weight:600; color: var(--text-secondary);">System Standby</p>
+                                <p style="font-size:0.8rem; margin-top:5px; color: var(--text-secondary);">Input username and trigger execute to search social indices</p>
+                            </div>
+
+                            <!-- RESULTS WORKSPACE CARD GRID -->
+                            <div class="workspace-grid" id="results-workspace-grid">
+                                
+                                <!-- LEFT PANEL: RISK & TARGET INFO -->
+                                <div class="sidebar-results">
+                                    <!-- RISK LEVEL CARD -->
+                                    <div class="glass-card" style="text-align: center;">
+                                        <div class="card-header-bar" style="justify-content: center;">
+                                            <span class="card-title">Threat Assessment</span>
+                                        </div>
+                                        <div class="risk-gauge-container">
+                                            <svg class="risk-svg">
+                                                <circle class="risk-bg-circle" cx="70" cy="70" r="60"></circle>
+                                                <circle class="risk-fill-circle" id="risk-fill" cx="70" cy="70" r="60"></circle>
+                                            </svg>
+                                            <div class="risk-gauge-text">
+                                                <span class="risk-score" id="risk-score-num">0%</span>
+                                                <span class="risk-label">SCORE</span>
+                                            </div>
+                                        </div>
+                                        <div class="risk-indicator-badge risk-medium" id="risk-badge">MEDIUM THREAT</div>
+                                    </div>
+
+                                    <!-- PRIMARY DETAILS CARD -->
+                                    <div class="glass-card">
+                                        <div class="card-header-bar">
+                                            <span class="card-title">Subject Profile</span>
+                                        </div>
+                                        <div class="target-profile-card">
+                                            <div class="profile-avatar-row">
+                                                <div class="avatar-placeholder" id="target-avatar-char">U</div>
+                                                <div>
+                                                    <div class="profile-username" id="target-profile-name">unknown</div>
+                                                    <div class="profile-platform-badge" id="target-profile-platform">instagram</div>
+                                                </div>
+                                            </div>
+                                            <div class="profile-details-grid">
+                                                <div class="detail-item">
+                                                    <span>Verified Account</span>
+                                                    <span id="target-profile-verified">False</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span>Status Flag</span>
+                                                    <span class="mono blue-text" id="target-profile-status">completed</span>
+                                                </div>
+                                                <div class="detail-item" style="flex-direction:column; gap:4px;">
+                                                    <span>Scraped At (UTC)</span>
+                                                    <span id="target-profile-time" style="font-family:'Share Tech Mono'; font-size:0.75rem; word-break: break-all;">2026-06-28</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- RIGHT DETAIL COLUMNS -->
+                                <div class="results-details-wrapper">
+                                    <div class="workspace-actions-row">
+                                        <div class="case-number-title">CASE ID: <span id="title-case-id" class="mono">UPP-xxx</span></div>
+                                        <div class="report-actions">
+                                            <button class="btn-action" onclick="generatePDFReport()" id="btn-pdf-gen" style="border-color: var(--accent-gold); color: var(--accent-gold); gap: 8px;">
+                                                <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px;"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                                <span>Export Official PDF Report</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- AI ASSISTANCE CARD -->
+                                    <div class="glass-card">
+                                        <div class="card-header-bar">
+                                            <span class="card-title">Intelligence Correlation Analysis</span>
+                                            <span class="mono gold-text" id="ai-confidence">Confidence: 65%</span>
+                                        </div>
+                                        <div style="font-size: 0.9rem; line-height: 1.6;">
+                                            <p id="ai-summary">Rule-based placeholder correlation pending AI provider configuration.</p>
+                                            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap: wrap;">
+                                                <span style="font-size:0.75rem; color:var(--text-secondary); align-self: center;">Associated Platform Handles:</span>
+                                                <div id="ai-associated-platforms" style="display:flex; gap:6px;">
+                                                    <!-- Dynamic tag badges -->
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- CROSS PLATFORM MATCHES CARD -->
+                                    <div class="glass-card">
+                                        <div class="cross-platform-header">
+                                            <span class="card-title">Cross-Platform Presence Index</span>
+                                            <span class="mono blue-text" id="cross-matches-count">Matches Checked: 6</span>
+                                        </div>
+                                        <div class="cross-platform-grid" id="cross-platform-grid">
+                                            <!-- Dynamic platform cards -->
+                                        </div>
+                                    </div>
+
+                                </div>
+
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- TAB: HISTORY LOGS -->
+                <div class="tab-view" id="view-history-logs">
+                    <div class="glass-card" style="padding: 0;">
+                        <div style="padding: 20px 24px; border-bottom: 1px solid var(--border-glow); display: flex; justify-content: space-between; align-items: center;">
+                            <span class="card-title" style="margin-bottom: 0;">Historical Investigation Register</span>
+                            <button class="btn-action" onclick="loadHistoryList()" style="gap: 6px;">
+                                <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px;"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                                <span>Refresh Logs</span>
+                            </button>
+                        </div>
+                        <div class="history-table-container">
+                            <table class="history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Investigation ID</th>
+                                        <th>Subject Username</th>
+                                        <th>Primary Target</th>
+                                        <th>Scan Status</th>
+                                        <th>Timestamp</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-table-body">
+                                    <!-- Dynamic rows -->
+                                    <tr>
+                                        <td colspan="5" style="text-align: center; color: var(--text-secondary);">No historical records cached.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: DIAGNOSTICS -->
+                <div class="tab-view" id="view-diagnostics">
+                    <div class="diagnostics-grid">
+                        <div class="glass-card">
+                            <div class="card-header-bar">
+                                <span class="card-title">Secure API Endpoint Status</span>
+                            </div>
+                            <div>
+                                <span style="font-size: 0.8rem; color:var(--text-secondary);">Core URL</span>
+                                <div class="diagnostic-value">http://127.0.0.1:8000</div>
+                            </div>
+                            <div style="margin-top: 15px;">
+                                <span style="font-size: 0.8rem; color:var(--text-secondary);">Operational Connection</span>
+                                <div class="diagnostic-value" id="diag-connection" style="color:#00ff66;">CONNECTING...</div>
+                            </div>
+                        </div>
+
+                        <div class="glass-card">
+                            <div class="card-header-bar">
+                                <span class="card-title">Environment Variables</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:8px;">
+                                <div class="detail-item">
+                                    <span>Database URL</span>
+                                    <span class="mono" style="font-size: 0.75rem;">SQLite (dev cache)</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span>CORS Allowed Origins</span>
+                                    <span class="mono" style="font-size: 0.75rem;">localhost:5500, localhost:3000</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="glass-card">
+                            <div class="card-header-bar">
+                                <span class="card-title">Version Specifications</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:8px;">
+                                <div class="detail-item">
+                                    <span>FastAPI App Name</span>
+                                    <span class="mono" id="diag-app-name">AI-OSINT Platform</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span>FastAPI Version</span>
+                                    <span class="mono" id="diag-app-version">0.1.0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Link External JS Script -->
+    <script src="app.js"></script>
 </body>
 </html>
