@@ -1,0 +1,10 @@
+{
+  "info": {"name": "AI-OSINT Platform", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "item": [
+    {"name": "Health", "request": {"method": "GET", "url": "{{base_url}}/health"}},
+    {"name": "Investigate Username", "request": {"method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "body": {"mode":"raw", "raw":"{\n  \"username\": \"example_user\",\n  \"platform\": \"instagram\",\n  \"case_id\": \"CASE-001\",\n  \"correlation_depth\": 2\n}"}, "url": "{{base_url}}/api/v1/investigation/username"}},
+    {"name": "List Investigations", "request": {"method": "GET", "url": "{{base_url}}/api/v1/investigation/history"}},
+    {"name": "Generate Report", "request": {"method": "POST", "url": "{{base_url}}/api/v1/reports/generate-report/{{investigation_id}}?format=pdf"}}
+  ],
+  "variable": [{"key":"base_url", "value":"http://localhost:8000"}, {"key":"investigation_id", "value":"inv_replace_me"}]
+}

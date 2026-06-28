@@ -1,0 +1,22 @@
+flowchart TB
+    subgraph Frontend[Frontend HTML/JS]
+        Search[Search]
+        Results[Results]
+        ReportView[Report View]
+    end
+
+    Frontend -->|HTTP/WebSocket| Gateway[API Gateway: FastAPI]
+    Gateway --> Auth[Auth Middleware]
+    Gateway --> RateLimit[Rate Limiting]
+    Gateway --> Validation[Request Validation]
+    Gateway --> Orchestrator[Investigation Orchestrator]
+
+    Orchestrator --> Scraper[Scraper Engine]
+    Orchestrator --> AI[AI Correlation Engine]
+    Orchestrator --> Reports[Report Generator]
+
+    Scraper --> Data[(PostgreSQL Primary)]
+    AI --> Data
+    Reports --> Data
+    Orchestrator --> Redis[(Redis Cache)]
+    Reports --> FileStore[(Evidence File Store)]
