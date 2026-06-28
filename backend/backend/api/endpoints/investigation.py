@@ -12,6 +12,7 @@ from backend.schemas.investigation import (
     UsernameInvestigationRequest,
 )
 from backend.services.cross_platform import CrossPlatformSearchService
+from backend.services.flashapi_service import FlashAPIService
 from backend.services.instagram_service import InstagramDataService
 from backend.services.telegram_service import TelegramDataService
 from backend.services.twitter_service import TwitterDataService
@@ -33,13 +34,18 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
     }
     service = service_map.get(platform)
     if service is None:
-        return {
+        platform_data = {
             "platform": platform,
             "username": username,
             "status": "manual_review_required",
             "message": "Automated lookup is not configured for this platform.",
         }
-    return await service.get_profile(username)
+    else:
+        platform_data = await service.get_profile(username)
+
+    flashapi_data = await FlashAPIService().lookup_username(username, platform)
+    platform_data["flashapi_enrichment"] = flashapi_data
+    return platform_data
 
 
 async def cross_platform_search(username: str, platform_data: dict[str, Any], depth: int) -> list[dict[str, Any]]:

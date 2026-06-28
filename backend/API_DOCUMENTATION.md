@@ -46,3 +46,16 @@ The current implementation uses an in-memory store for development. Production d
 `POST /api/v1/reports/generate-report/{investigation_id}?format=pdf`
 
 Supported formats are `pdf` and `html`. The endpoint validates the investigation exists and returns the future report URL.
+
+## RapidAPI FlashAPI Enrichment
+
+Username investigations call FlashAPI as an enrichment provider and include the result under `platform_data.flashapi_enrichment`.
+
+Required environment variables:
+
+- `RAPIDAPI_KEY`
+- `FLASHAPI_HOST` default: `flashapi1.p.rapidapi.com`
+- `FLASHAPI_BASE_URL` default: `https://flashapi1.p.rapidapi.com`
+- `FLASHAPI_ENDPOINT_PATH` default: `ig/info_username/`
+
+When the RapidAPI key is missing, the API still works and returns a `not_configured` enrichment object for local development.
