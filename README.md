@@ -89,7 +89,7 @@ To bypass browser CORS security limitations when connecting to the local API, th
 When the web page opens, you will be greeted by the **U.P. Police Cyber Cell preloader**. Once the backend API connection checks are verified, you will be prompted for security credentials.
 
 Use the following default investigator access parameters:
-- **Investigator ID / Username**: `arkagrawal`
+- **Investigator ID / Username**: `uppolice`
 - **Security Keyphrase / Password**: `testingaccount`
 
-Once authorized, you can run target OSINT scans, view risk threat assessments, and click **Export Official PDF Report** to view and download dossier reports in paper print format.
+Once authorized, you can run target OSINT scans, view risk threat assessments, and click **Export Official PDF Report** to view and download dossier reports in paper print format.

@@ -1,5 +1,5 @@
 const API_BASE = "http://127.0.0.1:8000";
-const DEMO_USER = "arkagrawal";
+const DEMO_USER = "uppolice";
 const DEMO_PASS = "testingaccount";
 
 // Global State
