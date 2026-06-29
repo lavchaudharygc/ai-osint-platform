@@ -76,3 +76,15 @@ You can also use Swagger at `http://127.0.0.1:8010/docs` and test:
 - `GET /api/v1/training/dataset/examples/{example_id}`
 
 The username investigation endpoint includes dataset guidance under `ai_correlation_result.training_context` when examples are available.
+
+## Avoid Re-entering Environment Variables
+
+You do not need to type the RapidAPI variables every time. Copy `.env.example` to `.env`, put your real values in `.env`, and start the backend normally:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+python -m backend.main
+```
+
+The backend automatically reads `.env` through `pydantic-settings`. The `.env` file is ignored by Git so your real API keys are not committed.
