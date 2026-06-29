@@ -1,0 +1,2157 @@
+[
+  {
+    "example_id": 6,
+    "category": "SAME USERNAME - SAME PERSON",
+    "confidence_tier": "HIGH (90-100%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Ax9kLmPqW2T4hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "gcsislet",
+        "instagram_id": "58291047832",
+        "full_name": "GCS Islet",
+        "bio": "🛡️ Garuda Cyber Security | OSINT 👁️ | Red Team 💀 | Cyber Awareness 🔐\n🌐 gcsislet.com\n📍 Lucknow, India\n👤 Managed by @lavchaudharygc",
+        "followers_count": 3812,
+        "following_count": 214,
+        "posts_count": 47,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": true,
+        "business_category": "Science & Technology",
+        "is_joined_recently": false,
+        "profile_pic_description": "Eagle logo with GCS Islet text — organizational brand, dark background",
+        "location": "Lucknow, Uttar Pradesh, India",
+        "links_in_bio": [
+          "https://gcsislet.com/",
+          "https://youtube.com/@gcsislet",
+          "https://github.com/lavchaudharygc"
+        ],
+        "email_found_in_posts": "contact@gcsislet.com",
+        "hashtags_used": ["#GCSIslet","#GarudaCyberSecurity","#CyberSecurity","#OSINT","#RedTeam","#EthicalHacking","#InfoSec","#CyberAwareness","#CTI","#BugBounty","#DarkWeb","#PrivacyTools","#Encryption","#BeEF","#Kali"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DYi2lAeS2Rn",
+            "caption_preview": "SHADOWCHAT — end-to-end encrypted messenger by @lavchaudharygc. Zero logs. ECDH key exchange. Try it now via gcsislet.com/shadowchat",
+            "likes": 54,
+            "timestamp": "2026-05-20",
+            "posted_by_account": "gcsislet",
+            "tagged_user": "lavchaudharygc"
+          },
+          {
+            "url": "https://www.instagram.com/p/DYaMH77SjJ2",
+            "caption_preview": "Dark Web Dropbox — OPSEC tool built by our team. Tor anonymity + client-side encryption. Source on GitHub 👉 github.com/lavchaudharygc",
+            "likes": 78,
+            "timestamp": "2026-05-16",
+            "posted_by_account": "gcsislet",
+            "tagged_user": "lavchaudharygc"
+          },
+          {
+            "url": "https://www.instagram.com/p/DQ4YceWE-zF",
+            "caption_preview": "BeEF Framework full setup walkthrough — video on our YouTube channel. Browser exploitation for Red Teamers 🔴",
+            "likes": 62,
+            "timestamp": "2025-11-10",
+            "posted_by_account": "gcsislet",
+            "tagged_user": "lavchaudharygc"
+          }
+        ],
+        "associated_accounts": ["lavchaudharygc"]
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "gcsislet",
+          "full_name": "GARUDA CYBER SECURITY",
+          "bio": "🛡️ GCS Islet – Garuda Cyber Security | Breaking, researching & explaining cyber threats | OSINT | Red Team | Lucknow, India",
+          "profile_pic_description": "Same eagle logo as Instagram — brand consistency confirmed",
+          "location": "Lucknow, India",
+          "category": "Science & Technology",
+          "content_similarity": "Username identical: gcsislet. Logo identical. Bio mirrors Instagram brand language. Tweets amplify same tools and cybersecurity topics posted on Instagram. Operator signals (@lavchaudharygc) appear in replies.",
+          "operator_identity_signal": "@lavchaudharygc replies from this account confirming operator identity"
+        },
+        {
+          "platform": "youtube",
+          "username": "gcsislet",
+          "full_name": "GCS Islet",
+          "bio": "Cybersecurity walkthroughs | OSINT tools | Ethical hacking demos | Lucknow, India | gcsislet.com",
+          "profile_pic_description": "Eagle logo — same as Instagram and Twitter",
+          "location": "Lucknow, India",
+          "category": "Science & Technology",
+          "content_similarity": "Username gcsislet = identical across all platforms. Bio link gcsislet.com is the same website URL in Instagram bio. BeEF walkthrough video on YouTube directly cross-linked in Instagram posts.",
+          "links": ["gcsislet.com", "instagram.com/gcsislet mentioned in About section"]
+        },
+        {
+          "platform": "github",
+          "username": "lavchaudharygc",
+          "full_name": "Lav Chaudhary",
+          "bio": "Cyber Crime Investigator | OSINT | Red Teamer | GCS Islet Founder",
+          "profile_pic_description": "Young Indian male, same as Instagram lavchaudharygc profile",
+          "location": "Lucknow, India",
+          "content_similarity": "GitHub URL linked directly from gcsislet Instagram bio. Repos: shadowchat, dark-web-dropbox, beef-setup-scripts — all match post content. The GCS Islet org account on GitHub mirrors repos from lavchaudharygc.",
+          "github_url": "https://github.com/lavchaudharygc"
+        },
+        {
+          "platform": "linkedin",
+          "username": "lav-chaudhary-833b48262",
+          "full_name": "Lav (GCS ISLET) Chaudhary",
+          "bio": "Cyber Threat Investigation Intern @ Cyber Crime HQs, Uttar Pradesh Police | OSINT Researcher | Founder, GCS Islet | Lucknow",
+          "profile_pic_description": "Same individual as lavchaudharygc Instagram",
+          "location": "Lucknow, Uttar Pradesh, India",
+          "content_similarity": "LinkedIn name explicitly includes '(GCS ISLET)' — direct brand anchor. UP Police Lucknow role consistent with Instagram bio across both accounts. GCS Islet founder attribution confirms single operator for all gcsislet-branded accounts."
+        },
+        {
+          "platform": "personal_website",
+          "username": "gcsislet.com",
+          "full_name": "GCS Islet — Garuda Cyber Security",
+          "bio": "Official website of GCS Islet. OSINT tools, Red Team research, Cybersecurity awareness. Built by Lav Chaudhary.",
+          "profile_pic_description": "Eagle logo, consistent with all social accounts",
+          "location": "Lucknow, India",
+          "content_similarity": "Website domain gcsislet.com appears in Instagram bio, Twitter bio, YouTube About section, and GitHub profile — confirmed cross-platform anchor URL. Footer credits 'Lav Chaudhary' as founder.",
+          "website_url": "https://gcsislet.com/"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram",
+          "platform_b": "twitter_x",
+          "decision": "YES - SAME PERSON",
+          "confidence": 98,
+          "reasons": [
+            "Username gcsislet identical on both platforms",
+            "Identical eagle logo profile picture",
+            "Bio language nearly identical — same brand description",
+            "Operator (@lavchaudharygc) confirmed via replies on Twitter from same Lav Chaudhary persona"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "youtube",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username gcsislet identical on YouTube",
+            "Instagram posts directly link to YouTube videos (BeEF walkthrough: youtu.be/XQLC_594Nws)",
+            "Same gcsislet.com domain linked in both profiles",
+            "Same eagle logo profile art"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "github",
+          "decision": "YES - SAME PERSON",
+          "confidence": 97,
+          "reasons": [
+            "github.com/lavchaudharygc directly linked in gcsislet Instagram bio",
+            "GitHub repos match all tool projects announced on Instagram (ShadowChat, Dark Web Dropbox, BeEF)",
+            "Operator identity bridge: lavchaudharygc GitHub = lavchaudharygc Instagram = confirmed operator of gcsislet"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "linkedin",
+          "decision": "YES - SAME PERSON",
+          "confidence": 97,
+          "reasons": [
+            "LinkedIn name 'Lav (GCS ISLET) Chaudhary' explicitly brands gcsislet",
+            "Founder attribution bridges lavchaudharygc → gcsislet accounts",
+            "Same photo, same location, same institutional affiliation (UP Police, Lucknow)"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Lav Chaudhary",
+        "primary_location": "Lucknow, Uttar Pradesh, India",
+        "profession": "Cyber Crime Investigator / OSINT Researcher / GCS Islet Founder",
+        "emails_found": ["contact@gcsislet.com", "lavchaudharygc@gmail.com"],
+        "links_found": ["gcsislet.com", "instagram.com/gcsislet", "instagram.com/lavchaudharygc", "youtube.com/@gcsislet", "github.com/lavchaudharygc", "lavchaudharygc.netlify.app"],
+        "overall_confidence": "VERY HIGH — Username 'gcsislet' is identical across Instagram, Twitter, and YouTube. Operator lavchaudharygc confirmed as founder via LinkedIn, GitHub, and personal website. Cross-platform content mirroring is exact.",
+        "confidence_percentage": 98
+      }
+    }
+  },
+  {
+    "example_id": 7,
+    "category": "SAME USERNAME - SAME PERSON",
+    "confidence_tier": "HIGH (90-100%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Bk3mNrQxV5U7hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "arkagrawall",
+        "instagram_id": "39172846510",
+        "full_name": "Ark Agrawal",
+        "bio": "📷 Photographer | 💻 Cybersecurity Enthusiast\n🎥 Camera Roll → @arksscameraroll\n🌐 github.com/arkagrawall\n📍 India",
+        "followers_count": 2341,
+        "following_count": 387,
+        "posts_count": 83,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": false,
+        "business_category": "Tech",
+        "is_joined_recently": false,
+        "profile_pic_description": "Young Indian male, early 20s, glasses, casual attire, outdoor setting",
+        "location": "India",
+        "links_in_bio": [
+          "https://github.com/arkagrawall",
+          "https://linkedin.com/in/arkagrawall"
+        ],
+        "email_found_in_posts": "Not Found",
+        "hashtags_used": ["#Photography","#CyberSecurity","#EthicalHacking","#OSINT","#BugBounty","#InfoSec","#Tech","#India","#Developer","#OpenSource"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DAb3mNqLT9k",
+            "caption_preview": "New blog post on subdomain enumeration — link in bio. Tools used: Subfinder, Amass, httpx. #BugBounty",
+            "likes": 127,
+            "timestamp": "2026-04-12",
+            "posted_by_account": "arkagrawall",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/C9zXpWqMK4L",
+            "caption_preview": "Shot this at golden hour in Rajasthan. Different kind of hacking — light hacking 📷 #Photography #GoldenHour",
+            "likes": 214,
+            "timestamp": "2026-03-08",
+            "posted_by_account": "arkagrawall",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/C7mYnVqJR3X",
+            "caption_preview": "My latest CTF writeup is up on GitHub. SQL injection, XSS, and SSRF challenges — full notes attached.",
+            "likes": 98,
+            "timestamp": "2026-01-22",
+            "posted_by_account": "arkagrawall",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": ["arksscameraroll"]
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "arkagrawall",
+          "full_name": "Ark Agrawal",
+          "bio": "Security researcher | CTF player | Photography lover | Bug bounty hunter | India",
+          "profile_pic_description": "Same individual as Instagram — glasses, same casual style",
+          "location": "India",
+          "category": "Technology",
+          "content_similarity": "Username arkagrawall identical. Same dual persona (photography + cybersecurity). CTF writeups and bug bounty tweets align with Instagram post topics. Same profile photo.",
+          "operator_identity_signal": "Twitter links back to github.com/arkagrawall — identical to Instagram bio link"
+        },
+        {
+          "platform": "linkedin",
+          "username": "arkagrawall",
+          "full_name": "Ark Agrawal",
+          "bio": "Security Researcher | CTF Player | Bug Bounty Hunter | Photography Enthusiast | Open to opportunities in Application Security",
+          "profile_pic_description": "Same individual, professional photo, glasses",
+          "location": "India",
+          "content_similarity": "Username arkagrawall identical on LinkedIn. Bio aligns with Instagram and Twitter. LinkedIn directly linked in Instagram bio. Role 'Application Security' consistent with bug bounty posts."
+        },
+        {
+          "platform": "github",
+          "username": "arkagrawall",
+          "full_name": "Ark Agrawal",
+          "bio": "Security researcher. CTF writeups. Bug bounty tools. Open source.",
+          "profile_pic_description": "Same avatar as Instagram",
+          "location": "India",
+          "content_similarity": "Username arkagrawall identical — 4th platform. GitHub URL in Instagram bio = direct cross-link. Repos: ctf-writeups, subdomain-enum-tools, burp-extensions align with Instagram post captions.",
+          "github_url": "https://github.com/arkagrawall"
+        },
+        {
+          "platform": "instagram_alt",
+          "username": "arksscameraroll",
+          "full_name": "Ark's Camera Roll",
+          "bio": "Just photos. Personal archive. Main → @arkagrawall",
+          "profile_pic_description": "Same individual — photography-focused account",
+          "location": "India",
+          "content_similarity": "Alt account mentioned directly in primary Instagram bio. Bio references main account @arkagrawall bidirectionally. Photography content only — personal side of the same person."
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram",
+          "platform_b": "twitter_x",
+          "decision": "YES - SAME PERSON",
+          "confidence": 97,
+          "reasons": [
+            "Username arkagrawall identical on both platforms",
+            "Same dual identity: cybersecurity + photography",
+            "Same profile photo (glasses, casual)",
+            "Twitter links to github.com/arkagrawall — same URL as Instagram bio"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "linkedin",
+          "decision": "YES - SAME PERSON",
+          "confidence": 98,
+          "reasons": [
+            "Username arkagrawall identical",
+            "LinkedIn URL directly embedded in Instagram bio",
+            "Same photo — consistent visual identity",
+            "Role descriptors (Bug Bounty, Security Research, CTF) consistent across both"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "github",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username arkagrawall identical — 4th platform",
+            "GitHub URL directly in Instagram bio: github.com/arkagrawall",
+            "Repo content (ctf-writeups, subdomain tools) matches Instagram post captions exactly",
+            "Same avatar across platforms"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "instagram_alt",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Primary bio explicitly mentions @arksscameraroll",
+            "Alt bio links back to @arkagrawall",
+            "Bidirectional cross-reference = definitive same person"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Ark Agrawal",
+        "primary_location": "India",
+        "profession": "Security Researcher / CTF Player / Bug Bounty Hunter / Photographer",
+        "emails_found": [],
+        "links_found": ["instagram.com/arkagrawall", "instagram.com/arksscameraroll", "twitter.com/arkagrawall", "linkedin.com/in/arkagrawall", "github.com/arkagrawall"],
+        "overall_confidence": "VERY HIGH — Username 'arkagrawall' is identical across Instagram, Twitter, LinkedIn, and GitHub. Instagram bio directly links to LinkedIn and GitHub. Alt account cross-reference confirmed bidirectionally.",
+        "confidence_percentage": 98
+      }
+    }
+  },
+  {
+    "example_id": 8,
+    "category": "SAME USERNAME - SAME PERSON",
+    "confidence_tier": "HIGH (90-100%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Cx7pOsWqR3Y9hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "shubhamcyberexpert",
+        "instagram_id": "47102938475",
+        "full_name": "Shubham | Cyber Expert",
+        "bio": "🔐 Cybersecurity Professional | CEH Certified\n💀 Penetration Tester | Red Team\n👁️ OSINT Researcher\n📍 Mumbai, Maharashtra\n🌐 shubhamcyber.in",
+        "followers_count": 8924,
+        "following_count": 512,
+        "posts_count": 134,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": false,
+        "business_category": "Tech",
+        "is_joined_recently": false,
+        "profile_pic_description": "Young Indian male, mid-20s, dark background, blue hoodie, cybersecurity aesthetic",
+        "location": "Mumbai, Maharashtra, India",
+        "links_in_bio": [
+          "https://shubhamcyber.in",
+          "https://linkedin.com/in/shubhamcyberexpert",
+          "https://github.com/shubhamcyberexpert"
+        ],
+        "email_found_in_posts": "shubham@shubhamcyber.in",
+        "hashtags_used": ["#CyberSecurity","#PenTest","#RedTeam","#OSINT","#EthicalHacking","#CEH","#BugBounty","#InfoSec","#Kali","#Metasploit","#NetworkSecurity","#WebSecurity","#CTF","#Mumbai","#India"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DBm4nOpKT8j",
+            "caption_preview": "Full network pentest methodology — from reconnaissance to reporting. Save this for your next engagement! 🔴 #PenTest #RedTeam",
+            "likes": 743,
+            "timestamp": "2026-05-30",
+            "posted_by_account": "shubhamcyberexpert",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DAqRmNpLS7i",
+            "caption_preview": "How I found a critical SSRF on a Fortune 500 company — full write-up on my blog shubhamcyber.in #BugBounty",
+            "likes": 1204,
+            "timestamp": "2026-04-18",
+            "posted_by_account": "shubhamcyberexpert",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/C9pXmVqKR6G",
+            "caption_preview": "OSINT Toolkit for investigators — 15 tools you should be using in 2026. Thread below 👇 #OSINT #InfoSec",
+            "likes": 2187,
+            "timestamp": "2026-02-14",
+            "posted_by_account": "shubhamcyberexpert",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "shubhamcyberexpert",
+          "full_name": "Shubham | Cyber Expert",
+          "bio": "🔐 Penetration Tester | CEH | OSINT | Bug Bounty | Mumbai | shubhamcyber.in",
+          "profile_pic_description": "Same individual — blue hoodie, dark background, consistent with Instagram",
+          "location": "Mumbai, India",
+          "category": "Technology",
+          "content_similarity": "Username shubhamcyberexpert identical. Same personal brand (Shubham | Cyber Expert). Same domain shubhamcyber.in linked. Tweets mirror Instagram posts content on OSINT tools and pentest methodology.",
+          "operator_identity_signal": "Same email shubham@shubhamcyber.in found in Twitter DM footer"
+        },
+        {
+          "platform": "linkedin",
+          "username": "shubhamcyberexpert",
+          "full_name": "Shubham Kumar",
+          "bio": "Penetration Tester | CEH Certified | Bug Bounty Hunter | OSINT Researcher | Mumbai, Maharashtra",
+          "profile_pic_description": "Same individual, professional headshot, consistent with Instagram",
+          "location": "Mumbai, Maharashtra, India",
+          "content_similarity": "Username shubhamcyberexpert identical. LinkedIn URL directly in Instagram bio. Full surname 'Kumar' revealed — not present on other platforms (professional surname reveal pattern). Same certifications (CEH) and role descriptors."
+        },
+        {
+          "platform": "github",
+          "username": "shubhamcyberexpert",
+          "full_name": "Shubham Kumar",
+          "bio": "Security researcher. Bug bounty hunter. OSINT tools builder. Mumbai.",
+          "profile_pic_description": "Same avatar — blue hoodie individual",
+          "location": "Mumbai, India",
+          "content_similarity": "Username shubhamcyberexpert identical — 4th platform. GitHub URL directly in Instagram bio. Repos: osint-toolkit (matches Instagram OSINT thread post), ssrf-writeups (matches Bug Bounty post), pentest-checklists (matches pentest methodology post).",
+          "github_url": "https://github.com/shubhamcyberexpert"
+        },
+        {
+          "platform": "personal_website",
+          "username": "shubhamcyber.in",
+          "full_name": "Shubham Kumar — Cyber Expert",
+          "bio": "Blog and portfolio of Shubham Kumar. Penetration testing write-ups, bug bounty reports, OSINT tools, and cybersecurity research from Mumbai.",
+          "profile_pic_description": "Same individual — blue hoodie photo from Instagram",
+          "location": "Mumbai, India",
+          "content_similarity": "Domain shubhamcyber.in appears in Instagram bio, Twitter bio, and post captions. About page credits 'Shubham Kumar'. Blog posts match Instagram post topics exactly (SSRF write-up, OSINT toolkit).",
+          "website_url": "https://shubhamcyber.in"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram",
+          "platform_b": "twitter_x",
+          "decision": "YES - SAME PERSON",
+          "confidence": 98,
+          "reasons": [
+            "Username shubhamcyberexpert identical on both platforms",
+            "Same personal brand: 'Shubham | Cyber Expert'",
+            "Same domain shubhamcyber.in linked in both bios",
+            "Content mirroring: OSINT tools thread and pentest posts appear on both"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "linkedin",
+          "decision": "YES - SAME PERSON",
+          "confidence": 98,
+          "reasons": [
+            "Username shubhamcyberexpert identical",
+            "LinkedIn URL directly in Instagram bio",
+            "Same city (Mumbai), same certifications (CEH), same role (Penetration Tester)",
+            "Full surname 'Kumar' revealed on LinkedIn — consistent with professional platform surname disclosure pattern"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "github",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username shubhamcyberexpert identical — 4th platform",
+            "GitHub URL directly in Instagram bio",
+            "Repos (osint-toolkit, ssrf-writeups, pentest-checklists) match Instagram post topics exactly"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Shubham Kumar",
+        "primary_location": "Mumbai, Maharashtra, India",
+        "profession": "Penetration Tester / Bug Bounty Hunter / OSINT Researcher / CEH Certified",
+        "emails_found": ["shubham@shubhamcyber.in"],
+        "links_found": ["shubhamcyber.in", "instagram.com/shubhamcyberexpert", "twitter.com/shubhamcyberexpert", "linkedin.com/in/shubhamcyberexpert", "github.com/shubhamcyberexpert"],
+        "overall_confidence": "VERY HIGH — Username 'shubhamcyberexpert' identical across all 4 major platforms. Domain shubhamcyber.in cross-links everything. Instagram bio directly links LinkedIn and GitHub.",
+        "confidence_percentage": 98
+      }
+    }
+  },
+  {
+    "example_id": 9,
+    "category": "SAME USERNAME - SAME PERSON",
+    "confidence_tier": "HIGH (90-100%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Dx8qPtWrS4Z1hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "riteshbhatia37",
+        "instagram_id": "62039184756",
+        "full_name": "Ritesh Bhatia",
+        "bio": "🛡️ Cybercrime Investigator | Digital Forensics Expert\n🎤 Speaker | TEDx | Author\n📍 Mumbai, India\n🌐 riteshbhatia.com\n📧 DM for consulting",
+        "followers_count": 52417,
+        "following_count": 743,
+        "posts_count": 621,
+        "verified": true,
+        "is_professional_account": true,
+        "is_business_account": true,
+        "business_category": "Public Figure",
+        "is_joined_recently": false,
+        "profile_pic_description": "Middle-aged Indian male, professional suit, confident expression — public figure aesthetic",
+        "location": "Mumbai, Maharashtra, India",
+        "links_in_bio": [
+          "https://riteshbhatia.com",
+          "https://linkedin.com/in/riteshbhatia37",
+          "https://youtube.com/@riteshbhatia37"
+        ],
+        "email_found_in_posts": "consulting@riteshbhatia.com",
+        "hashtags_used": ["#CyberCrime","#DigitalForensics","#CyberSecurity","#OnlineSafety","#CyberBullying","#Fraud","#DataPrivacy","#India","#Mumbai","#TEDx","#Author","#PublicSpeaker","#Consulting","#OSINT","#ChildSafety"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DCp7nRqLT2m",
+            "caption_preview": "How cybercriminals exploit UPI payment systems — 7 tactics you must know. Save and share to protect your family 🛡️ #CyberCrime #UPIFraud",
+            "likes": 4821,
+            "timestamp": "2026-06-01",
+            "posted_by_account": "riteshbhatia37",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DBmXoNqLR9k",
+            "caption_preview": "I testified before the Parliamentary Standing Committee on IT today. Our recommendations on digital safety laws for children. 🇮🇳 #ChildSafety",
+            "likes": 3214,
+            "timestamp": "2026-04-22",
+            "posted_by_account": "riteshbhatia37",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/C9qXpWrKT8j",
+            "caption_preview": "My new book on Cybercrime Investigation is now available on Amazon India. Link in bio. This one is for investigators and victims alike.",
+            "likes": 7643,
+            "timestamp": "2026-03-15",
+            "posted_by_account": "riteshbhatia37",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "riteshbhatia37",
+          "full_name": "Ritesh Bhatia",
+          "bio": "Cybercrime Investigator | Digital Forensics | Author | TEDx Speaker | Mumbai | riteshbhatia.com",
+          "profile_pic_description": "Same individual — professional suit photo, identical to Instagram",
+          "location": "Mumbai, India",
+          "category": "Public Figure",
+          "content_similarity": "Username riteshbhatia37 identical. Verified blue tick on Twitter. Bio mirrors Instagram exactly. Tweets cross-promote Instagram posts. Domain riteshbhatia.com linked in both.",
+          "operator_identity_signal": "Twitter verified badge + same photo = confirmed public figure"
+        },
+        {
+          "platform": "linkedin",
+          "username": "riteshbhatia37",
+          "full_name": "Ritesh Bhatia",
+          "bio": "Cybercrime Investigator | Digital Forensics Expert | Author | TEDx Speaker | Cybersecurity Consultant | Mumbai, Maharashtra",
+          "profile_pic_description": "Same individual — same professional headshot",
+          "location": "Mumbai, Maharashtra, India",
+          "content_similarity": "Username riteshbhatia37 identical. LinkedIn URL in Instagram bio. Endorsements confirm public-figure cybercrime investigator role. 50,000+ LinkedIn connections consistent with Instagram follower count."
+        },
+        {
+          "platform": "youtube",
+          "username": "riteshbhatia37",
+          "full_name": "Ritesh Bhatia",
+          "bio": "Cybercrime awareness, digital forensics, online safety, financial fraud prevention | Mumbai | riteshbhatia.com",
+          "profile_pic_description": "Same professional photo",
+          "location": "Mumbai, India",
+          "category": "Education",
+          "content_similarity": "Username riteshbhatia37 identical — YouTube linked in Instagram bio directly. Videos mirror Instagram post topics (UPI fraud, child safety, book launch). Channel verified."
+        },
+        {
+          "platform": "personal_website",
+          "username": "riteshbhatia.com",
+          "full_name": "Ritesh Bhatia — Cybercrime Investigator",
+          "bio": "Official website. TEDx speaker, author, cybercrime consultant. Mumbai, India.",
+          "profile_pic_description": "Same professional photo",
+          "location": "Mumbai, India",
+          "content_similarity": "Domain riteshbhatia.com appears in Instagram, Twitter, LinkedIn, and YouTube bios. About page confirms full identity, press mentions, book details. Consulting email consulting@riteshbhatia.com matches post-found email.",
+          "website_url": "https://riteshbhatia.com"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram",
+          "platform_b": "twitter_x",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username riteshbhatia37 identical",
+            "Verified on Twitter — public figure confirmation",
+            "Same domain riteshbhatia.com linked",
+            "Same professional photo and bio language"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "linkedin",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username riteshbhatia37 identical",
+            "LinkedIn URL directly in Instagram bio",
+            "Same photo, same role descriptors, same location"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "youtube",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username riteshbhatia37 identical",
+            "YouTube URL directly in Instagram bio",
+            "Video topics mirror Instagram post content exactly"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Ritesh Bhatia",
+        "primary_location": "Mumbai, Maharashtra, India",
+        "profession": "Cybercrime Investigator / Digital Forensics Expert / TEDx Speaker / Author / Consultant",
+        "emails_found": ["consulting@riteshbhatia.com"],
+        "links_found": ["riteshbhatia.com", "instagram.com/riteshbhatia37", "twitter.com/riteshbhatia37", "linkedin.com/in/riteshbhatia37", "youtube.com/@riteshbhatia37"],
+        "overall_confidence": "VERY HIGH — Username 'riteshbhatia37' identical across all 4 major platforms. Verified public figure. Domain riteshbhatia.com anchors all accounts. Instagram bio directly links YouTube and LinkedIn.",
+        "confidence_percentage": 99
+      }
+    }
+  },
+  {
+    "example_id": 10,
+    "category": "SAME USERNAME - SAME PERSON",
+    "confidence_tier": "HIGH (90-100%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Ex2rQvWsT5A3hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "bugbountyindia",
+        "instagram_id": "73820194653",
+        "full_name": "Bug Bounty India",
+        "bio": "🐛 India's largest Bug Bounty community\n💰 Earn by finding vulnerabilities\n🔐 Ethical Hacking | VAPT | Web Security\n📍 India\n👉 Join our Discord via link below",
+        "followers_count": 41832,
+        "following_count": 289,
+        "posts_count": 892,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": true,
+        "business_category": "Science & Technology",
+        "is_joined_recently": false,
+        "profile_pic_description": "Bug Bounty India community logo — red bug icon on dark background, text 'Bug Bounty India'",
+        "location": "India",
+        "links_in_bio": [
+          "https://bugbountyindia.com",
+          "https://discord.gg/bugbountyindia",
+          "https://youtube.com/@bugbountyindia"
+        ],
+        "email_found_in_posts": "team@bugbountyindia.com",
+        "hashtags_used": ["#BugBounty","#EthicalHacking","#VAPT","#WebSecurity","#CyberSecurity","#India","#HackerOne","#Bugcrowd","#InfoSec","#PenTest","#ResponsibleDisclosure","#OWASP","#SQLInjection","#XSS","#APIHacking"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DCx8oSqLT4n",
+            "caption_preview": "OWASP Top 10 2025 explained with real-world examples — swipe through and bookmark! 🔐 #OWASP #WebSecurity",
+            "likes": 5621,
+            "timestamp": "2026-06-10",
+            "posted_by_account": "bugbountyindia",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DBpYoNqMR8l",
+            "caption_preview": "Hall of Fame spotlight 🎉 — congrats to our community member who earned $15,000 on HackerOne this month! #BugBounty #HackerOne",
+            "likes": 8934,
+            "timestamp": "2026-05-02",
+            "posted_by_account": "bugbountyindia",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/C9sXpWqLT9k",
+            "caption_preview": "API hacking masterclass — join our Discord for the full recording. Free for community members! #APIHacking #BugBounty",
+            "likes": 3847,
+            "timestamp": "2026-02-28",
+            "posted_by_account": "bugbountyindia",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "bugbountyindia",
+          "full_name": "Bug Bounty India",
+          "bio": "India's largest Bug Bounty & Ethical Hacking community 🐛 | Join Discord | bugbountyindia.com",
+          "profile_pic_description": "Same bug logo — consistent community brand",
+          "location": "India",
+          "category": "Technology",
+          "content_similarity": "Username bugbountyindia identical. Same logo. Same community positioning. Tweets mirror Instagram posts. Discord link identical.",
+          "operator_identity_signal": "team@bugbountyindia.com email confirmed in Twitter bio"
+        },
+        {
+          "platform": "youtube",
+          "username": "bugbountyindia",
+          "full_name": "Bug Bounty India",
+          "bio": "India's #1 Bug Bounty community. Tutorials, writeups, live sessions. bugbountyindia.com | Join Discord",
+          "profile_pic_description": "Same logo",
+          "location": "India",
+          "category": "Education",
+          "content_similarity": "Username bugbountyindia identical. YouTube URL directly linked in Instagram bio. Videos match Instagram post topics (OWASP Top 10, API hacking masterclass mentioned in posts)."
+        },
+        {
+          "platform": "github",
+          "username": "bugbountyindia",
+          "full_name": "Bug Bounty India",
+          "bio": "Open source bug bounty tools and resources for Indian security researchers.",
+          "profile_pic_description": "Same community logo",
+          "location": "India",
+          "content_similarity": "Username bugbountyindia identical. Community org account. Repos: recon-tools, payload-lists, learning-resources align with Instagram educational posts.",
+          "github_url": "https://github.com/bugbountyindia"
+        },
+        {
+          "platform": "personal_website",
+          "username": "bugbountyindia.com",
+          "full_name": "Bug Bounty India Community",
+          "bio": "India's largest platform for bug bounty hunters. Resources, Discord, Hall of Fame, tutorials.",
+          "profile_pic_description": "Same logo",
+          "location": "India",
+          "content_similarity": "Domain bugbountyindia.com appears in Instagram, Twitter, YouTube, and GitHub bios. Discord link and team email team@bugbountyindia.com confirmed on website.",
+          "website_url": "https://bugbountyindia.com"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram",
+          "platform_b": "twitter_x",
+          "decision": "YES - SAME PERSON",
+          "confidence": 97,
+          "reasons": [
+            "Username bugbountyindia identical",
+            "Same community logo and brand",
+            "Same domain and Discord link",
+            "Content mirroring confirmed"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "youtube",
+          "decision": "YES - SAME PERSON",
+          "confidence": 98,
+          "reasons": [
+            "Username bugbountyindia identical",
+            "YouTube URL directly in Instagram bio",
+            "Video topics match post captions (API hacking masterclass, OWASP Top 10)"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "github",
+          "decision": "YES - SAME PERSON",
+          "confidence": 95,
+          "reasons": [
+            "Username bugbountyindia identical",
+            "Community org account — same brand",
+            "Repos align with educational Instagram content"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Bug Bounty India (Community Account — operator identity not publicly disclosed)",
+        "primary_location": "India",
+        "profession": "Bug Bounty Community Platform / Security Education",
+        "emails_found": ["team@bugbountyindia.com"],
+        "links_found": ["bugbountyindia.com", "discord.gg/bugbountyindia", "instagram.com/bugbountyindia", "twitter.com/bugbountyindia", "youtube.com/@bugbountyindia", "github.com/bugbountyindia"],
+        "overall_confidence": "VERY HIGH — Username 'bugbountyindia' identical across all 4 platforms. Community brand account — operator individual identity not disclosed. Domain and Discord link anchor all platforms.",
+        "confidence_percentage": 97
+      }
+    }
+  },
+  {
+    "example_id": 11,
+    "category": "SIMILAR USERNAME - SAME PERSON",
+    "confidence_tier": "MEDIUM-HIGH (75-90%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Fx4sRwXtU6B5hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "sumit_._shah_",
+        "instagram_id": "83910274651",
+        "full_name": "SUMIT SHAH",
+        "bio": "Pvt --@serotonin.glitch\n🚀 Building @ValanzoHQ\n📍 Delhi",
+        "followers_count": 493,
+        "following_count": 450,
+        "posts_count": 1,
+        "verified": false,
+        "is_professional_account": false,
+        "is_business_account": false,
+        "business_category": "Not Found",
+        "is_joined_recently": false,
+        "profile_pic_description": "Young Indian male, 19-20 years, Delhi-based, casual gym aesthetic",
+        "location": "Delhi, India",
+        "links_in_bio": [],
+        "email_found_in_posts": "Not Found",
+        "hashtags_used": [],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/CYq7nOpLR2k",
+            "caption_preview": "Starting something new. Watch this space 👀 @ValanzoHQ",
+            "likes": 47,
+            "timestamp": "2025-12-01",
+            "posted_by_account": "sumit_._shah_",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": ["serotonin.glitch"]
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "sumitshahpvt",
+          "full_name": "Sumit Shah",
+          "bio": "Building @ValanzoHQ | OSINTPulse | Cybersec | Delhi | 19",
+          "profile_pic_description": "Same individual — casual style, Delhi-based",
+          "location": "Delhi",
+          "category": "Technology",
+          "content_similarity": "Username 'sumitshahpvt' vs Instagram 'sumit_._shah_' — different format but same name base 'sumitshah'. Valanzo brand matches Instagram bio mention @ValanzoHQ. Same city (Delhi). Age 19 = same person.",
+          "username_delta": "sumitshahpvt vs sumit_._shah_ — shared stem: sumitshah. Suffix 'pvt' = personal/private, matching Instagram's 'Pvt' notation"
+        },
+        {
+          "platform": "linkedin",
+          "username": "sumit-shah-valanzo",
+          "full_name": "Sumit Shah",
+          "bio": "Founder @ Valanzo | OSINTPulse | TrusT Fintech | Cybersecurity Enthusiast | Delhi",
+          "profile_pic_description": "Same individual, professional photo",
+          "location": "Delhi, India",
+          "content_similarity": "LinkedIn slug 'sumit-shah-valanzo' is different from Instagram handle but Valanzo brand is the unique cross-platform identifier. Founder of Valanzo mentioned in Instagram bio as @ValanzoHQ."
+        },
+        {
+          "platform": "github",
+          "username": "sumitshahpvt-coder",
+          "full_name": "Sumit Shah",
+          "bio": "Building OSINTPulse | TrusT | AI-assisted dev | Valanzo Holdings",
+          "profile_pic_description": "Same avatar",
+          "location": "Delhi, India",
+          "content_similarity": "Username 'sumitshahpvt-coder' shares 'sumitshahpvt' cluster with Twitter. GitHub name pattern: Twitter handle + '-coder' suffix. Valanzo brand consistent. Repos match LinkedIn bio projects."
+        },
+        {
+          "platform": "youtube",
+          "username": "voltiroo",
+          "full_name": "Voltiro | Sumit Shah",
+          "bio": "Hindi content | Storytelling | Delhi | Sumit Shah behind this channel",
+          "profile_pic_description": "Face matches in thumbnails. Same individual.",
+          "location": "Delhi, India",
+          "content_similarity": "Username 'voltiroo' is highest divergence. BUT: channel name explicitly says 'Sumit Shah'. Delhi location consistent. Voltiro is a personal brand project of Sumit. Face match in thumbnails.",
+          "anomaly_note": "voltiroo has no lexical link to other handles — only content attribution and face match bridge this"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram",
+          "platform_b": "twitter_x",
+          "decision": "YES - SAME PERSON",
+          "confidence": 87,
+          "reasons": [
+            "Username similarity: 'sumit_._shah_' and 'sumitshahpvt' share 'sumitshah' base",
+            "'Pvt' on Instagram bio and 'pvt' in Twitter username — same abbreviation",
+            "Valanzo brand (@ValanzoHQ) appears in both bios",
+            "Same city (Delhi), same age (19)"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "linkedin",
+          "decision": "YES - SAME PERSON",
+          "confidence": 85,
+          "reasons": [
+            "Full name match: Sumit Shah",
+            "Valanzo brand is unique cross-platform identifier",
+            "Delhi location consistent",
+            "Username divergence: slug format vs decorated Instagram handle"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "github",
+          "decision": "YES - SAME PERSON",
+          "confidence": 84,
+          "reasons": [
+            "Username cluster: 'sumitshahpvt-coder' extends Twitter's 'sumitshahpvt'",
+            "Valanzo brand consistent across both",
+            "Same avatar"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "youtube",
+          "decision": "MAYBE - PROBABLE SAME PERSON",
+          "confidence": 76,
+          "reasons": [
+            "Channel name explicitly attributes 'Sumit Shah'",
+            "Delhi location consistent",
+            "Face match in video thumbnails",
+            "Username 'voltiroo' has zero lexical similarity — lowest confidence platform"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Sumit Shah",
+        "primary_location": "Delhi, India",
+        "profession": "Founder, Valanzo Holdings | Cybersecurity Builder (OSINTPulse) | Fintech Developer (TrusT) | Content Creator (Voltiro)",
+        "emails_found": [],
+        "links_found": ["instagram.com/sumit_._shah_", "instagram.com/serotonin.glitch", "twitter.com/sumitshahpvt", "github.com/sumitshahpvt-coder", "youtube.com/@voltiroo"],
+        "unique_identifier": "Valanzo brand — appears on Instagram, Twitter, LinkedIn, GitHub. Not a common term. Acts as cross-platform fingerprint.",
+        "overall_confidence": "HIGH for 4/5 platforms via Valanzo brand anchor. YouTube weakest via username divergence but self-attribution in channel name confirms.",
+        "confidence_percentage": 84
+      }
+    }
+  },
+  {
+    "example_id": 12,
+    "category": "SIMILAR USERNAME - SAME PERSON",
+    "confidence_tier": "MEDIUM-HIGH (75-90%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Gx5tSxYuV7C6hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "lavchaudharygc",
+        "instagram_id": "24603008654",
+        "full_name": "Lav Chaudhary",
+        "bio": "🔐 Cyber Crime Investigator | CEH 👨🏻‍💻|Red Teamer💀| OSINT👁️\n👣 Cyber Crime HQ LKO🚔\nAssisting LEAs 🚨\n🇮🇳🕉🪻",
+        "followers_count": 15067,
+        "following_count": 106,
+        "posts_count": 10,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": false,
+        "business_category": "Tech",
+        "is_joined_recently": false,
+        "profile_pic_description": "Young Indian male, 20-25 years, red shirt, professional lighting",
+        "location": "Lucknow, Uttar Pradesh, India",
+        "links_in_bio": [
+          "https://gcsislet.com/",
+          "https://lavchaudharygc.netlify.app/#home",
+          "https://github.com/lavchaudharygc"
+        ],
+        "email_found_in_posts": "lavchaudharygc@gmail.com",
+        "hashtags_used": ["#BeEF","#EthicalHacking","#CyberSecurity","#RedTeam","#Infosec","#GCSIslet","#CyberAwareness","#ShadowChat","#Encryption","#Privacy","#OPSEC"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DYi2lAeS2Rn",
+            "caption_preview": "SHADOWCHAT - The messenger that CANNOT read your messages. ECDH P-256, AES-256-GCM, self-destruct messages.",
+            "likes": 3,
+            "timestamp": "2026-05-20",
+            "posted_by_account": "gcs_islet",
+            "tagged_user": "lavchaudharygc"
+          }
+        ],
+        "associated_accounts": ["gcs_islet"]
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "gcsislet",
+          "full_name": "GARUDA CYBER SECURITY",
+          "bio": "🛡️ GCS Islet – Garuda Cyber Security | Cyber threats | OSINT | Red Team | Lucknow, India",
+          "profile_pic_description": "Eagle logo — org brand, not personal photo",
+          "location": "Lucknow, India",
+          "category": "Science & Technology",
+          "content_similarity": "Instagram username 'lavchaudharygc' vs Twitter 'gcsislet' — different names but same operator. lavchaudharygc's bio links gcsislet.com. Instagram posts from gcs_islet tag lavchaudharygc. GCSIslet hashtag used consistently. Same content appears on both.",
+          "username_delta": "lavchaudharygc (personal brand) vs gcsislet (organizational brand) — same person operating two distinct brand identities"
+        },
+        {
+          "platform": "linkedin",
+          "username": "lav-chaudhary-833b48262",
+          "full_name": "Lav (GCS ISLET) Chaudhary",
+          "bio": "Cyber Threat Investigation Intern @ Cyber Crime HQs, Uttar Pradesh Police | OSINT Researcher | Founder, GCS Islet | Lucknow",
+          "profile_pic_description": "Same individual as Instagram lavchaudharygc — red shirt consistent",
+          "location": "Lucknow, Uttar Pradesh, India",
+          "content_similarity": "LinkedIn name '(GCS ISLET)' directly bridges personal account lavchaudharygc to org brand gcsislet. Username 'lav-chaudhary-833b48262' differs but is auto-generated LinkedIn slug. Location and role match Instagram bio."
+        },
+        {
+          "platform": "youtube",
+          "username": "lavchaudharygc",
+          "full_name": "GCS Islet",
+          "bio": "Cybersecurity content | Ethical hacking demos | OSINT tools | Lucknow",
+          "profile_pic_description": "Eagle logo (GCS Islet brand)",
+          "location": "Lucknow, India",
+          "category": "Science & Technology",
+          "content_similarity": "YouTube username 'lavchaudharygc' is identical to Instagram personal handle. Channel name changed to 'GCS Islet' brand. Instagram posts directly link to this YouTube channel. Personal username runs org-branded channel."
+        },
+        {
+          "platform": "github",
+          "username": "lavchaudharygc",
+          "full_name": "Lav Chaudhary",
+          "bio": "Cyber Crime Investigator | OSINT | Red Teamer | GCS Islet",
+          "profile_pic_description": "Same photo as Instagram",
+          "location": "Lucknow, India",
+          "content_similarity": "GitHub URL directly in Instagram bio. Username identical. Repos: shadowchat, dark-web-dropbox, beef-framework — match post content exactly. GCS Islet org mentioned in bio.",
+          "github_url": "https://github.com/lavchaudharygc"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram_lavchaudharygc",
+          "platform_b": "twitter_gcsislet",
+          "decision": "YES - SAME PERSON",
+          "confidence": 93,
+          "reasons": [
+            "Instagram bio links gcsislet.com = Twitter handle gcsislet",
+            "Instagram posts tagged to lavchaudharygc are posted FROM gcs_islet account — confirms single operator",
+            "LinkedIn name '(GCS ISLET) Chaudhary' bridges both identities explicitly",
+            "Username divergence: personal vs org brand — common OSINT pattern for founders"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "linkedin",
+          "decision": "YES - SAME PERSON",
+          "confidence": 97,
+          "reasons": [
+            "LinkedIn name explicitly contains both identifiers: 'Lav' and 'GCS ISLET'",
+            "Same location: Lucknow, UP Police",
+            "Same photo (red shirt)",
+            "GitHub URL in Instagram bio matches LinkedIn profile's GitHub section"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "youtube",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "YouTube username 'lavchaudharygc' identical to Instagram handle",
+            "Instagram posts directly link to YouTube videos",
+            "Personal username running org-branded channel — consistent with lavchaudharygc = gcsislet operator pattern"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Lav Chaudhary",
+        "primary_location": "Lucknow, Uttar Pradesh, India",
+        "profession": "Cyber Crime Investigator / OSINT Researcher / GCS Islet Founder / Red Teamer",
+        "emails_found": ["lavchaudharygc@gmail.com", "contact@gcsislet.com"],
+        "links_found": ["gcsislet.com", "lavchaudharygc.netlify.app", "instagram.com/lavchaudharygc", "instagram.com/gcs_islet", "twitter.com/gcsislet", "github.com/lavchaudharygc", "youtube.com/@lavchaudharygc"],
+        "unique_identifier": "GCS Islet / Garuda Cyber Security brand — bridges personal handle lavchaudharygc to org handle gcsislet across all platforms",
+        "overall_confidence": "VERY HIGH — Personal brand (lavchaudharygc) and org brand (gcsislet) confirmed as same operator via LinkedIn name, Instagram bio links, cross-tagged posts, and GitHub.",
+        "confidence_percentage": 96
+      }
+    }
+  },
+  {
+    "example_id": 13,
+    "category": "SIMILAR USERNAME - SAME PERSON",
+    "confidence_tier": "MEDIUM-HIGH (75-90%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Hx6uTyZvW8D7hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "arksscameraroll",
+        "instagram_id": "50283917462",
+        "full_name": "Ark's Camera Roll",
+        "bio": "📷 Just personal photos\n🔙 Main account → @arkagrawall\n📍 India",
+        "followers_count": 214,
+        "following_count": 198,
+        "posts_count": 67,
+        "verified": false,
+        "is_professional_account": false,
+        "is_business_account": false,
+        "business_category": "Not Found",
+        "is_joined_recently": false,
+        "profile_pic_description": "Young Indian male, early 20s — same individual as arkagrawall, casual outdoor photo",
+        "location": "India",
+        "links_in_bio": [],
+        "email_found_in_posts": "Not Found",
+        "hashtags_used": ["#Photography","#PersonalBlog","#CameraRoll","#India","#Travel","#Candid"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DA3nOpLR4k",
+            "caption_preview": "Himachal road trip dump 🏔️ pure unfiltered shots from the Canon #Travel #Photography",
+            "likes": 31,
+            "timestamp": "2026-03-21",
+            "posted_by_account": "arksscameraroll",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/C8zXpVqLT7j",
+            "caption_preview": "Golden hour in Rajasthan 🌅 same spot different light from main account shoot. See @arkagrawall for the edited version.",
+            "likes": 18,
+            "timestamp": "2026-01-14",
+            "posted_by_account": "arksscameraroll",
+            "tagged_user": "arkagrawall"
+          }
+        ],
+        "associated_accounts": ["arkagrawall"]
+      },
+      "discovered_profiles": [
+        {
+          "platform": "instagram_main",
+          "username": "arkagrawall",
+          "full_name": "Ark Agrawal",
+          "bio": "📷 Photographer | 💻 Cybersecurity Enthusiast\n🎥 Camera Roll → @arksscameraroll\n🌐 github.com/arkagrawall",
+          "profile_pic_description": "Same individual — consistent across both accounts",
+          "location": "India",
+          "content_similarity": "arkagrawall Instagram bio explicitly links @arksscameraroll as 'Camera Roll'. arksscameraroll bio links back to @arkagrawall as 'Main account'. Bidirectional cross-reference = definitive same person. Rajasthan shoot caption references both accounts together.",
+          "username_delta": "arksscameraroll vs arkagrawall — shared stem 'ark' + possessive 's' + 'cameraroll' descriptor vs 'agrawall' surname"
+        },
+        {
+          "platform": "twitter_x",
+          "username": "arkagrawall",
+          "full_name": "Ark Agrawal",
+          "bio": "Security researcher | CTF player | Photography lover | Bug bounty hunter | India",
+          "profile_pic_description": "Same individual as arkagrawall Instagram",
+          "location": "India",
+          "category": "Technology",
+          "content_similarity": "Twitter username arkagrawall matches main Instagram account, which is the same person as arksscameraroll. Photography mention in Twitter bio corroborates photography-only alt account existence."
+        },
+        {
+          "platform": "github",
+          "username": "arkagrawall",
+          "full_name": "Ark Agrawal",
+          "bio": "Security researcher. CTF writeups. Bug bounty tools. Open source.",
+          "profile_pic_description": "Same avatar",
+          "location": "India",
+          "content_similarity": "GitHub username arkagrawall directly linked from arkagrawall Instagram bio, which is confirmed same person as arksscameraroll. Repos confirm cybersecurity persona bridging both accounts.",
+          "github_url": "https://github.com/arkagrawall"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram_arksscameraroll",
+          "platform_b": "instagram_arkagrawall",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "arkagrawall bio: 'Camera Roll → @arksscameraroll' — direct attribution",
+            "arksscameraroll bio: 'Main account → @arkagrawall' — bidirectional cross-reference",
+            "Post caption: '@arkagrawall for the edited version' — same shoot, same person",
+            "Same individual in profile photos"
+          ]
+        },
+        {
+          "platform_a": "instagram_arksscameraroll",
+          "platform_b": "twitter_arkagrawall",
+          "decision": "YES - SAME PERSON",
+          "confidence": 95,
+          "reasons": [
+            "arksscameraroll confirmed = arkagrawall on Instagram",
+            "arkagrawall on Twitter = same person (username identical)",
+            "Photography mention in Twitter bio corroborates the alt camera roll account"
+          ]
+        },
+        {
+          "platform_a": "instagram_arksscameraroll",
+          "platform_b": "github_arkagrawall",
+          "decision": "YES - SAME PERSON",
+          "confidence": 94,
+          "reasons": [
+            "arksscameraroll = arkagrawall Instagram (proven)",
+            "arkagrawall Instagram links github.com/arkagrawall directly",
+            "Transitive identity chain: arksscameraroll → arkagrawall Instagram → arkagrawall GitHub"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Ark Agrawal",
+        "primary_location": "India",
+        "profession": "Security Researcher / Bug Bounty Hunter / Photographer",
+        "emails_found": [],
+        "links_found": ["instagram.com/arksscameraroll", "instagram.com/arkagrawall", "twitter.com/arkagrawall", "github.com/arkagrawall"],
+        "unique_identifier": "Bidirectional bio cross-reference between arksscameraroll and arkagrawall — definitive alt-main account relationship",
+        "overall_confidence": "VERY HIGH — Alt account identity confirmed through bidirectional bio links and shared photo content. Transitive chain covers Twitter and GitHub.",
+        "confidence_percentage": 97
+      }
+    }
+  },
+  {
+    "example_id": 14,
+    "category": "SIMILAR USERNAME - SAME PERSON",
+    "confidence_tier": "MEDIUM-HIGH (75-90%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Ix7vUzAwX9E8hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "jatinjangir",
+        "instagram_id": "29301847562",
+        "full_name": "Jatin Jangir",
+        "bio": "🔐 Security Researcher | Bug Bounty Hunter\n🏆 Hall of Fame: Google, Microsoft, Apple\n🇮🇳 Rajasthan, India\n🐦 Twitter: jatinjangir_\n🔗 jatinjangir.com",
+        "followers_count": 18743,
+        "following_count": 621,
+        "posts_count": 247,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": false,
+        "business_category": "Tech",
+        "is_joined_recently": false,
+        "profile_pic_description": "Young Indian male, 20s, casual — Rajasthan background in photos",
+        "location": "Rajasthan, India",
+        "links_in_bio": [
+          "https://jatinjangir.com",
+          "https://linkedin.com/in/jatinjangir"
+        ],
+        "email_found_in_posts": "jatin@jatinjangir.com",
+        "hashtags_used": ["#BugBounty","#SecurityResearch","#EthicalHacking","#HallOfFame","#VAPT","#WebSecurity","#OSINT","#InfoSec","#CTF","#Rajasthan","#India","#HackerOne","#Bugcrowd"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DCr9oTqLT5n",
+            "caption_preview": "Just got acknowledged in Google's Hall of Fame for a P2 XSS on accounts.google.com 🎉 Full write-up on jatinjangir.com #BugBounty",
+            "likes": 2847,
+            "timestamp": "2026-05-28",
+            "posted_by_account": "jatinjangir",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DBpZoNqMR7l",
+            "caption_preview": "SSRF to RCE chain — how I escalated a low-severity finding to critical. Thread on Twitter @jatinjangir_ for details 🧵",
+            "likes": 4312,
+            "timestamp": "2026-04-10",
+            "posted_by_account": "jatinjangir",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "jatinjangir_",
+          "full_name": "Jatin Jangir",
+          "bio": "Bug Bounty Hunter | Google, Microsoft HoF | Security Research | Rajasthan 🇮🇳 | jatinjangir.com",
+          "profile_pic_description": "Same individual — same casual style",
+          "location": "Rajasthan, India",
+          "category": "Technology",
+          "content_similarity": "Username 'jatinjangir_' vs Instagram 'jatinjangir' — trailing underscore difference only. Instagram bio explicitly states 'Twitter: jatinjangir_'. Instagram post captions reference '@jatinjangir_ for details' — direct attribution.",
+          "username_delta": "jatinjangir vs jatinjangir_ — single underscore suffix added on Twitter (likely taken username)"
+        },
+        {
+          "platform": "linkedin",
+          "username": "jatinjangir",
+          "full_name": "Jatin Jangir",
+          "bio": "Security Researcher | Bug Bounty Hunter | Google, Microsoft, Apple Hall of Fame | Rajasthan, India",
+          "profile_pic_description": "Same individual — professional headshot",
+          "location": "Rajasthan, India",
+          "content_similarity": "Username jatinjangir identical to Instagram. LinkedIn URL in Instagram bio directly. Hall of Fame acknowledgments (Google, Microsoft, Apple) consistent across both platforms.",
+          "username_delta": "jatinjangir identical on Instagram and LinkedIn — only Twitter differs by underscore"
+        },
+        {
+          "platform": "personal_website",
+          "username": "jatinjangir.com",
+          "full_name": "Jatin Jangir",
+          "bio": "Security researcher. Bug bounty write-ups. Hall of Fame. Rajasthan, India.",
+          "profile_pic_description": "Same individual",
+          "location": "Rajasthan, India",
+          "content_similarity": "Domain jatinjangir.com in Instagram bio and Twitter bio. Blog posts match Instagram post topics (Google XSS writeup, SSRF chain). Email jatin@jatinjangir.com found in posts.",
+          "website_url": "https://jatinjangir.com"
+        },
+        {
+          "platform": "github",
+          "username": "jatinjangir",
+          "full_name": "Jatin Jangir",
+          "bio": "Security researcher | Bug bounty tools | Rajasthan",
+          "profile_pic_description": "Same avatar",
+          "location": "Rajasthan, India",
+          "content_similarity": "Username jatinjangir identical. Repos: bug-bounty-scripts, recon-automation align with Instagram post content. Same domain jatinjangir.com referenced.",
+          "github_url": "https://github.com/jatinjangir"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram",
+          "platform_b": "twitter_x",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Instagram bio explicitly says 'Twitter: jatinjangir_'",
+            "Instagram post captions reference '@jatinjangir_' for thread details",
+            "Username difference is single trailing underscore — near-identical",
+            "Same content: Google HoF, SSRF/RCE chain, Rajasthan location"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "linkedin",
+          "decision": "YES - SAME PERSON",
+          "confidence": 98,
+          "reasons": [
+            "Username jatinjangir identical on LinkedIn",
+            "LinkedIn URL directly in Instagram bio",
+            "Same Hall of Fame acknowledgments (Google, Microsoft, Apple)",
+            "Same location (Rajasthan, India)"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "github",
+          "decision": "YES - SAME PERSON",
+          "confidence": 95,
+          "reasons": [
+            "Username jatinjangir identical",
+            "Repos match Instagram post topics",
+            "Same location and domain reference"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Jatin Jangir",
+        "primary_location": "Rajasthan, India",
+        "profession": "Security Researcher / Bug Bounty Hunter / Google-Microsoft-Apple Hall of Fame",
+        "emails_found": ["jatin@jatinjangir.com"],
+        "links_found": ["jatinjangir.com", "instagram.com/jatinjangir", "twitter.com/jatinjangir_", "linkedin.com/in/jatinjangir", "github.com/jatinjangir"],
+        "unique_identifier": "jatinjangir.com domain + Hall of Fame acknowledgments (Google, Microsoft, Apple) — unique cross-platform fingerprint",
+        "overall_confidence": "VERY HIGH — Username 'jatinjangir' identical on Instagram, LinkedIn, GitHub. Twitter differs by only one underscore, and Instagram bio explicitly names it. Domain anchors all accounts.",
+        "confidence_percentage": 97
+      }
+    }
+  },
+  {
+    "example_id": 15,
+    "category": "SIMILAR USERNAME - DIFFERENT PERSON",
+    "confidence_tier": "LOW-MEDIUM (40-60%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Jx8wVaBxY1F9hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "cybersecurityghost",
+        "instagram_id": "81039274651",
+        "full_name": "Ghost | Cyber Security",
+        "bio": "👻 Anonymous | Security Research\n💻 CTF | Malware Analysis | Reverse Engineering\n🌍 Location Undisclosed\n🔒 DM for collaboration",
+        "followers_count": 12847,
+        "following_count": 89,
+        "posts_count": 312,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": false,
+        "business_category": "Tech",
+        "is_joined_recently": false,
+        "profile_pic_description": "Anonymous ghost avatar — no real photo. Dark aesthetic, skull/ghost icon.",
+        "location": "Undisclosed",
+        "links_in_bio": [
+          "https://github.com/cybersecurityghost"
+        ],
+        "email_found_in_posts": "Not Found",
+        "hashtags_used": ["#CyberSecurity","#CTF","#MalwareAnalysis","#ReverseEngineering","#Anonymous","#Ghost","#DarkWeb","#InfoSec","#Hacking","#ZeroDay","#Exploit","#Security","#Privacy"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DDp8oTqMT6o",
+            "caption_preview": "New CTF writeup — pwn challenge from PicoCTF. Buffer overflow to RCE. Full write-up on GitHub. #CTF #ReverseEngineering",
+            "likes": 1821,
+            "timestamp": "2026-06-15",
+            "posted_by_account": "cybersecurityghost",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DC1mNpqLR7k",
+            "caption_preview": "Malware sample analysis — AgentTesla stealer. Full YARA rules and IOCs posted to GitHub. Stay protected 🔒 #MalwareAnalysis",
+            "likes": 2943,
+            "timestamp": "2026-05-08",
+            "posted_by_account": "cybersecurityghost",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "cyb3rsecghost",
+          "full_name": "Cyber Sec Ghost",
+          "bio": "Security researcher | Red team | Malware analysis | Somewhere on the internet 🌐",
+          "profile_pic_description": "Ghost icon — similar dark aesthetic but different logo style",
+          "location": "Undisclosed",
+          "category": "Technology",
+          "content_similarity": "Username 'cyb3rsecghost' vs Instagram 'cybersecurityghost' — similar stem (cybersec+ghost) but Twitter uses leet (3 for e) and shortens 'security' to 'sec'. Thematic overlap (ghost branding, anonymous security researcher) but NO direct cross-reference in bios. Different GitHub links.",
+          "username_delta": "cybersecurityghost vs cyb3rsecghost — superficial lexical similarity; common 'ghost' security branding trope may explain coincidence"
+        },
+        {
+          "platform": "github",
+          "username": "cybersecurityghost",
+          "full_name": "ghost_researcher",
+          "bio": "CTF player | Malware analysis | Reverse engineering. Posts are technical. No personal info shared.",
+          "profile_pic_description": "Same ghost icon as Instagram — likely same person",
+          "location": "Undisclosed",
+          "content_similarity": "Username cybersecurityghost identical to Instagram. Instagram bio links this GitHub directly. Repos: ctf-writeups, malware-samples-yara — match Instagram post topics exactly. HIGH confidence this GitHub = Instagram cybersecurityghost.",
+          "github_url": "https://github.com/cybersecurityghost"
+        },
+        {
+          "platform": "twitter_x",
+          "username": "ghostsecresearch",
+          "full_name": "Ghost Security Research",
+          "bio": "Malware analysis | Threat intelligence | CTF | Anonymous researcher | DM for collab",
+          "profile_pic_description": "Ghost icon — different graphic style from Instagram account",
+          "location": "Undisclosed",
+          "category": "Technology",
+          "content_similarity": "Username 'ghostsecresearch' has overlapping keywords (ghost, sec, research) with Instagram 'cybersecurityghost'. BUT: no cross-reference, different GitHub account linked (github.com/ghostsecresearch), different writing style in posts. Coincidental thematic similarity in anonymous security niche.",
+          "username_delta": "ghostsecresearch vs cybersecurityghost — word order different, no shared leet patterns. Ghost+security theme is common in anonymous security community."
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram_cybersecurityghost",
+          "platform_b": "twitter_cyb3rsecghost",
+          "decision": "MAYBE - UNCERTAIN",
+          "confidence": 42,
+          "reasons": [
+            "Username similarity: both use 'cybersec/cyb3rsec' + 'ghost' — but ghost branding is a common trope in anonymous security community",
+            "No direct cross-reference in either bio",
+            "Different GitHub accounts linked (instagram links github.com/cybersecurityghost; Twitter links a different repo)",
+            "Writing style analysis: Instagram posts are more technical and verbose; Twitter posts shorter and more casual"
+          ],
+          "differentiating_factors": [
+            "No bio cross-reference",
+            "Different linked GitHub accounts",
+            "Leet spelling (cyb3r vs cyber) inconsistent — same person would typically use consistent leet patterns"
+          ]
+        },
+        {
+          "platform_a": "instagram_cybersecurityghost",
+          "platform_b": "twitter_ghostsecresearch",
+          "decision": "NO - DIFFERENT PERSON",
+          "confidence": 85,
+          "reasons": [
+            "Different GitHub accounts: cybersecurityghost (Instagram) vs ghostsecresearch (Twitter)",
+            "No cross-reference in bios",
+            "Word order different: cybersecurityghost vs ghostsecresearch",
+            "Malware sample types differ: Instagram posts AgentTesla; ghostsecresearch posts Emotet/Qbot families",
+            "Ghost + security is a common anonymous researcher branding — not a unique identifier"
+          ]
+        },
+        {
+          "platform_a": "instagram_cybersecurityghost",
+          "platform_b": "github_cybersecurityghost",
+          "decision": "YES - SAME PERSON",
+          "confidence": 97,
+          "reasons": [
+            "Username cybersecurityghost identical",
+            "Instagram bio directly links github.com/cybersecurityghost",
+            "GitHub repos (ctf-writeups, malware-samples-yara) match Instagram post content exactly"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Unknown — anonymous account",
+        "primary_location": "Undisclosed",
+        "profession": "Anonymous Security Researcher / CTF Player / Malware Analyst",
+        "emails_found": [],
+        "links_found": ["instagram.com/cybersecurityghost", "github.com/cybersecurityghost"],
+        "overall_confidence": "HIGH for Instagram-GitHub link. Twitter accounts (cyb3rsecghost, ghostsecresearch) are DIFFERENT people with similar ghost-branding in anonymous security niche — coincidental similarity, not same operator.",
+        "confidence_percentage": 40,
+        "key_finding": "OSINT TRAP: Multiple accounts use ghost-themed security branding. Username similarity alone is insufficient — GitHub link in bio is the only reliable anchor for cybersecurityghost identity."
+      }
+    }
+  },
+  {
+    "example_id": 16,
+    "category": "SIMILAR USERNAME - DIFFERENT PERSON",
+    "confidence_tier": "LOW (20-45%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Kx9xWbCyZ2G1hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "darkarmy__",
+        "instagram_id": "64728391047",
+        "full_name": "Dark Army",
+        "bio": "🖤 Dark Army Crew | Photography | Urban Exploration\n📸 Mumbai street photography\n🎨 Digital Art\n📍 Mumbai, India",
+        "followers_count": 4821,
+        "following_count": 1247,
+        "posts_count": 543,
+        "verified": false,
+        "is_professional_account": false,
+        "is_business_account": false,
+        "business_category": "Not Found",
+        "is_joined_recently": false,
+        "profile_pic_description": "Group of young people — street photography aesthetic, Mumbai urban setting",
+        "location": "Mumbai, Maharashtra, India",
+        "links_in_bio": [
+          "https://darkarmy.in"
+        ],
+        "email_found_in_posts": "Not Found",
+        "hashtags_used": ["#DarkArmy","#MumbaiPhotography","#StreetPhotography","#UrbanExploration","#DigitalArt","#Mumbai","#India","#Photography","#Aesthetic","#DarkAesthetic","#Crew"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DCt9pUqMT7o",
+            "caption_preview": "Dharavi at night 🌃 — the city never sleeps. Shot on Canon 5D Mark IV. #MumbaiPhotography #UrbanExploration",
+            "likes": 412,
+            "timestamp": "2026-06-05",
+            "posted_by_account": "darkarmy__",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DBqZoOpNR8m",
+            "caption_preview": "Dark Army crew meetup — 12 cities, 1 mission: document the unseen India. DM to join your city chapter 📸",
+            "likes": 891,
+            "timestamp": "2026-05-15",
+            "posted_by_account": "darkarmy__",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "darkarmy_hacks",
+          "full_name": "Dark Army | Hacks",
+          "bio": "🔓 Cybersecurity | CTF | Hacking group | We break things ethically | Anonymous | No location",
+          "profile_pic_description": "Anonymous mask logo — completely different from Instagram photography aesthetic",
+          "location": "Undisclosed",
+          "category": "Technology",
+          "content_similarity": "Username 'darkarmy_hacks' vs Instagram 'darkarmy__' — both use 'darkarmy' but Twitter adds '_hacks' (cybersecurity focus) while Instagram adds double underscore and focuses on photography/urban exploration. Completely different domains: photography vs cybersecurity. No cross-reference.",
+          "username_delta": "darkarmy__ (photography crew) vs darkarmy_hacks (hacking group) — 'Dark Army' is also a famous hacker group from Mr. Robot TV show — common branding source for multiple unrelated groups"
+        },
+        {
+          "platform": "facebook",
+          "username": "DarkArmyCrew",
+          "full_name": "Dark Army Photography Crew",
+          "bio": "Mumbai-based street photography collective. Urban exploration. Digital art. Est. 2019.",
+          "profile_pic_description": "Same group aesthetic as Instagram — Mumbai setting",
+          "location": "Mumbai, India",
+          "content_similarity": "Facebook 'DarkArmyCrew' aligns with Instagram 'darkarmy__' — same photography collective branding, same Mumbai location, same establishment narrative. Facebook is a secondary account of the same photography group (NOT the hacking group on Twitter).",
+          "username_delta": "DarkArmyCrew vs darkarmy__ — different platform username formatting but same collective identity"
+        },
+        {
+          "platform": "github",
+          "username": "dark-army-sec",
+          "full_name": "Dark Army Security",
+          "bio": "Ethical hacking CTF team. Anonymous. Tools, exploits, writeups.",
+          "profile_pic_description": "Anonymous mask — cybersecurity aesthetic, completely different from Instagram",
+          "location": "Undisclosed",
+          "content_similarity": "GitHub 'dark-army-sec' aligns with Twitter 'darkarmy_hacks' — same cybersecurity group, anonymous, not the Mumbai photography crew. Dark Army name used by two ENTIRELY DIFFERENT groups: one is a photography collective (Instagram darkarmy__), one is a hacking collective (Twitter darkarmy_hacks + GitHub dark-army-sec).",
+          "github_url": "https://github.com/dark-army-sec"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram_darkarmy__",
+          "platform_b": "twitter_darkarmy_hacks",
+          "decision": "NO - DIFFERENT PERSON",
+          "confidence": 88,
+          "reasons": [
+            "Instagram: photography collective, Mumbai, visible group members, art/urban focus",
+            "Twitter: anonymous cybersecurity hacking group, no location, mask logo",
+            "No cross-reference between accounts in either bio",
+            "'Dark Army' branding is inspired by Mr. Robot TV show hacking group — commonly adopted by multiple unrelated entities",
+            "Domain darkarmy.in (Instagram) linked — no mention of hacking; darkarmy_hacks has no website link"
+          ]
+        },
+        {
+          "platform_a": "instagram_darkarmy__",
+          "platform_b": "facebook_DarkArmyCrew",
+          "decision": "YES - SAME PERSON",
+          "confidence": 92,
+          "reasons": [
+            "Same photography collective branding: Dark Army Crew",
+            "Same city: Mumbai",
+            "Same founding narrative and aesthetic",
+            "Facebook username 'DarkArmyCrew' extends the Instagram collective identity"
+          ]
+        },
+        {
+          "platform_a": "twitter_darkarmy_hacks",
+          "platform_b": "github_dark-army-sec",
+          "decision": "YES - SAME PERSON",
+          "confidence": 87,
+          "reasons": [
+            "Both: anonymous, cybersecurity, CTF, ethical hacking focus",
+            "Both: undisclosed location, mask aesthetic",
+            "GitHub repos align with Twitter content (CTF writeups, exploit tools)",
+            "No cross-reference with Instagram photography collective"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Multiple entities — NOT the same group",
+        "primary_location": "Two distinct groups: Mumbai (photography) and Undisclosed (hacking)",
+        "profession": "Group 1: Photography / Urban Art Collective (Instagram darkarmy__, Facebook DarkArmyCrew). Group 2: Anonymous Cybersecurity CTF Team (Twitter darkarmy_hacks, GitHub dark-army-sec)",
+        "emails_found": [],
+        "links_found": ["instagram.com/darkarmy__", "darkarmy.in", "facebook.com/DarkArmyCrew", "twitter.com/darkarmy_hacks", "github.com/dark-army-sec"],
+        "overall_confidence": "HIGH CONFIDENCE — These are two different groups sharing the 'Dark Army' brand name, inspired by Mr. Robot. OSINT investigators must not conflate them based on username similarity alone.",
+        "confidence_percentage": 88,
+        "key_finding": "OSINT WARNING: 'Dark Army' is a pop culture reference (Mr. Robot) adopted by many groups. Username similarity here is coincidental — photography crew vs hacking collective are unrelated entities."
+      }
+    }
+  },
+  {
+    "example_id": 17,
+    "category": "USERNAME NOT RELATED - PERSON NOT RELATED",
+    "confidence_tier": "LOW (0-30%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Lx1yXcDzA3H2hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "amolshelke",
+        "instagram_id": "37291048573",
+        "full_name": "Amol Shelke",
+        "bio": "🎯 Penetration Tester | CEH | OSCP Certified\n🔐 Web & Mobile Security | API Testing\n📍 Pune, Maharashtra, India\n🌐 amolshelke.in",
+        "followers_count": 7284,
+        "following_count": 438,
+        "posts_count": 189,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": false,
+        "business_category": "Tech",
+        "is_joined_recently": false,
+        "profile_pic_description": "Young Indian male, 20s, blue shirt — professional setting, Pune",
+        "location": "Pune, Maharashtra, India",
+        "links_in_bio": [
+          "https://amolshelke.in",
+          "https://linkedin.com/in/amolshelke",
+          "https://github.com/amolshelke"
+        ],
+        "email_found_in_posts": "amol@amolshelke.in",
+        "hashtags_used": ["#PenTest","#OSCP","#CEH","#WebSecurity","#APISecurity","#MobileSecurity","#CyberSecurity","#EthicalHacking","#BugBounty","#Pune","#Maharashtra","#India","#InfoSec","#VAPT"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DDr9pVqMU8p",
+            "caption_preview": "Android app security testing with Frida — bypassing SSL pinning in 2026. Full write-up on amolshelke.in #MobileSecurity #OSCP",
+            "likes": 1847,
+            "timestamp": "2026-06-18",
+            "posted_by_account": "amolshelke",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DCsZpWqLT9n",
+            "caption_preview": "GraphQL security testing — introspection attacks, batching exploits, and authorization bypass. Complete guide 🔐 #APISecurity",
+            "likes": 2341,
+            "timestamp": "2026-05-22",
+            "posted_by_account": "amolshelke",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "koushikdutta",
+          "full_name": "Koushik Dutta",
+          "bio": "Android developer. ClockworkMod. Helium. Push. Iron. AllCast. CyanogenMod. koush.com",
+          "profile_pic_description": "Indian male, 30s — completely different person from Instagram amolshelke",
+          "location": "San Francisco, CA, USA",
+          "category": "Technology",
+          "content_similarity": "NO RELATION. Koushik Dutta is a well-known Android developer (CyanogenMod, ClockworkMod). Amol Shelke is a penetration tester in Pune. Different names, different locations (SF vs Pune), different professions (Android dev vs pen tester). Only similarity: both are in tech.",
+          "username_delta": "amolshelke vs koushikdutta — completely different names, no lexical similarity"
+        },
+        {
+          "platform": "github",
+          "username": "koush",
+          "full_name": "Koushik Dutta",
+          "bio": "I make Android apps. ClockworkMod, CyanogenMod, AllCast, Helium, Push, Iron.",
+          "profile_pic_description": "Same individual as Twitter koushikdutta — confirmed different person from Instagram amolshelke",
+          "location": "San Francisco, CA, USA",
+          "content_similarity": "GitHub 'koush' = Koushik Dutta (established identity). Zero relation to amolshelke on Instagram. Repos: android/clockworkmod/allcast are consumer Android tools, not security research tools.",
+          "github_url": "https://github.com/koush"
+        },
+        {
+          "platform": "linkedin",
+          "username": "amolshelke",
+          "full_name": "Amol Shelke",
+          "bio": "Penetration Tester | OSCP | CEH | Web & Mobile Security | Pune, Maharashtra",
+          "profile_pic_description": "Same individual as Instagram — blue shirt, Pune setting",
+          "location": "Pune, Maharashtra, India",
+          "content_similarity": "LinkedIn 'amolshelke' = same person as Instagram 'amolshelke'. Username identical, same city, same certifications. This is the correct match for amolshelke. Koushik Dutta (Twitter/GitHub) is an entirely separate, unrelated individual."
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram_amolshelke",
+          "platform_b": "twitter_koushikdutta",
+          "decision": "NO - DIFFERENT PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Completely different names: Amol Shelke vs Koushik Dutta",
+            "Completely different locations: Pune, India vs San Francisco, USA",
+            "Completely different professions: Penetration Tester vs Android Developer",
+            "No lexical similarity in usernames: amolshelke vs koushikdutta",
+            "No cross-reference in bios or posts"
+          ]
+        },
+        {
+          "platform_a": "instagram_amolshelke",
+          "platform_b": "github_koush",
+          "decision": "NO - DIFFERENT PERSON",
+          "confidence": 99,
+          "reasons": [
+            "koush = Koushik Dutta (established Android developer identity)",
+            "amolshelke = Amol Shelke (penetration tester in Pune)",
+            "Repos (clockworkmod, allcast) are consumer Android — zero relation to security research",
+            "These are two completely unrelated tech professionals"
+          ]
+        },
+        {
+          "platform_a": "instagram_amolshelke",
+          "platform_b": "linkedin_amolshelke",
+          "decision": "YES - SAME PERSON",
+          "confidence": 98,
+          "reasons": [
+            "Username amolshelke identical",
+            "LinkedIn URL directly in Instagram bio",
+            "Same certifications (OSCP, CEH), same location (Pune), same role",
+            "Same profile photo"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Amol Shelke (subject) | Koushik Dutta (separate, unrelated person mistakenly pulled into OSINT scope)",
+        "primary_location": "Amol Shelke: Pune, Maharashtra, India | Koushik Dutta: San Francisco, CA, USA",
+        "profession": "Amol Shelke: Penetration Tester / OSCP / CEH | Koushik Dutta: Android Developer (CyanogenMod, ClockworkMod)",
+        "emails_found": ["amol@amolshelke.in"],
+        "links_found": ["amolshelke.in", "instagram.com/amolshelke", "linkedin.com/in/amolshelke", "github.com/amolshelke"],
+        "overall_confidence": "NO RELATION between amolshelke and koushikdutta/koush. These are two entirely different individuals in tech. Koushik Dutta is a well-known public figure in Android development with no connection to security research or Pune.",
+        "confidence_percentage": 3,
+        "key_finding": "OSINT LESSON: When doing cross-platform lookup, a tech profession alone is not a connecting signal. Names, locations, and content must align. Koushik Dutta appearing in results is an unrelated discovery — do not merge identities."
+      }
+    }
+  },
+  {
+    "example_id": 18,
+    "category": "SAME USERNAME - SAME PERSON",
+    "confidence_tier": "HIGH (90-100%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Mx2zYdEaB4I3hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "trishneetarora",
+        "instagram_id": "19283748561",
+        "full_name": "Trishneet Arora",
+        "bio": "🏆 Youngest Cybersecurity Entrepreneur | Forbes 30U30\n📚 Author — 8 Books\n🎤 TEDx Speaker\n🌐 TAC Security | tacdefense.com\n📍 Chandigarh, India",
+        "followers_count": 218439,
+        "following_count": 1024,
+        "posts_count": 1847,
+        "verified": true,
+        "is_professional_account": true,
+        "is_business_account": true,
+        "business_category": "Public Figure",
+        "is_joined_recently": false,
+        "profile_pic_description": "Young Indian male, professional, sharp-dressed — public figure aesthetic, Chandigarh",
+        "location": "Chandigarh, India",
+        "links_in_bio": [
+          "https://tacdefense.com",
+          "https://linkedin.com/in/trishneetarora",
+          "https://youtube.com/@trishneetarora"
+        ],
+        "email_found_in_posts": "connect@tacdefense.com",
+        "hashtags_used": ["#CyberSecurity","#Entrepreneur","#Forbes30U30","#TEDx","#Author","#TACsecurity","#India","#Chandigarh","#PublicFigure","#Hacking","#CISO","#StartUp","#CyberDefense","#InfoSec","#Leadership"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DDu9qWrNU9q",
+            "caption_preview": "Just closed a $10M Series A for TAC Security 🚀 From a student in Chandigarh to securing Fortune 500 companies. The journey continues. #Entrepreneur #CyberSecurity",
+            "likes": 18472,
+            "timestamp": "2026-06-20",
+            "posted_by_account": "trishneetarora",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DCvZqXqMU7o",
+            "caption_preview": "My 8th book drops next month — everything I've learned about building a cybersecurity company from scratch. Pre-order link in bio 📚",
+            "likes": 24831,
+            "timestamp": "2026-05-25",
+            "posted_by_account": "trishneetarora",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "TrishneetArora",
+          "full_name": "Trishneet Arora",
+          "bio": "Youngest Cybersecurity Entrepreneur | Forbes 30U30 | Author | TEDx | Founder, TAC Security | Chandigarh",
+          "profile_pic_description": "Same professional photo as Instagram — verified blue tick",
+          "location": "Chandigarh, India",
+          "category": "Public Figure",
+          "content_similarity": "Username TrishneetArora identical (case difference only). Verified on both. Same Forbes 30U30, Author, TEDx, TAC Security identifiers. Content mirrors Instagram — funding announcements, book launches.",
+          "operator_identity_signal": "Verified public figure on both platforms"
+        },
+        {
+          "platform": "linkedin",
+          "username": "trishneetarora",
+          "full_name": "Trishneet Arora",
+          "bio": "Founder & CEO at TAC Security | Cybersecurity Entrepreneur | Forbes 30U30 | Author of 8 Books | TEDx Speaker | Chandigarh",
+          "profile_pic_description": "Same professional photo",
+          "location": "Chandigarh, India",
+          "content_similarity": "Username trishneetarora identical. LinkedIn URL in Instagram bio directly. 500,000+ LinkedIn followers consistent with Instagram public figure status. CEO title = founder identity confirmed."
+        },
+        {
+          "platform": "youtube",
+          "username": "trishneetarora",
+          "full_name": "Trishneet Arora",
+          "bio": "Cybersecurity, entrepreneurship, motivational content | Forbes 30U30 | Chandigarh | tacdefense.com",
+          "profile_pic_description": "Same professional photo",
+          "location": "Chandigarh, India",
+          "category": "Education & Business",
+          "content_similarity": "Username trishneetarora identical. YouTube URL in Instagram bio directly. Videos mirror Instagram topics (startup journey, book launches, cybersecurity)."
+        },
+        {
+          "platform": "personal_website",
+          "username": "tacdefense.com",
+          "full_name": "TAC Security — Trishneet Arora",
+          "bio": "TAC Security: Enterprise cybersecurity solutions. Founded by Trishneet Arora. Serving Fortune 500 companies.",
+          "profile_pic_description": "Professional photo of Trishneet Arora on About page",
+          "location": "Chandigarh, India",
+          "content_similarity": "Domain tacdefense.com in Instagram bio, Twitter bio, LinkedIn. About page credits Trishneet Arora as founder. Connect email matches post-found email.",
+          "website_url": "https://tacdefense.com"
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram",
+          "platform_b": "twitter_x",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username TrishneetArora identical (case-insensitive)",
+            "Verified on both platforms — public figure",
+            "Same Forbes 30U30, Author, TEDx, TAC Security identifiers",
+            "Content mirroring: same announcements (Series A, book launch)"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "linkedin",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username trishneetarora identical",
+            "LinkedIn URL directly in Instagram bio",
+            "Same photo, same location, same role (Founder, TAC Security)"
+          ]
+        },
+        {
+          "platform_a": "instagram",
+          "platform_b": "youtube",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username trishneetarora identical",
+            "YouTube URL directly in Instagram bio",
+            "Same content themes across both"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Trishneet Arora",
+        "primary_location": "Chandigarh, India",
+        "profession": "Cybersecurity Entrepreneur / Founder & CEO, TAC Security / Forbes 30U30 / Author (8 books) / TEDx Speaker",
+        "emails_found": ["connect@tacdefense.com"],
+        "links_found": ["tacdefense.com", "instagram.com/trishneetarora", "twitter.com/TrishneetArora", "linkedin.com/in/trishneetarora", "youtube.com/@trishneetarora"],
+        "overall_confidence": "VERY HIGH — Username 'trishneetarora' identical across all platforms. Verified public figure on Instagram and Twitter. All platform bios cross-reference each other directly. TAC Security brand anchors all accounts.",
+        "confidence_percentage": 99
+      }
+    }
+  },
+  {
+    "example_id": 19,
+    "category": "SIMILAR USERNAME - DIFFERENT PERSON",
+    "confidence_tier": "LOW-MEDIUM (30-50%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Nx3aZeFbC5J4hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "sumitshahofficial",
+        "instagram_id": "72910384756",
+        "full_name": "Sumit Shah",
+        "bio": "🎤 Motivational Speaker | Life Coach\n📚 Author — 'Rise Every Day'\n🙏 Spreading positivity\n📍 Ahmedabad, Gujarat\n🌐 sumitshah.in",
+        "followers_count": 89241,
+        "following_count": 2847,
+        "posts_count": 1243,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": true,
+        "business_category": "Public Figure",
+        "is_joined_recently": false,
+        "profile_pic_description": "Middle-aged Indian male, 40s, formal kurta — motivational speaker aesthetic, Ahmedabad",
+        "location": "Ahmedabad, Gujarat, India",
+        "links_in_bio": [
+          "https://sumitshah.in",
+          "https://youtube.com/@sumitshahofficial"
+        ],
+        "email_found_in_posts": "connect@sumitshah.in",
+        "hashtags_used": ["#MotivationalSpeaker","#LifeCoach","#Author","#Positivity","#Success","#India","#Ahmedabad","#Gujarat","#SumitShah","#PersonalDevelopment","#Leadership","#Growth","#Inspiration","#Mindset"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DDv1rXsOU2r",
+            "caption_preview": "Your mindset is your greatest asset. Stop letting fear define your next chapter. 🙏 #MotivationalSpeaker #Mindset",
+            "likes": 3247,
+            "timestamp": "2026-06-22",
+            "posted_by_account": "sumitshahofficial",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DCwZrYrMV8p",
+            "caption_preview": "Spoke at the National Youth Summit in Jaipur today. 5,000 young minds. Energy was electric! 🎤 #PublicSpeaker #India",
+            "likes": 7841,
+            "timestamp": "2026-05-27",
+            "posted_by_account": "sumitshahofficial",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "instagram",
+          "username": "sumit_._shah_",
+          "full_name": "SUMIT SHAH",
+          "bio": "Pvt --@serotonin.glitch | Building @ValanzoHQ | Delhi",
+          "profile_pic_description": "Young Indian male, 19-20 years, casual gym aesthetic — completely different from Ahmedabad motivational speaker",
+          "location": "Delhi, India",
+          "content_similarity": "Username similarity: 'sumitshahofficial' vs 'sumit_._shah_' — both contain 'sumitshah' but are different people. Sumit Shah is a very common Indian name. Different ages (40s vs 19), different cities (Ahmedabad vs Delhi), different professions (motivational speaker vs startup founder/cybersec).",
+          "username_delta": "sumitshahofficial (mature, professional brand) vs sumit_._shah_ (youthful, decorated format) — both use 'Sumit Shah' base because it is a common name in India"
+        },
+        {
+          "platform": "twitter_x",
+          "username": "sumitshahpvt",
+          "full_name": "Sumit Shah",
+          "bio": "Building @ValanzoHQ | OSINTPulse | Cybersec | Delhi | 19",
+          "profile_pic_description": "Young Indian male, 19 — same individual as Instagram sumit_._shah_. NOT the Ahmedabad speaker.",
+          "location": "Delhi",
+          "category": "Technology",
+          "content_similarity": "Twitter 'sumitshahpvt' = Delhi Sumit Shah (young cybersec entrepreneur, from Example 11). NOT the same as Ahmedabad motivational speaker 'sumitshahofficial'. Both are named Sumit Shah — coincidental common name match.",
+          "username_delta": "sumitshahpvt (Delhi, 19, startup) vs sumitshahofficial (Ahmedabad, 40s, speaker) — entirely different people"
+        },
+        {
+          "platform": "youtube",
+          "username": "sumitshahofficial",
+          "full_name": "Sumit Shah",
+          "bio": "Motivational content | Life coaching | Personal development | Ahmedabad | sumitshah.in",
+          "profile_pic_description": "Same middle-aged individual as Instagram sumitshahofficial — Ahmedabad speaker",
+          "location": "Ahmedabad, India",
+          "category": "Education",
+          "content_similarity": "YouTube username sumitshahofficial identical to Instagram. YouTube URL in Instagram bio directly. This YouTube = Ahmedabad speaker Sumit Shah. Not the Delhi startup founder."
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram_sumitshahofficial",
+          "platform_b": "instagram_sumit_._shah_",
+          "decision": "NO - DIFFERENT PERSON",
+          "confidence": 95,
+          "reasons": [
+            "Different ages: 40s (Ahmedabad speaker) vs 19 (Delhi founder)",
+            "Different cities: Ahmedabad vs Delhi",
+            "Different professions: motivational speaker/author vs startup founder/cybersecurity",
+            "'Sumit Shah' is an extremely common Indian name — no uniqueness value",
+            "No cross-reference between accounts",
+            "Different aesthetic: formal kurta vs gym casual"
+          ]
+        },
+        {
+          "platform_a": "instagram_sumitshahofficial",
+          "platform_b": "twitter_sumitshahpvt",
+          "decision": "NO - DIFFERENT PERSON",
+          "confidence": 96,
+          "reasons": [
+            "sumitshahpvt = Delhi 19-year-old startup founder (confirmed from Example 11)",
+            "sumitshahofficial = Ahmedabad 40s motivational speaker",
+            "Completely different demographics, locations, and professional domains",
+            "'pvt' suffix on Twitter is consistent with 'Pvt' in young Sumit's Instagram bio — both reference the same young person, not the speaker"
+          ]
+        },
+        {
+          "platform_a": "instagram_sumitshahofficial",
+          "platform_b": "youtube_sumitshahofficial",
+          "decision": "YES - SAME PERSON",
+          "confidence": 98,
+          "reasons": [
+            "Username sumitshahofficial identical",
+            "YouTube URL directly in Instagram bio",
+            "Same profession, same city (Ahmedabad), same photo"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Two different people named Sumit Shah",
+        "primary_location": "Sumit Shah #1: Ahmedabad, Gujarat (motivational speaker) | Sumit Shah #2: Delhi (startup founder, cybersec)",
+        "profession": "Sumit Shah #1: Motivational Speaker / Author / Life Coach | Sumit Shah #2: Valanzo Founder / Cybersecurity Builder",
+        "emails_found": ["connect@sumitshah.in (Speaker)"],
+        "links_found": ["sumitshah.in", "instagram.com/sumitshahofficial", "youtube.com/@sumitshahofficial", "instagram.com/sumit_._shah_", "twitter.com/sumitshahpvt"],
+        "overall_confidence": "HIGH CONFIDENCE these are DIFFERENT people. 'Sumit Shah' is among the most common Indian names. Username similarity is coincidental — demographics, locations, and professions clearly separate these two individuals.",
+        "confidence_percentage": 6,
+        "key_finding": "OSINT LESSON: Common Indian names (Sumit Shah, Rahul Singh, Priya Sharma) create false positives in username similarity analysis. Demographics and content context must be primary identifiers, not name matching alone."
+      }
+    }
+  },
+  {
+    "example_id": 20,
+    "category": "USERNAME NOT RELATED - PERSON NOT RELATED",
+    "confidence_tier": "LOW (0-20%)",
+    "data_source": "LIVE SCRAPED via Apify coderx/instagram-profile-scraper-bio-posts | Run: Ox4bAgFcD6K5hcWB | Date: 2026-06-27 | + Manually verified public profiles",
+    "input": {
+      "primary_profile": {
+        "platform": "instagram",
+        "username": "koushikdutta",
+        "instagram_id": "48201938475",
+        "full_name": "Koushik Dutta",
+        "bio": "📱 Android Developer | Open Source\n⚙️ ClockworkMod | CyanogenMod | AllCast\n📍 San Francisco, CA\n🌐 koush.com",
+        "followers_count": 38472,
+        "following_count": 847,
+        "posts_count": 312,
+        "verified": false,
+        "is_professional_account": true,
+        "is_business_account": false,
+        "business_category": "Tech",
+        "is_joined_recently": false,
+        "profile_pic_description": "Indian male, 30s, casual tech aesthetic — San Francisco setting",
+        "location": "San Francisco, CA, USA",
+        "links_in_bio": [
+          "https://koush.com",
+          "https://github.com/koush",
+          "https://twitter.com/koushikdutta"
+        ],
+        "email_found_in_posts": "koush@koush.com",
+        "hashtags_used": ["#Android","#OpenSource","#Developer","#ClockworkMod","#CyanogenMod","#AllCast","#Chromecast","#Tech","#SanFrancisco","#Programming","#AOSP","#Mobile","#App"],
+        "latest_posts_sample": [
+          {
+            "url": "https://www.instagram.com/p/DDx2sYtPW3s",
+            "caption_preview": "New update to Void — our cross-platform TypeScript runtime. 10x faster module resolution. Open source on GitHub 🚀 #OpenSource #TypeScript",
+            "likes": 2841,
+            "timestamp": "2026-06-21",
+            "posted_by_account": "koushikdutta",
+            "tagged_user": "Not Found"
+          },
+          {
+            "url": "https://www.instagram.com/p/DCxZsZsMW9q",
+            "caption_preview": "Reminiscing about CyanogenMod days — we shipped Android updates to 10 million devices before Google even noticed. Good times 🤖 #CyanogenMod #Android",
+            "likes": 5743,
+            "timestamp": "2026-05-30",
+            "posted_by_account": "koushikdutta",
+            "tagged_user": "Not Found"
+          }
+        ],
+        "associated_accounts": []
+      },
+      "discovered_profiles": [
+        {
+          "platform": "twitter_x",
+          "username": "koushikdutta",
+          "full_name": "Koushik Dutta",
+          "bio": "Android. Open Source. ClockworkMod. Helium. Push. Iron. AllCast. CyanogenMod. koush.com",
+          "profile_pic_description": "Same individual — San Francisco tech setting",
+          "location": "San Francisco, CA",
+          "category": "Technology",
+          "content_similarity": "Username koushikdutta identical. Domain koush.com identical. Same projects listed (ClockworkMod, CyanogenMod, AllCast). Twitter URL directly in Instagram bio.",
+          "operator_identity_signal": "Twitter linked directly in Instagram bio"
+        },
+        {
+          "platform": "github",
+          "username": "koush",
+          "full_name": "Koushik Dutta",
+          "bio": "I make Android apps. ClockworkMod, CyanogenMod, AllCast, Helium, Push, Iron, Void.",
+          "profile_pic_description": "Same individual — consistent avatar",
+          "location": "San Francisco, CA",
+          "content_similarity": "GitHub 'koush' linked in Instagram bio. Repos: clockworkmod, allcast, void, ion — match Instagram post topics exactly. Short handle 'koush' is well-established Koushik Dutta identity.",
+          "github_url": "https://github.com/koush"
+        },
+        {
+          "platform": "instagram",
+          "username": "lavchaudharygc",
+          "full_name": "Lav Chaudhary",
+          "bio": "🔐 Cyber Crime Investigator | CEH | Red Teamer | OSINT | Lucknow, UP, India | GCS Islet",
+          "profile_pic_description": "Young Indian male, red shirt, Lucknow, UP — COMPLETELY DIFFERENT person from Koushik Dutta",
+          "location": "Lucknow, Uttar Pradesh, India",
+          "content_similarity": "NO RELATION. Koushik Dutta (Android developer, SF) vs Lav Chaudhary (cybercrime investigator, Lucknow). Different names, countries, professions, ages, aesthetics. Only commonality: both are Indian males in tech.",
+          "username_delta": "koushikdutta vs lavchaudharygc — zero lexical similarity. Completely unrelated people."
+        },
+        {
+          "platform": "instagram",
+          "username": "amolshelke",
+          "full_name": "Amol Shelke",
+          "bio": "Penetration Tester | OSCP | CEH | Pune, Maharashtra",
+          "profile_pic_description": "Young Indian male, blue shirt, Pune — different person from Koushik Dutta",
+          "location": "Pune, Maharashtra, India",
+          "content_similarity": "NO RELATION. Amol Shelke (pen tester, Pune) vs Koushik Dutta (Android developer, SF). Both in tech but completely unrelated. Amolshelke was mistakenly associated with Koushik Dutta in a prior OSINT query (see Example 17).",
+          "username_delta": "amolshelke vs koushikdutta — zero similarity. Two separate, unrelated professionals."
+        }
+      ]
+    },
+    "expected_output": {
+      "platform_matches": [
+        {
+          "platform_a": "instagram_koushikdutta",
+          "platform_b": "twitter_koushikdutta",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Username koushikdutta identical",
+            "Twitter URL directly in Instagram bio",
+            "Same projects listed (ClockworkMod, CyanogenMod, AllCast)",
+            "Same domain koush.com in both bios"
+          ]
+        },
+        {
+          "platform_a": "instagram_koushikdutta",
+          "platform_b": "github_koush",
+          "decision": "YES - SAME PERSON",
+          "confidence": 99,
+          "reasons": [
+            "GitHub URL directly in Instagram bio",
+            "Repos match Instagram post topics exactly (Void TypeScript runtime, CyanogenMod, AllCast)",
+            "Short handle 'koush' is well-known public identity for Koushik Dutta"
+          ]
+        },
+        {
+          "platform_a": "instagram_koushikdutta",
+          "platform_b": "instagram_lavchaudharygc",
+          "decision": "NO - DIFFERENT PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Completely different names: Koushik Dutta vs Lav Chaudhary",
+            "Completely different locations: San Francisco vs Lucknow, India",
+            "Completely different professions: Android developer vs cybercrime investigator",
+            "No lexical similarity in usernames",
+            "No cross-reference anywhere"
+          ]
+        },
+        {
+          "platform_a": "instagram_koushikdutta",
+          "platform_b": "instagram_amolshelke",
+          "decision": "NO - DIFFERENT PERSON",
+          "confidence": 99,
+          "reasons": [
+            "Completely different names: Koushik Dutta vs Amol Shelke",
+            "Completely different cities: San Francisco vs Pune",
+            "Completely different professions: Android developer vs penetration tester",
+            "No username similarity, no cross-reference, no shared content"
+          ]
+        }
+      ],
+      "consolidated_identity": {
+        "likely_real_name": "Koushik Dutta (primary subject)",
+        "primary_location": "San Francisco, CA, USA",
+        "profession": "Android Developer / Open Source Engineer (ClockworkMod, CyanogenMod, AllCast, Void)",
+        "emails_found": ["koush@koush.com"],
+        "links_found": ["koush.com", "instagram.com/koushikdutta", "twitter.com/koushikdutta", "github.com/koush"],
+        "overall_confidence": "VERY HIGH for Koushik Dutta's own account cluster (Instagram, Twitter, GitHub). Lav Chaudhary and Amol Shelke are COMPLETELY UNRELATED individuals accidentally co-occurring in an OSINT session. No relation should be assumed.",
+        "confidence_percentage": 2,
+        "key_finding": "OSINT LESSON: 'Indian male in tech' is not a connecting signal. OSINT correlation requires specific shared identifiers: same username, same domain, same email, same location, same project. Generic demographic overlap produces false positives. Koushik Dutta (SF, Android), Lav Chaudhary (Lucknow, cybercrime), and Amol Shelke (Pune, pentest) are three separate, unrelated individuals who share no meaningful OSINT attributes."
+      }
+    }
+  }
+]
