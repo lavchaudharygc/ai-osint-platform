@@ -88,3 +88,22 @@ python -m backend.main
 ```
 
 The backend automatically reads `.env` through `pydantic-settings`. The `.env` file is ignored by Git so your real API keys are not committed.
+
+
+## Sprint 2 Optional Keys
+
+For AI correlation and risk assessment, add this to `.env`:
+
+```text
+DEEPSEEK_API_KEY=your-deepseek-key
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+For hashtag reverse lookup, add:
+
+```text
+TWITTER_BEARER_TOKEN=your-twitter-bearer-token
+```
+
+For local internal lookups, the backend creates `osint.db` automatically unless `LOCAL_DATABASE_URL` points to another SQLite file.

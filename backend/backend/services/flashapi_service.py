@@ -47,9 +47,18 @@ class FlashAPIService:
             response.raise_for_status()
             payload = response.json()
 
+        provider_status = "completed"
+        provider_error = None
+        if isinstance(payload, dict):
+            message = str(payload.get("message", ""))
+            if "missing" in message.lower() or "invalid" in message.lower():
+                provider_status = "error"
+                provider_error = message
+
         return {
             "provider": "flashapi1",
-            "status": "completed",
+            "status": provider_status,
+            "error": provider_error,
             "username": username,
             "platform": platform,
             "endpoint_path": self.endpoint_path,

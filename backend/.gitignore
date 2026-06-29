@@ -13,3 +13,8 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+
+# Local SQLite databases
+osint.db
+*.sqlite
+*.sqlite3

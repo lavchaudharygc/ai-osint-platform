@@ -22,6 +22,8 @@ class InvestigationResponse(BaseModel):
     cross_platform_matches: list[dict[str, Any]]
     ai_correlation_result: dict[str, Any] | None = None
     risk_assessment: dict[str, Any] | None = None
+    internal_database_matches: dict[str, Any] | None = None
+    hashtag_analysis: dict[str, Any] | None = None
     timestamp: datetime
 
 
