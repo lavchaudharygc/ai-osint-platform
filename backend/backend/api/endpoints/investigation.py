@@ -16,6 +16,7 @@ from backend.services.flashapi_service import FlashAPIService
 from backend.services.instagram_service import InstagramDataService
 from backend.services.telegram_service import TelegramDataService
 from backend.services.twitter_service import TwitterDataService
+from backend.services.training_dataset_service import get_training_dataset_service
 
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
 
@@ -61,6 +62,7 @@ async def ai_correlate(platform_data: dict[str, Any], cross_matches: list[dict[s
         "confidence": round(confidence, 2),
         "matching_platforms": [match["platform"] for match in positive_matches],
         "primary_platform": platform_data.get("platform"),
+        "training_context": get_training_dataset_service().build_correlation_context(len(positive_matches)),
     }
 
 

@@ -61,3 +61,18 @@ python -m backend.main
 5. Check the response field `platform_data.flashapi_enrichment`.
 
 If `RAPIDAPI_KEY` is missing, the backend returns `status: not_configured` in `flashapi_enrichment` instead of failing the whole investigation.
+
+## Testing the OSINT Training Dataset
+
+If `final osint .json` exists at the repository root, start the backend and open:
+
+```text
+http://127.0.0.1:8010/api/v1/training/dataset/summary
+```
+
+You can also use Swagger at `http://127.0.0.1:8010/docs` and test:
+
+- `GET /api/v1/training/dataset/summary`
+- `GET /api/v1/training/dataset/examples/{example_id}`
+
+The username investigation endpoint includes dataset guidance under `ai_correlation_result.training_context` when examples are available.

@@ -59,3 +59,12 @@ Required environment variables:
 - `FLASHAPI_ENDPOINT_PATH` default: `ig/info_username/`
 
 When the RapidAPI key is missing, the API still works and returns a `not_configured` enrichment object for local development.
+
+## Training Dataset
+
+The backend can load the OSINT teammate training dataset from `final osint .json` at the repository root or from `backend/data/ai_training/final_osint.json`.
+
+- `GET /api/v1/training/dataset/summary` returns dataset status, example count, categories, and confidence tiers.
+- `GET /api/v1/training/dataset/examples/{example_id}` returns one training example.
+
+Username investigations also include a lightweight `ai_correlation_result.training_context` object that references relevant dataset examples when the dataset file is present.
