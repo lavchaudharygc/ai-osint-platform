@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        /* Official LEA Report Styling */
+        body {
+            font-family: 'Times New Roman', serif;
+            font-size: 12pt;
+            line-height: 1.5;
+            margin: 2cm;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #000;
+            margin-bottom: 20px;
+        }
+        .confidential {
+            color: red;
+            font-weight: bold;
+            text-align: center;
+            border: 2px solid red;
+            padding: 5px;
+            margin: 10px 0;
+        }
+        .section-title {
+            font-weight: bold;
+            font-size: 14pt;
+            margin-top: 20px;
+            border-bottom: 1px solid #333;
+        }
+        .evidence-box {
+            border: 1px solid #999;
+            padding: 10px;
+            background: #f5f5f5;
+            margin: 10px 0;
+        }
+        .finding-critical {
+            color: red;
+            font-weight: bold;
+        }
+        .finding-high {
+            color: orange;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        th, td {
+            border: 1px solid #333;
+            padding: 5px;
+            text-align: left;
+        }
+        th {
+            background: #333;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CYBERCRIME INVESTIGATION REPORT</h1>
+        <p>LAW ENFORCEMENT USE ONLY</p>
+    </div>
+    
+    <div class="confidential">
+        ⚠️ CONFIDENTIAL - RESTRICTED ACCESS - INVESTIGATIVE MATERIAL
+    </div>
+    
+    <h2>MAIN HEADING</h2>
+    <p>{{ investigation.main_heading }}</p>
+    
+    <h3>SUBJECT</h3>
+    <p>{{ investigation.subject }}</p>
+    
+    <h3>CASE DETAILS</h3>
+    <table>
+        <tr><td>Case ID</td><td>{{ case.id }}</td></tr>
+        <tr><td>Investigating Officer</td><td>{{ case.officer }}</td></tr>
+        <tr><td>Date of Investigation</td><td>{{ investigation.date }}</td></tr>
+        <tr><td>Platform Investigated</td><td>{{ investigation.platform }}</td></tr>
+        <tr><td>AI-Assisted Analysis</td><td>Yes - Model v{{ ai.version }}</td></tr>
+    </table>
+    
+    <div class="section-title">1. EXECUTIVE SUMMARY</div>
+    <p>{{ investigation.executive_summary }}</p>
+    
+    <div class="section-title">2. INCIDENT OVERVIEW</div>
+    <p>{{ investigation.incident_overview }}</p>
+    
+    <div class="section-title">3. PROFILE ANALYSIS</div>
+    <h4>3.1 Primary Profile - {{ platform }}</h4>
+    <table>
+        <tr><td>Username</td><td>{{ profile.username }}</td></tr>
+        <tr><td>Display Name</td><td>{{ profile.full_name }}</td></tr>
+        <tr><td>Account Created</td><td>{{ profile.created }}</td></tr>
+        <tr><td>Bio</td><td>{{ profile.bio }}</td></tr>
+        <tr><td>Followers</td><td>{{ profile.followers }}</td></tr>
+        <tr><td>Following</td><td>{{ profile.following }}</td></tr>
+        <tr><td>Account Status</td><td>{{ profile.status }}</td></tr>
+    </table>
+    
+    <h4>3.2 Content Analysis</h4>
+    <p>{{ profile.content_analysis }}</p>
+    
+    <h4>3.3 Network Analysis</h4>
+    <p>{{ profile.network_analysis }}</p>
+    
+    <div class="section-title">4. CROSS-PLATFORM CORRELATION</div>
+    <table>
+        <tr>
+            <th>Platform</th>
+            <th>Username</th>
+            <th>Confidence</th>
+            <th>Key Evidence</th>
+        </tr>
+        {% for match in matches %}
+        <tr>
+            <td>{{ match.platform }}</td>
+            <td>{{ match.username }}</td>
+            <td class="{% if match.confidence > 80 %}finding-high{% endif %}">
+                {{ match.confidence }}%
+            </td>
+            <td>{{ match.evidence }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    
+    <div class="section-title">5. AI CORRELATION ANALYSIS</div>
+    <div class="evidence-box">
+        <strong>Identity Consolidation:</strong>
+        <p>{{ ai.consolidation }}</p>
+        
+        <strong>Confidence Assessment:</strong>
+        <p>{{ ai.confidence_assessment }}</p>
+    </div>
+    
+    <div class="section-title">6. RISK ASSESSMENT</div>
+    <p><strong>Risk Level:</strong> <span class="finding-{{ risk.level }}">{{ risk.level }}</span></p>
+    <p><strong>Indicators Found:</strong></p>
+    <ul>
+        {% for indicator in risk.indicators %}
+        <li>{{ indicator }}</li>
+        {% endfor %}
+    </ul>
+    
+    <div class="section-title">7. CRITICAL DISCOVERIES</div>
+    {% for discovery in critical_discoveries %}
+    <p class="finding-critical">⚠ {{ discovery }}</p>
+    {% endfor %}
+    
+    <div class="section-title">8. EVIDENCE SUMMARY</div>
+    <table>
+        <tr><th>Evidence ID</th><th>Type</th><th>Source</th><th>Timestamp</th></tr>
+        {% for evidence in evidence_list %}
+        <tr>
+            <td>{{ evidence.id }}</td>
+            <td>{{ evidence.type }}</td>
+            <td>{{ evidence.source }}</td>
+            <td>{{ evidence.timestamp }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    
+    <div class="section-title">9. RECOMMENDATIONS</div>
+    <ol>
+        {% for rec in recommendations %}
+        <li>{{ rec }}</li>
+        {% endfor %}
+    </ol>
+    
+    <div class="section-title">10. CONCLUSION</div>
+    <p>{{ conclusion }}</p>
+    
+    <div style="margin-top: 50px;">
+        <p>Report Generated by: AI-OSINT Platform v0.1</p>
+        <p>Date: {{ generation_date }}</p>
+        <p>Signature: ___________________________</p>
+        <p>Name: {{ officer_name }}</p>
+        <p>Designation: ___________________________</p>
+    </div>
+</body>
+</html>

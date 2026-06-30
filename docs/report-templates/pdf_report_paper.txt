@@ -1,0 +1,37 @@
+┌─────────────────────────────┐
+│   OFFICIAL INVESTIGATION    │
+│         REPORT              │
+│                             │
+│ Case ID: _______            │
+│ Date: _______               │
+│ Officer: _______            │
+└─────────────────────────────┘
+
+PAGE 2:
+┌─────────────────────────────┐
+│ PROFILE INFORMATION         │
+│                             │
+│ Username: @lavkumar         │
+│ Real Name: Lav Kumar        │
+│ Platform: Instagram         │
+│ Followers: 500              │
+│ Posts: 24                   │
+│ Bio: Developer from Delhi   │
+└─────────────────────────────┘
+
+PAGE 3:
+┌─────────────────────────────┐
+│ CROSS-PLATFORM MATCHES      │
+│                             │
+│ Twitter: @lavkumar (95%)    │
+│ GitHub: lavkumar (87%)      │
+│ LinkedIn: lav-kumar (72%)   │
+└─────────────────────────────┘
+
+PAGE 4:
+┌─────────────────────────────┐
+│ AI ANALYSIS                 │
+│                             │
+│ These profiles belong to    │
+│ the same person because...  │
+└─────────────────────────────┘
