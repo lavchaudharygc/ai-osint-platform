@@ -354,6 +354,8 @@ body::before {
     flex-direction: column;
     gap: 8px;
     flex: 1;
+    padding: 0;
+    margin: 0;
 }
 
 .menu-item {
@@ -438,7 +440,7 @@ body::before {
 }
 
 .sidebar-toggle-btn {
-    display: none;
+    display: block;
     background: transparent;
     border: 1px solid var(--border-glow);
     color: var(--text-primary);
@@ -653,7 +655,7 @@ body::before {
 
 .workspace-grid {
     display: none;
-    grid-template-columns: 320px 1fr;
+    grid-template-columns: 320px minmax(0, 1fr);
     gap: 20px;
 }
 
@@ -1199,4 +1201,188 @@ body::before {
     flex-wrap: wrap;
     gap: 4px;
 }
+
+/* Space-saving Compact Grid & Tables */
+.results-grid-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+@media (max-width: 1200px) {
+    .results-grid-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.compact-db-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 0.76rem;
+    margin-top: 5px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.compact-db-table th {
+    text-align: left;
+    padding: 8px 10px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    background: rgba(255, 255, 255, 0.02);
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.compact-db-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    vertical-align: top;
+    color: var(--text-primary);
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.compact-db-table tr:last-child td {
+    border-bottom: none;
+}
+
+.compact-db-table tr:hover {
+    background: rgba(0, 188, 212, 0.03);
+}
+
+.compact-db-table tr:hover td {
+    white-space: normal;
+    word-break: break-all;
+    overflow: visible;
+}
+
+/* Collapsible Desktop Sidebar */
+#dashboard {
+    transition: grid-template-columns 0.3s ease;
+}
+
+#dashboard.collapsed {
+    grid-template-columns: 75px 1fr;
+}
+
+#dashboard.collapsed .sidebar {
+    padding: 20px 10px;
+    align-items: center;
+}
+
+#dashboard.collapsed .sidebar-title-group,
+#dashboard.collapsed .sidebar-menu li span:not(.menu-icon),
+#dashboard.collapsed .investigator-badge div,
+#dashboard.collapsed .sidebar .btn-action span {
+    display: none;
+}
+
+#dashboard.collapsed .sidebar-header {
+    justify-content: center;
+    border-bottom: none;
+    margin-bottom: 15px;
+    padding-bottom: 0;
+}
+
+#dashboard.collapsed .sidebar-shield {
+    width: 35px;
+    height: 35px;
+}
+
+#dashboard.collapsed .menu-item {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+    align-items: center;
+    border-radius: 8px;
+    margin: 0 auto;
+}
+
+#dashboard.collapsed .sidebar-footer {
+    align-items: center;
+    gap: 15px;
+    width: 100%;
+}
+
+#dashboard.collapsed .investigator-badge {
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: transparent;
+    margin-bottom: 0;
+}
+
+#dashboard.collapsed .sidebar .btn-action {
+    width: 40px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    border-radius: 50% !important;
+    margin: 0 auto;
+}
+
+/* Subject Profile Info Tiles */
+.profile-tiles-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.info-tile {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+}
+
+.info-tile:hover {
+    border-color: var(--accent-blue);
+    background: rgba(0, 188, 212, 0.02);
+    box-shadow: 0 0 10px rgba(0, 188, 212, 0.1);
+}
+
+.info-tile-label {
+    font-size: 0.62rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.info-tile-value {
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: var(--text-primary);
+}
+
+/* Layout Responsiveness Overrides for screen size and zoom */
+@media (max-width: 1400px) {
+    .scanner-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 1100px) {
+    .workspace-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+
 

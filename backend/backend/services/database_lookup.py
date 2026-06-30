@@ -68,6 +68,93 @@ class DatabaseLookup:
             "by_email": self.search_by_email(query),
         }
 
+    def search_strict(self, username: str, full_name: str | None = None) -> dict[str, Any]:
+        by_username = []
+        by_phone = []
+        by_email = []
+        
+        def is_email(q: str) -> bool:
+            return "@" in q
+            
+        def is_phone(q: str) -> bool:
+            clean = "".join(c for c in q if c.isdigit())
+            return len(clean) >= 7
+            
+        import re
+        def generate_search_variants(query: str) -> list[str]:
+            variants = []
+            q_clean = query.strip()
+            if not q_clean:
+                return variants
+            variants.append(q_clean)
+            
+            # 1. Strip trailing digits (e.g. "amit_chaudhary1111" -> "amit_chaudhary")
+            without_trailing_digits = re.sub(r'\d+$', '', q_clean)
+            if without_trailing_digits and without_trailing_digits != q_clean:
+                variants.append(without_trailing_digits)
+                
+            # 2. Simplify by removing spaces, underscores, dots, and dashes
+            def simplify(s: str) -> str:
+                return re.sub(r'[\s_\.\-]+', '', s)
+                
+            simple_q = simplify(q_clean)
+            if simple_q and simple_q not in variants:
+                variants.append(simple_q)
+                
+            simple_without_digits = simplify(without_trailing_digits)
+            if simple_without_digits and simple_without_digits not in variants:
+                variants.append(simple_without_digits)
+                
+            return list(dict.fromkeys(variants))
+
+        targets = [username]
+        if full_name:
+            targets.append(full_name)
+            
+        for t in targets:
+            t_clean = t.strip()
+            if not t_clean or len(t_clean) < 3:
+                continue
+                
+            if is_email(t_clean):
+                matches = self._query("SELECT * FROM user_database WHERE email = ? OR email LIKE ?", (t_clean, f"{t_clean}%"))
+                by_email.extend(matches)
+            elif is_phone(t_clean):
+                clean_phone = "".join(c for c in t_clean if c.isdigit())
+                matches = self._query("SELECT * FROM user_database WHERE phone = ? OR phone LIKE ?", (clean_phone, f"{clean_phone}%"))
+                by_phone.extend(matches)
+            else:
+                variants = generate_search_variants(t_clean)
+                for var in variants:
+                    if len(var) < 3:
+                        continue
+                    matches = self._query(
+                        """
+                        SELECT username, phone, email, address, alternate_username, platform, data_source, added_date
+                        FROM user_database
+                        WHERE username = ? OR username LIKE ? OR alternate_username = ? OR alternate_username LIKE ?
+                        """,
+                        (var, f"{var}%", var, f"{var}%"),
+                    )
+                    by_username.extend(matches)
+                
+        def dedup(lst):
+            seen = set()
+            res = []
+            for item in lst:
+                sig = (item.get("username") or "", item.get("phone") or "", item.get("email") or "")
+                if sig not in seen:
+                    seen.add(sig)
+                    res.append(item)
+            return res
+            
+        return {
+            "database_path": self.db_path,
+            "by_username": dedup(by_username),
+            "by_phone": dedup(by_phone),
+            "by_email": dedup(by_email),
+        }
+
     def _query(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row

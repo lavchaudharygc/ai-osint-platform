@@ -263,33 +263,36 @@
                                                     <span>Biography</span>
                                                     <span id="target-profile-bio" style="font-weight: normal; font-size: 0.75rem; text-align: left; word-break: break-word; line-height: 1.4; color: var(--text-secondary);">N/A</span>
                                                 </div>
-                                                <div class="detail-item">
-                                                    <span>Followers</span>
-                                                    <span id="target-profile-followers" class="mono">0</span>
+                                            </div>
+
+                                            <div class="profile-tiles-container">
+                                                <div class="info-tile">
+                                                    <span class="info-tile-label">Followers</span>
+                                                    <span id="target-profile-followers" class="info-tile-value mono">0</span>
                                                 </div>
-                                                <div class="detail-item">
-                                                    <span>Following</span>
-                                                    <span id="target-profile-following" class="mono">0</span>
+                                                <div class="info-tile">
+                                                    <span class="info-tile-label">Following</span>
+                                                    <span id="target-profile-following" class="info-tile-value mono">0</span>
                                                 </div>
-                                                <div class="detail-item">
-                                                    <span>Total Posts</span>
-                                                    <span id="target-profile-posts" class="mono">0</span>
+                                                <div class="info-tile">
+                                                    <span class="info-tile-label">Total Posts</span>
+                                                    <span id="target-profile-posts" class="info-tile-value mono">0</span>
                                                 </div>
-                                                <div class="detail-item">
-                                                    <span>Verified Account</span>
-                                                    <span id="target-profile-verified">False</span>
+                                                <div class="info-tile">
+                                                    <span class="info-tile-label">Verified</span>
+                                                    <span id="target-profile-verified" class="info-tile-value">False</span>
                                                 </div>
-                                                <div class="detail-item">
-                                                    <span>Data Source</span>
-                                                    <span class="mono gold-text" id="target-profile-source">Scraper</span>
+                                                <div class="info-tile">
+                                                    <span class="info-tile-label">Data Source</span>
+                                                    <span id="target-profile-source" class="info-tile-value mono gold-text" style="font-size:0.75rem;">Scraper</span>
                                                 </div>
-                                                <div class="detail-item">
-                                                    <span>Status Flag</span>
-                                                    <span class="mono blue-text" id="target-profile-status">completed</span>
+                                                <div class="info-tile">
+                                                    <span class="info-tile-label">Status Flag</span>
+                                                    <span id="target-profile-status" class="info-tile-value mono blue-text" style="font-size:0.75rem;">completed</span>
                                                 </div>
-                                                <div class="detail-item" style="flex-direction: column; gap: 4px;">
-                                                    <span>Scraped At (UTC)</span>
-                                                    <span id="target-profile-time" style="font-family: 'Share Tech Mono'; font-size: 0.75rem; word-break: break-all;">2026-06-28</span>
+                                                <div class="info-tile" style="grid-column: span 2;">
+                                                    <span class="info-tile-label">Scraped At (UTC)</span>
+                                                    <span id="target-profile-time" class="info-tile-value mono" style="font-size: 0.72rem; word-break: break-all;">2026-06-28</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -351,60 +354,66 @@
                                         </div>
                                     </div>
 
-                                    <!-- CROSS PLATFORM MATCHES CARD -->
-                                    <div class="glass-card">
-                                        <div class="cross-platform-header">
-                                            <span class="card-title">Cross-Platform Presence Index</span>
-                                            <span class="mono blue-text" id="cross-matches-count">Matches Checked: 6</span>
-                                        </div>
-                                        <div class="cross-platform-grid" id="cross-platform-grid">
-                                            <!-- Dynamic platform cards -->
-                                        </div>
-                                    </div>
-
-                                    <!-- INTERNAL DATABASE RECORDS LOOKUP CARD -->
-                                    <div class="glass-card">
-                                        <div class="card-header-bar">
-                                            <span class="card-title">Internal Database Records Lookup</span>
-                                            <span class="mono blue-text" id="internal-matches-count">Records Checked</span>
-                                        </div>
-                                        <div id="internal-database-results" style="display:flex; flex-direction:column; gap:10px;">
-                                            <!-- Dynamic content: database matches or empty state -->
-                                        </div>
-                                    </div>
-
-                                    <!-- HASHTAG LINK ANALYSIS (REVERSE LOOKUP) CARD -->
-                                    <div class="glass-card">
-                                        <div class="card-header-bar">
-                                            <span class="card-title">Hashtag Reverse Lookup & Link Analysis</span>
-                                            <span class="mono gold-text" id="hashtag-analysis-status">Status Check</span>
-                                        </div>
-                                        <div style="font-size: 0.9rem; line-height: 1.6; display: flex; flex-direction: column; gap: 12px;">
-                                            <div>
-                                                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Extracted Hashtags</div>
-                                                <div id="extracted-hashtags-list" style="display:flex; flex-wrap:wrap; gap:6px;">
-                                                    <!-- List of hashtags -->
-                                                </div>
+                                    <!-- ROW 2: CROSS PLATFORM MATCHES & INTERNAL DB LOOKUP -->
+                                    <div class="results-grid-row">
+                                        <!-- CROSS PLATFORM MATCHES CARD -->
+                                        <div class="glass-card">
+                                            <div class="cross-platform-header">
+                                                <span class="card-title">Cross-Platform Presence Index</span>
+                                                <span class="mono blue-text" id="cross-matches-count">Matches Checked: 6</span>
                                             </div>
-                                            <div>
-                                                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Potential Network Connections (Twitter)</div>
-                                                <div id="hashtag-connections-list" style="display:flex; flex-direction:column; gap:8px;">
-                                                    <!-- List of connection cards -->
-                                                </div>
+                                            <div class="cross-platform-grid" id="cross-platform-grid">
+                                                <!-- Dynamic platform cards -->
+                                            </div>
+                                        </div>
+
+                                        <!-- INTERNAL DATABASE RECORDS LOOKUP CARD -->
+                                        <div class="glass-card">
+                                            <div class="card-header-bar">
+                                                <span class="card-title">Internal Database Records Lookup</span>
+                                                <span class="mono blue-text" id="internal-matches-count">Records Checked</span>
+                                            </div>
+                                            <div id="internal-database-results" style="display:flex; flex-direction:column; gap:10px; overflow-x: auto;">
+                                                <!-- Dynamic content: database matches or empty state -->
                                             </div>
                                         </div>
                                     </div>
 
-                                    <!-- AI TRAINING REFERENCE MATCHES CARD -->
-                                    <div class="glass-card">
-                                        <div class="card-header-bar">
-                                            <span class="card-title">AI Training Reference Examples</span>
-                                            <span class="mono text-secondary" id="training-dataset-meta">Loaded</span>
+                                    <!-- ROW 3: HASHTAG REVERSE LOOKUP & AI TRAINING REFERENCES -->
+                                    <div class="results-grid-row">
+                                        <!-- HASHTAG LINK ANALYSIS (REVERSE LOOKUP) CARD -->
+                                        <div class="glass-card">
+                                            <div class="card-header-bar">
+                                                <span class="card-title">Hashtag Reverse Lookup & Link Analysis</span>
+                                                <span class="mono gold-text" id="hashtag-analysis-status">Status Check</span>
+                                            </div>
+                                            <div style="font-size: 0.9rem; line-height: 1.6; display: flex; flex-direction: column; gap: 12px;">
+                                                <div>
+                                                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Extracted Hashtags</div>
+                                                    <div id="extracted-hashtags-list" style="display:flex; flex-wrap:wrap; gap:6px;">
+                                                        <!-- List of hashtags -->
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Potential Network Connections (Twitter)</div>
+                                                    <div id="hashtag-connections-list" style="display:flex; flex-direction:column; gap:8px;">
+                                                        <!-- List of connection cards -->
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div class="training-context-container" id="training-context-container" style="font-size: 0.9rem; line-height: 1.6; display: flex; flex-direction: column; gap: 10px;">
-                                            <p id="training-suggested-category" style="font-weight: 600; color: var(--accent-gold); margin-bottom: 4px;"></p>
-                                            <div id="training-examples-list" style="display:flex; flex-direction:column; gap:8px;">
-                                                <!-- Dynamic training examples -->
+
+                                        <!-- AI TRAINING REFERENCE MATCHES CARD -->
+                                        <div class="glass-card">
+                                            <div class="card-header-bar">
+                                                <span class="card-title">AI Training Reference Examples</span>
+                                                <span class="mono text-secondary" id="training-dataset-meta">Loaded</span>
+                                            </div>
+                                            <div class="training-context-container" id="training-context-container" style="font-size: 0.9rem; line-height: 1.6; display: flex; flex-direction: column; gap: 10px;">
+                                                <p id="training-suggested-category" style="font-weight: 600; color: var(--accent-gold); margin-bottom: 4px;"></p>
+                                                <div id="training-examples-list" style="display:flex; flex-direction:column; gap:8px;">
+                                                    <!-- Dynamic training examples -->
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -463,6 +472,33 @@
                             <div style="margin-top: 15px;">
                                 <span style="font-size: 0.8rem; color:var(--text-secondary);">Operational Connection</span>
                                 <div class="diagnostic-value" id="diag-connection" style="color:#00ff66;">CONNECTING...</div>
+                            </div>
+                        </div>
+
+                        <div class="glass-card">
+                            <div class="card-header-bar">
+                                <span class="card-title">Hi-Tek Database Connectivity</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:8px;">
+                                <div class="detail-item">
+                                    <span>Folder Path</span>
+                                    <span class="mono" style="font-size: 0.75rem;">DBs/hi-tek/</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span>CSV Status</span>
+                                    <span class="mono" id="diag-hitek-csv-status" style="font-size: 0.75rem; color:#ff3366;">CHECKING...</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span>Indexing Status</span>
+                                    <span class="mono" id="diag-hitek-index-status" style="font-size: 0.75rem; color:#ffcc00;">CHECKING...</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span>Total Records</span>
+                                    <span class="mono" id="diag-hitek-records" style="font-size: 0.75rem;">0</span>
+                                </div>
+                                <button id="btn-reindex-hitek" class="btn-action" style="margin-top: 10px; width: 100%; justify-content: center;">
+                                    REBUILD INDEX
+                                </button>
                             </div>
                         </div>
 

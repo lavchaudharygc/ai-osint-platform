@@ -16,13 +16,18 @@ window.addEventListener("DOMContentLoaded", () => {
 
 // Setup event listeners for UI interactions
 function setupEventListeners() {
-    // Sidebar toggle for mobile responsiveness
+    // Sidebar toggle for mobile responsiveness and desktop collapsing
     const sidebarToggle = document.getElementById("sidebar-toggle");
     const sidebar = document.getElementById("sidebar");
+    const dashboard = document.getElementById("dashboard");
     
-    if (sidebarToggle && sidebar) {
+    if (sidebarToggle && sidebar && dashboard) {
         sidebarToggle.addEventListener("click", () => {
-            sidebar.classList.toggle("open");
+            if (window.innerWidth <= 768) {
+                sidebar.classList.toggle("open");
+            } else {
+                dashboard.classList.toggle("collapsed");
+            }
         });
     }
 
@@ -59,6 +64,39 @@ function setupEventListeners() {
             control.closest(".form-group")?.classList.remove("focused");
         });
     });
+
+    // Reindex Hi-Tek button
+    const btnReindex = document.getElementById("btn-reindex-hitek");
+    if (btnReindex) {
+        btnReindex.addEventListener("click", async () => {
+            btnReindex.disabled = true;
+            btnReindex.innerText = "INDEXING INITIATED...";
+            try {
+                const resp = await fetch(`${API_BASE}/api/v1/investigation/hitek/index`, { method: "POST" });
+                if (resp.ok) {
+                    alert("Indexing started in the background. Check diagnostics for progress.");
+                    // Poll every 2 seconds
+                    const pollInterval = setInterval(async () => {
+                        await updateHiTekDiagnostics();
+                        const statusEl = document.getElementById("diag-hitek-index-status");
+                        if (statusEl && statusEl.innerText !== "INDEXING") {
+                            clearInterval(pollInterval);
+                            btnReindex.disabled = false;
+                            btnReindex.innerText = "REBUILD INDEX";
+                        }
+                    }, 2000);
+                } else {
+                    alert("Failed to start indexing.");
+                    btnReindex.disabled = false;
+                    btnReindex.innerText = "REBUILD INDEX";
+                }
+            } catch (e) {
+                alert(`Error: ${e.message}`);
+                btnReindex.disabled = false;
+                btnReindex.innerText = "REBUILD INDEX";
+            }
+        });
+    }
 }
 
 // Generate dynamic Case ID
@@ -106,6 +144,9 @@ function runPreloaderSequence() {
                 }
                 if (diagVersion) diagVersion.innerText = data.version || "0.1.0";
                 if (preloaderStatus) preloaderStatus.innerText = "API OPERATIONAL. DISPATCHING SECURE GATEWAY...";
+                
+                // Initialize Hi-Tek Diagnostics status
+                updateHiTekDiagnostics();
             }
         } catch (e) {
             console.error("Backend health probe failed:", e);
@@ -194,6 +235,8 @@ function switchTab(tabId) {
     
     if (tabId === "history-logs") {
         loadHistoryList();
+    } else if (tabId === "diagnostics") {
+        updateHiTekDiagnostics();
     }
 }
 
@@ -585,27 +628,49 @@ function renderInvestigationResults(data) {
                 }
             }
 
+            const table = document.createElement("table");
+            table.className = "compact-db-table";
+            table.innerHTML = `
+                <colgroup>
+                    <col style="width: 25%;">
+                    <col style="width: 25%;">
+                    <col style="width: 22%;">
+                    <col style="width: 28%;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Identity Info</th>
+                        <th>Mobile/Email</th>
+                        <th>Registry/Source</th>
+                        <th>Location Address</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            `;
+            const tbody = table.querySelector("tbody");
+            
             uniqueItems.forEach(item => {
-                const row = document.createElement("div");
-                row.className = "db-match-row";
-                row.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-weight:600; color:var(--accent-blue);">${item.username || "Unknown"}</span>
-                        <span class="profile-platform-badge" style="margin-top:0;">${item.platform || "Local Registry"}</span>
-                    </div>
-                    <div class="db-grid">
-                        <div><span style="color:var(--text-secondary);">Alternate:</span> ${item.alternate_username || "N/A"}</div>
-                        <div><span style="color:var(--text-secondary);">Phone:</span> ${item.phone || "N/A"}</div>
-                        <div><span style="color:var(--text-secondary);">Email:</span> ${item.email || "N/A"}</div>
-                        <div><span style="color:var(--text-secondary);">Address:</span> ${item.address || "N/A"}</div>
-                    </div>
-                    <div style="font-size:0.7rem; color:var(--text-secondary); display:flex; justify-content:space-between; border-top: 1px solid rgba(255,255,255,0.03); padding-top:6px; margin-top:2px;">
-                        <span>Source: ${item.data_source || "Manual Entry"}</span>
-                        <span>Date: ${(item.added_date || "").substring(0, 10)}</span>
-                    </div>
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>
+                        <div style="font-weight:600; color:var(--accent-blue);">${item.username || "Unknown"}</div>
+                        <div style="font-size:0.7rem; color:var(--text-secondary); margin-top:2px;">${item.alternate_username || "N/A"}</div>
+                    </td>
+                    <td>
+                        <div style="font-family: 'Share Tech Mono', monospace;">📞 ${item.phone || "N/A"}</div>
+                        <div style="font-size:0.7rem; color:var(--text-secondary); margin-top:2px;">✉️ ${item.email || "N/A"}</div>
+                    </td>
+                    <td>
+                        <div style="font-size:0.75rem;">🏛️ ${item.platform || "Local Registry"}</div>
+                        <div style="font-size:0.65rem; color:var(--text-secondary); margin-top:2px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${item.data_source || 'Manual Entry'}">${item.data_source || "Manual Entry"}</div>
+                    </td>
+                    <td class="addr-col" title="${item.address || 'N/A'}">
+                        📍 ${item.address || "N/A"}
+                    </td>
                 `;
-                dbResultsEl.appendChild(row);
+                tbody.appendChild(tr);
             });
+            dbResultsEl.appendChild(table);
         }
     }
 
@@ -1242,3 +1307,50 @@ function generatePDFReport() {
         printWindow.focus();
     }, 500);
 }
+
+// Poll / fetch Hi-Tek status
+async function updateHiTekDiagnostics() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/v1/investigation/hitek/status`);
+        if (resp.ok) {
+            const status = await resp.json();
+            const csvStatusEl = document.getElementById("diag-hitek-csv-status");
+            const indexStatusEl = document.getElementById("diag-hitek-index-status");
+            const recordsEl = document.getElementById("diag-hitek-records");
+            
+            if (csvStatusEl) {
+                if (status.folder_exists) {
+                    if (status.csv_files.length > 0) {
+                        const valid = status.csv_files.every(f => f.valid_headers);
+                        csvStatusEl.innerText = `${status.csv_files.length} CSV file(s) found (${valid ? 'Configured' : 'Mismatched headers'})`;
+                        csvStatusEl.style.color = valid ? "#00ff66" : "#ffcc00";
+                    } else {
+                        csvStatusEl.innerText = "No CSV files found";
+                        csvStatusEl.style.color = "#ff3366";
+                    }
+                } else {
+                    csvStatusEl.innerText = "Folder missing";
+                    csvStatusEl.style.color = "#ff3366";
+                }
+            }
+            
+            if (indexStatusEl) {
+                indexStatusEl.innerText = status.index_status.toUpperCase();
+                if (status.index_status === "completed") {
+                    indexStatusEl.style.color = "#00ff66";
+                } else if (status.index_status === "indexing") {
+                    indexStatusEl.style.color = "#ffcc00";
+                } else {
+                    indexStatusEl.style.color = "#ff3366";
+                }
+            }
+            
+            if (recordsEl) {
+                recordsEl.innerText = status.total_records.toLocaleString();
+            }
+        }
+    } catch (e) {
+        console.error("Failed to fetch Hi-Tek diagnostics:", e);
+    }
+}
+

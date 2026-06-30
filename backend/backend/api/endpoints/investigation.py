@@ -21,8 +21,10 @@ from backend.services.hashtag_analyzer import HashtagAnalyzer
 from backend.services.telegram_service import TelegramDataService
 from backend.services.twitter_service import TwitterDataService
 from backend.services.training_dataset_service import get_training_dataset_service
+from backend.services.hitek_service import HiTekConnectorService
 
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
+hitek_service = HiTekConnectorService()
 
 _INVESTIGATION_STORE: dict[str, InvestigationResponse] = {}
 
@@ -151,7 +153,19 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     investigation_id = generate_investigation_id()
     platform_data = await scrape_platform(request.username, request.platform)
     cross_matches = await cross_platform_search(request.username, platform_data, request.correlation_depth)
-    internal_matches = DatabaseLookup().search_all(request.username)
+    full_name = platform_data.get("full_name") or platform_data.get("name")
+    internal_matches = DatabaseLookup().search_strict(request.username, full_name)
+    try:
+        hitek_matches = hitek_service.search_strict(request.username, full_name)
+        internal_matches["by_username"].extend(hitek_matches.get("by_username", []))
+        internal_matches["by_phone"].extend(hitek_matches.get("by_phone", []))
+        internal_matches["by_email"].extend(hitek_matches.get("by_email", []))
+        if "database_path" in hitek_matches:
+            internal_matches["database_path"] = f"{internal_matches['database_path']}; Hi-Tek: {hitek_matches['database_path']}"
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Failed to query Hi-Tek database: %s", e)
+
     hashtag_analysis = await HashtagAnalyzer().analyze_hashtags(extract_hashtags(platform_data), request.username)
     ai_result = await ai_correlate(platform_data, cross_matches)
     risk = await assess_risk(platform_data, ai_result)
@@ -212,3 +226,17 @@ async def proxy_image(url: str) -> Response:
             return Response(content=response.content, media_type=content_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Proxy error: {str(e)}")
+
+
+@router.get("/hitek/status")
+async def get_hitek_status() -> dict[str, Any]:
+    return hitek_service.get_status()
+
+
+@router.post("/hitek/index")
+async def trigger_hitek_index() -> dict[str, str]:
+    started = hitek_service.start_indexing()
+    if started:
+        return {"status": "indexing_started"}
+    return {"status": "already_indexing"}
+
