@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "http://127.0.0.1:8010";
 const DEMO_USER = "uppolice";
 const DEMO_PASS = "testingaccount";
 
@@ -304,17 +304,61 @@ function renderInvestigationResults(data) {
 
     // Target Info Card
     const pData = data.platform_data || {};
-    const avatar = document.getElementById("target-avatar-char");
+    const avatarContainer = document.getElementById("target-avatar-container");
+    const avatarChar = document.getElementById("target-avatar-char");
     const profName = document.getElementById("target-profile-name");
     const profPlatform = document.getElementById("target-profile-platform");
+    const profFullname = document.getElementById("target-profile-fullname");
+    const profBio = document.getElementById("target-profile-bio");
+    const profFollowers = document.getElementById("target-profile-followers");
+    const profFollowing = document.getElementById("target-profile-following");
+    const profPosts = document.getElementById("target-profile-posts");
     const profVerified = document.getElementById("target-profile-verified");
+    const profSource = document.getElementById("target-profile-source");
     const profStatus = document.getElementById("target-profile-status");
     const profTime = document.getElementById("target-profile-time");
 
-    if (avatar) avatar.innerText = (pData.username || "U").substring(0, 2).toUpperCase();
+    // Dynamic Avatar Picture rendering with character fallback on error
+    if (avatarContainer) {
+        let profilePic = pData.profile_pic_hd || pData.profile_pic_url;
+        if (profilePic && !profilePic.startsWith("data:")) {
+            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+        }
+        if (profilePic) {
+            avatarContainer.innerHTML = `
+                <img src="${profilePic}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" 
+                     onerror="this.style.display='none'; document.getElementById('target-avatar-fallback').style.display='flex';">
+                <div id="target-avatar-fallback" style="display:none; width:100%; height:100%; align-items:center; justify-content:center; font-weight:700; color:var(--accent-blue); font-size:1.1rem;">
+                    ${(pData.username || "U").substring(0, 2).toUpperCase()}
+                </div>
+            `;
+        } else {
+            avatarContainer.innerHTML = `
+                <div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--accent-blue); font-size:1.1rem;">
+                    ${(pData.username || "U").substring(0, 2).toUpperCase()}
+                </div>
+            `;
+        }
+    } else if (avatarChar) {
+        avatarChar.innerText = (pData.username || "U").substring(0, 2).toUpperCase();
+    }
+
     if (profName) profName.innerText = pData.username || "unknown";
     if (profPlatform) profPlatform.innerText = pData.platform || "instagram";
+    if (profFullname) profFullname.innerText = pData.full_name || "N/A";
+    if (profBio) profBio.innerText = pData.bio || "No biography details cached.";
+    if (profFollowers) profFollowers.innerText = (pData.follower_count !== undefined ? pData.follower_count : (pData.followers || 0)).toLocaleString();
+    if (profFollowing) profFollowing.innerText = (pData.following_count !== undefined ? pData.following_count : (pData.following || 0)).toLocaleString();
+    if (profPosts) profPosts.innerText = (pData.post_count !== undefined ? pData.post_count : (pData.posts_count || 0)).toLocaleString();
     if (profVerified) profVerified.innerText = pData.is_verified !== undefined ? pData.is_verified.toString().toUpperCase() : "FALSE";
+    if (profSource) {
+        profSource.innerText = (pData.source || "scraper").toUpperCase().replace(/_/g, ' ');
+        if (pData.source === "flashapi_fallback") {
+            profSource.className = "mono blue-text";
+        } else {
+            profSource.className = "mono gold-text";
+        }
+    }
     if (profStatus) profStatus.innerText = data.status || "completed";
     
     const timeStr = pData.scraped_at || data.timestamp || new Date().toISOString();
@@ -349,14 +393,115 @@ function renderInvestigationResults(data) {
         }
     }
 
+    // Dynamic AI Risk Analysis text report
+    const riskAnalysisSection = document.getElementById("risk-analysis-text-section");
+    const riskAnalysisContent = document.getElementById("risk-analysis-text-content");
+    const riskErrorNotice = document.getElementById("risk-error-notice");
+    const riskErrorMessage = document.getElementById("risk-error-message");
+
+    if (risk.ai_risk_analysis) {
+        const riskSuccess = risk.ai_risk_analysis.success;
+        if (riskSuccess === false) {
+            if (riskErrorNotice && riskErrorMessage) {
+                riskErrorMessage.innerText = `${risk.ai_risk_analysis.error || "Unknown Error"} ${risk.ai_risk_analysis.details ? ' - ' + risk.ai_risk_analysis.details : ''}`;
+                riskErrorNotice.style.display = "block";
+            }
+            if (riskAnalysisSection) riskAnalysisSection.style.display = "none";
+        } else {
+            if (riskErrorNotice) riskErrorNotice.style.display = "none";
+            const textAnalysis = risk.ai_risk_analysis.analysis;
+            if (textAnalysis && textAnalysis.trim() && textAnalysis !== "Configure GROQ_API_KEY for AI risk assessment.") {
+                if (riskAnalysisSection && riskAnalysisContent) {
+                    riskAnalysisContent.innerText = textAnalysis.trim();
+                    riskAnalysisSection.style.display = "block";
+                }
+            } else {
+                if (riskAnalysisSection) riskAnalysisSection.style.display = "none";
+            }
+        }
+    } else {
+        if (riskErrorNotice) riskErrorNotice.style.display = "none";
+        if (riskAnalysisSection) riskAnalysisSection.style.display = "none";
+    }
+
     // AI Analysis Panel
     const ai = data.ai_correlation_result || {};
+    const parsedAI = (ai.ai_analysis && ai.ai_analysis.parsed) ? ai.ai_analysis.parsed : ai.parsed;
+    const aiDecisionEl = document.getElementById("ai-decision-badge");
     const aiConf = document.getElementById("ai-confidence");
     const aiSum = document.getElementById("ai-summary");
+    const aiReasonsSection = document.getElementById("ai-reasons-section");
+    const aiReasonsList = document.getElementById("ai-reasons-list");
+    const aiStepsSection = document.getElementById("ai-steps-section");
+    const aiStepsList = document.getElementById("ai-steps-list");
     const aiPlatforms = document.getElementById("ai-associated-platforms");
+    const aiErrorNotice = document.getElementById("ai-error-notice");
+    const aiErrorMessage = document.getElementById("ai-error-message");
 
-    if (aiConf) aiConf.innerText = `Confidence Index: ${Math.round((ai.confidence || 0.65) * 100)}%`;
-    if (aiSum) aiSum.innerText = ai.summary || "Rule-based placeholder correlation pending AI provider configuration.";
+
+    // Render AI execution failure details if success is false
+    if (ai.ai_analysis && ai.ai_analysis.success === false) {
+        if (aiErrorNotice && aiErrorMessage) {
+            aiErrorMessage.innerText = `${ai.ai_analysis.error || "Unknown Error"} ${ai.ai_analysis.details ? ' - ' + ai.ai_analysis.details : ''}`;
+            aiErrorNotice.style.display = "block";
+        }
+    } else {
+        if (aiErrorNotice) aiErrorNotice.style.display = "none";
+    }
+
+    if (aiConf) {
+        const confidenceVal = parsedAI ? (parsedAI.confidence || 0) : Math.round((ai.confidence || 0.65) * 100);
+        aiConf.innerText = `Confidence Index: ${confidenceVal}%`;
+    }
+    const aiEngineStatus = document.getElementById("ai-engine-status");
+    if (aiEngineStatus) {
+        const modelUsed = (ai.ai_analysis && ai.ai_analysis.model_used) || ai.model_used || "rules_fallback";
+        const isGroq = (ai.ai_analysis && ai.ai_analysis.success === true) || (modelUsed !== "rules_fallback");
+        if (isGroq) {
+            aiEngineStatus.innerText = "completed with groq";
+            aiEngineStatus.className = "risk-indicator-badge risk-low";
+        } else {
+            aiEngineStatus.innerText = "rules fallback";
+            aiEngineStatus.className = "risk-indicator-badge risk-medium";
+        }
+    }
+    if (aiSum) {
+        aiSum.innerText = ai.summary || "Rule-based placeholder correlation pending AI provider configuration.";
+    }
+
+    if (aiDecisionEl && parsedAI) {
+        aiDecisionEl.innerText = parsedAI.decision || "UNKNOWN";
+        aiDecisionEl.className = "risk-indicator-badge";
+        const dec = (parsedAI.decision || "").toLowerCase();
+        if (dec.includes("definitely") || dec.includes("very likely") || dec.includes("highly")) {
+            aiDecisionEl.classList.add("risk-high");
+        } else if (dec.includes("probably") || dec.includes("possibly") || dec.includes("moderate")) {
+            aiDecisionEl.classList.add("risk-medium");
+        } else {
+            aiDecisionEl.classList.add("risk-low");
+        }
+    } else if (aiDecisionEl) {
+        aiDecisionEl.innerText = "PENDING";
+        aiDecisionEl.className = "risk-indicator-badge risk-medium";
+    }
+
+    if (parsedAI && parsedAI.reasons && parsedAI.reasons.length > 0) {
+        if (aiReasonsSection && aiReasonsList) {
+            aiReasonsList.innerHTML = parsedAI.reasons.map(r => `<li>${r}</li>`).join("");
+            aiReasonsSection.style.display = "block";
+        }
+    } else {
+        if (aiReasonsSection) aiReasonsSection.style.display = "none";
+    }
+
+    if (parsedAI && parsedAI.next_steps && parsedAI.next_steps.length > 0) {
+        if (aiStepsSection && aiStepsList) {
+            aiStepsList.innerHTML = parsedAI.next_steps.map(s => `<li>${s}</li>`).join("");
+            aiStepsSection.style.display = "block";
+        }
+    } else {
+        if (aiStepsSection) aiStepsSection.style.display = "none";
+    }
 
     if (aiPlatforms) {
         aiPlatforms.innerHTML = "";
@@ -408,6 +553,182 @@ function renderInvestigationResults(data) {
             `;
             crossGrid.appendChild(card);
         });
+    }
+
+    // Internal Database Matches rendering
+    const dbMatches = data.internal_database_matches || {};
+    const dbCountEl = document.getElementById("internal-matches-count");
+    const dbResultsEl = document.getElementById("internal-database-results");
+
+    const byUsername = dbMatches.by_username || [];
+    const byPhone = dbMatches.by_phone || [];
+    const byEmail = dbMatches.by_email || [];
+    const totalDbCount = byUsername.length + byPhone.length + byEmail.length;
+
+    if (dbCountEl) {
+        dbCountEl.innerText = `Matches Resolved: ${totalDbCount}`;
+    }
+
+    if (dbResultsEl) {
+        dbResultsEl.innerHTML = "";
+        if (totalDbCount === 0) {
+            dbResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No internal registry matches found.</span>`;
+        } else {
+            const allItems = [...byUsername, ...byPhone, ...byEmail];
+            const uniqueItems = [];
+            const seen = new Set();
+            for (const item of allItems) {
+                const signature = `${item.username}-${item.phone}-${item.email}`;
+                if (!seen.has(signature)) {
+                    seen.add(signature);
+                    uniqueItems.push(item);
+                }
+            }
+
+            uniqueItems.forEach(item => {
+                const row = document.createElement("div");
+                row.className = "db-match-row";
+                row.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:600; color:var(--accent-blue);">${item.username || "Unknown"}</span>
+                        <span class="profile-platform-badge" style="margin-top:0;">${item.platform || "Local Registry"}</span>
+                    </div>
+                    <div class="db-grid">
+                        <div><span style="color:var(--text-secondary);">Alternate:</span> ${item.alternate_username || "N/A"}</div>
+                        <div><span style="color:var(--text-secondary);">Phone:</span> ${item.phone || "N/A"}</div>
+                        <div><span style="color:var(--text-secondary);">Email:</span> ${item.email || "N/A"}</div>
+                        <div><span style="color:var(--text-secondary);">Address:</span> ${item.address || "N/A"}</div>
+                    </div>
+                    <div style="font-size:0.7rem; color:var(--text-secondary); display:flex; justify-content:space-between; border-top: 1px solid rgba(255,255,255,0.03); padding-top:6px; margin-top:2px;">
+                        <span>Source: ${item.data_source || "Manual Entry"}</span>
+                        <span>Date: ${(item.added_date || "").substring(0, 10)}</span>
+                    </div>
+                `;
+                dbResultsEl.appendChild(row);
+            });
+        }
+    }
+
+    // Hashtag Link Analysis rendering
+    const hashData = data.hashtag_analysis || {};
+    const hashStatusEl = document.getElementById("hashtag-analysis-status");
+    const extractedTagsEl = document.getElementById("extracted-hashtags-list");
+    const connectionsListEl = document.getElementById("hashtag-connections-list");
+
+    const analyzedTags = hashData.hashtags_analyzed || [];
+    const potentialConns = hashData.potential_connections || [];
+
+    if (hashStatusEl) {
+        hashStatusEl.innerText = analyzedTags.length > 0 ? "Lookup Completed" : "No Hashtags Found";
+    }
+
+    if (extractedTagsEl) {
+        extractedTagsEl.innerHTML = "";
+        if (analyzedTags.length === 0) {
+            extractedTagsEl.innerHTML = `<span style="font-size:0.75rem; font-style:italic; color:var(--text-secondary);">None extracted</span>`;
+        } else {
+            analyzedTags.forEach(tag => {
+                const pill = document.createElement("span");
+                pill.className = "tag-pill";
+                pill.innerText = `#${tag}`;
+                extractedTagsEl.appendChild(pill);
+            });
+        }
+    }
+
+    if (connectionsListEl) {
+        connectionsListEl.innerHTML = "";
+        if (potentialConns.length === 0) {
+            connectionsListEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No multiple-hashtag connection links identified on Twitter/X.</span>`;
+        } else {
+            potentialConns.forEach(conn => {
+                const tagsString = conn.hashtags ? conn.hashtags.map(t => `#${t}`).join(", ") : "";
+                const card = document.createElement("div");
+                card.className = "connection-card";
+                card.innerHTML = `
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <span style="font-weight:600; color:var(--accent-gold);">@id:${conn.user || "unknown"}</span>
+                        <span style="font-size:0.7rem; color:var(--text-secondary);">Shared tags: ${tagsString}</span>
+                    </div>
+                    <div style="text-align:right;">
+                        <span class="system-badge" style="background:rgba(255, 215, 0, 0.08); border-color:rgba(255, 215, 0, 0.2); color:var(--accent-gold);">${conn.frequency} Overlaps</span>
+                    </div>
+                `;
+                connectionsListEl.appendChild(card);
+            });
+        }
+    }
+
+    // AI Training Reference Matches rendering
+    const trainContext = (ai.training_context) ? ai.training_context : {};
+    const datasetMeta = trainContext.dataset || {};
+    const trainMetaEl = document.getElementById("training-dataset-meta");
+    const suggestedCategoryEl = document.getElementById("training-suggested-category");
+    const examplesListEl = document.getElementById("training-examples-list");
+
+    if (trainMetaEl) {
+        if (datasetMeta.configured) {
+            trainMetaEl.innerText = `Active DB (${datasetMeta.total_examples} Cases)`;
+            trainMetaEl.style.color = "var(--accent-blue)";
+        } else {
+            trainMetaEl.innerText = "Inactive";
+            trainMetaEl.style.color = "var(--text-secondary)";
+        }
+    }
+
+    if (suggestedCategoryEl) {
+        suggestedCategoryEl.innerText = trainContext.suggested_category ? `SUGGESTED TIER: ${trainContext.suggested_category}` : "";
+    }
+
+    if (examplesListEl) {
+        examplesListEl.innerHTML = "";
+        const refIds = trainContext.reference_example_ids || [];
+        if (refIds.length === 0) {
+            examplesListEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No relevant training examples referenced.</span>`;
+        } else {
+            refIds.forEach(async (id) => {
+                const card = document.createElement("div");
+                card.className = "example-card";
+                card.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:600; color:var(--accent-blue);">Loading Case #${id}...</span>
+                    </div>
+                `;
+                examplesListEl.appendChild(card);
+                
+                try {
+                    const resp = await fetch(`${API_BASE}/api/v1/training/dataset/examples/${id}`);
+                    if (resp.ok) {
+                        const exData = await resp.json();
+                        const tier = exData.confidence_tier || "N/A";
+                        const cat = exData.category || "N/A";
+                        const primaryUser = exData.input?.primary_profile?.username || "unknown";
+                        card.innerHTML = `
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-weight:600; color:var(--accent-blue);">Case #${id} (${primaryUser})</span>
+                                <span class="tag-pill">${tier}</span>
+                            </div>
+                            <div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">
+                                <strong>Category:</strong> ${cat}<br>
+                                <strong>Description:</strong> ${exData.input?.primary_profile?.bio ? exData.input.primary_profile.bio.substring(0, 80) + '...' : 'No bio recorded.'}
+                            </div>
+                        `;
+                    } else {
+                        throw new Error("Failed response");
+                    }
+                } catch (e) {
+                    card.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-weight:600; color:var(--accent-blue);">Training Case #${id}</span>
+                            <a href="${API_BASE}/api/v1/training/dataset/examples/${id}" target="_blank" style="font-size:0.7rem; color:var(--accent-gold); text-decoration:none; border:1px solid rgba(255,215,0,0.2); padding:2px 6px; border-radius:4px;">View JSON</a>
+                        </div>
+                        <div style="font-size:0.75rem; color:var(--text-secondary);">
+                            Linked historical investigation dataset file mapping.
+                        </div>
+                    `;
+                }
+            });
+        }
     }
 }
 
@@ -495,6 +816,10 @@ async function loadHistoryRecord(invId) {
 // Render dynamic HTML for Official Investigation Report template
 function renderOfficialReportTemplate(data, caseId) {
     const pData = data.platform_data || {};
+    let profilePic = pData.profile_pic_hd || pData.profile_pic_url;
+    if (profilePic && !profilePic.startsWith("data:")) {
+        profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+    }
     const risk = data.risk_assessment || { level: "low", score: 0, factors: [] };
     const score = risk.score !== undefined ? risk.score : 0;
     const ai = data.ai_correlation_result || { confidence: 0.65, summary: "", matching_platforms: [] };
@@ -503,6 +828,87 @@ function renderOfficialReportTemplate(data, caseId) {
     const currentDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const timeStr = pData.scraped_at || data.timestamp || new Date().toISOString();
     const formattedScrapeDate = timeStr.replace("T", " ").substring(0, 19);
+
+    // De-duplicate and generate internal DB matches rows
+    const dbMatches = data.internal_database_matches || {};
+    const byUsername = dbMatches.by_username || [];
+    const byPhone = dbMatches.by_phone || [];
+    const byEmail = dbMatches.by_email || [];
+    const allDbMatches = [...byUsername, ...byPhone, ...byEmail];
+    
+    const uniqueDbMatches = [];
+    const seenDb = new Set();
+    allDbMatches.forEach(item => {
+        const sig = `${item.username}-${item.phone}-${item.email}`;
+        if (!seenDb.has(sig)) {
+            seenDb.add(sig);
+            uniqueDbMatches.push(item);
+        }
+    });
+
+    let dbMatchesRows = "";
+    if (uniqueDbMatches.length > 0) {
+        uniqueDbMatches.forEach(item => {
+            dbMatchesRows += `
+            <tr>
+                <td><strong>${item.username || "N/A"}</strong></td>
+                <td>${item.alternate_username || "N/A"}</td>
+                <td>${item.phone || "N/A"}</td>
+                <td>${item.email || "N/A"}</td>
+                <td>${item.data_source || "N/A"}</td>
+            </tr>`;
+        });
+    } else {
+        dbMatchesRows = `<tr><td colspan="5" style="text-align: center; color: #555;">No records matched in internal user registry.</td></tr>`;
+    }
+
+    // Hashtag Linkage tables
+    const hashData = data.hashtag_analysis || {};
+    const analyzedTags = hashData.hashtags_analyzed || [];
+    const potentialConns = hashData.potential_connections || [];
+    
+    let hashtagsString = analyzedTags.length > 0 ? analyzedTags.map(t => `#${t}`).join(", ") : "None detected.";
+    let hashtagConnectionsRows = "";
+    if (potentialConns.length > 0) {
+        potentialConns.forEach(conn => {
+            hashtagConnectionsRows += `
+            <tr>
+                <td><strong>@id:${conn.user}</strong></td>
+                <td>${conn.frequency} Overlaps</td>
+                <td>${conn.hashtags ? conn.hashtags.map(t => `#${t}`).join(", ") : ""}</td>
+            </tr>`;
+        });
+    } else {
+        hashtagConnectionsRows = `<tr><td colspan="3" style="text-align: center; color: #555;">No multiple-hashtag connection links identified on Twitter/X network.</td></tr>`;
+    }
+
+    // AI Training Case Context
+    const trainContext = ai.training_context || {};
+    const trainRefIds = trainContext.reference_example_ids || [];
+    let trainExamplesStr = "";
+    if (trainRefIds.length > 0) {
+        trainExamplesStr = `Case ID reference links matched in database: ${trainRefIds.map(id => `#${id}`).join(", ")} (Suggested Correlation Category: ${trainContext.suggested_category || "N/A"})`;
+    } else {
+        trainExamplesStr = "No relevant historical training examples matched.";
+    }
+
+    // AI Parsing Details
+    const parsedAI = (ai.ai_analysis && ai.ai_analysis.parsed) ? ai.ai_analysis.parsed : ai.parsed;
+    let aiDecisionText = parsedAI ? (parsedAI.decision || "UNKNOWN") : "UNKNOWN";
+    let aiConfidencePercent = parsedAI ? (parsedAI.confidence || 65) : Math.round((ai.confidence || 0.65) * 100);
+    
+    let aiReasonsHTML = "";
+    let aiStepsHTML = "";
+    if (parsedAI && parsedAI.reasons && parsedAI.reasons.length > 0) {
+        aiReasonsHTML = parsedAI.reasons.map(r => `<li>${r}</li>`).join("");
+    } else {
+        aiReasonsHTML = "<li>Baseline identity overlap matching rules applied.</li>";
+    }
+    if (parsedAI && parsedAI.next_steps && parsedAI.next_steps.length > 0) {
+        aiStepsHTML = parsedAI.next_steps.map(s => `<li>${s}</li>`).join("");
+    } else {
+        aiStepsHTML = "<li>Manually verify other account attributes, matching photos, and locations.</li>";
+    }
 
     // Generate table rows for cross platform matches
     let matchesRows = "";
@@ -681,7 +1087,7 @@ function renderOfficialReportTemplate(data, caseId) {
     </table>
     
     <div class="section-title">1. EXECUTIVE SUMMARY</div>
-    <p>This document files the open-source intelligence findings gathered regarding online handle alias <strong>${pData.username}</strong>. High-level scans resolved active profiles across online grids with a consolidated threat rating of <strong>${risk.level.toUpperCase()}</strong>. Detailed evidence and platform parameters are cataloged in section 4.</p>
+    <p>This document files the open-source intelligence findings gathered regarding online handle alias <strong>${pData.username}</strong>. Scans resolved active profiles across online grids with a consolidated threat rating of <strong>${risk.level.toUpperCase()}</strong>. Detailed evidence and platform parameters are cataloged in section 4.</p>
     
     <div class="section-title">2. INCIDENT OVERVIEW</div>
     <p>An automated reconnaissance protocol was instantiated on ${currentDate} under active request reference case ${caseId}. The objective was to search, map, and assess online footprint correlations for the subject handle to check for risk indices, impersonations, or illegal activity.</p>
@@ -691,20 +1097,35 @@ function renderOfficialReportTemplate(data, caseId) {
     <table>
         <tr><td>Username</td><td>${pData.username}</td></tr>
         <tr><td>Display Name</td><td>${pData.full_name || "NOT SPECIFIED"}</td></tr>
-        <tr><td>Account Created</td><td>Not Available</td></tr>
+        <tr><td>Account Status</td><td>${data.status.toUpperCase()}</td></tr>
         <tr><td>Bio</td><td>${pData.bio || "No biography details cached."}</td></tr>
         <tr><td>Followers</td><td>${pData.follower_count || "UNKNOWN"}</td></tr>
         <tr><td>Following</td><td>${pData.following_count || "UNKNOWN"}</td></tr>
-        <tr><td>Account Status</td><td>${data.status.toUpperCase()}</td></tr>
+        <tr><td>Profile Pic HD</td><td>${pData.profile_pic_hd ? "Available" : "Not Available"}</td></tr>
+        ${profilePic ? `<tr><td>Profile Photo</td><td><img src="${profilePic}" style="width:100px; height:100px; border-radius:50%; object-fit:cover; border:1px solid #333;" onerror="this.style.display='none';"></td></tr>` : ""}
     </table>
     
     <h4>3.2 Content Analysis</h4>
     <p>No anomalous content flags or illegal activity alerts observed on target timeline. Secondary posts examination is pending legal warrant verification.</p>
     
-    <h4>3.3 Network Analysis</h4>
-    <p>Subject shows close correlation coordinates with secondary nodes on identical social channels. Network structure is stable with standard baseline parameters.</p>
+    <h4>3.3 Internal Database Registry Matches</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Alternate Username</th>
+                <th>Phone Number</th>
+                <th>Email Address</th>
+                <th>Registry Source</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${dbMatchesRows}
+        </tbody>
+    </table>
     
     <div class="section-title">4. CROSS-PLATFORM CORRELATION</div>
+    <h4>4.1 Social Network Presence Index</h4>
     <table>
         <tr>
             <th>Platform</th>
@@ -714,25 +1135,56 @@ function renderOfficialReportTemplate(data, caseId) {
         </tr>
         ${matchesRows}
     </table>
+
+    <h4>4.2 Hashtag Reverse Lookup Analysis</h4>
+    <p><strong>Extracted Hashtags from Primary Profile:</strong> ${hashtagsString}</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Matched Twitter User</th>
+                <th>Overlapping Frequency</th>
+                <th>Overlapping Hashtags</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${hashtagConnectionsRows}
+        </tbody>
+    </table>
     
     <div class="section-title">5. AI CORRELATION ANALYSIS</div>
     <div class="evidence-box">
+        <strong>Correlation Decision:</strong> <span style="font-weight:bold; color:red;">${aiDecisionText}</span> (AI Confidence: ${aiConfidencePercent}%)<br><br>
         <strong>Identity Consolidation:</strong>
         <p>${ai.summary || "Rule-based placeholder correlation pending AI provider configuration."}</p>
         
-        <strong>Confidence Assessment:</strong>
-        <p>The system evaluates identity match confidence at ${Math.round((ai.confidence || 0.65) * 100)}% based on platform presence overlaps.</p>
+        <strong>Key Correlation Reasons:</strong>
+        <ul>
+            ${aiReasonsHTML}
+        </ul>
+
+        <strong>Recommended Forensic Next Steps:</strong>
+        <ul>
+            ${aiStepsHTML}
+        </ul>
     </div>
     
     <div class="section-title">6. RISK ASSESSMENT</div>
     <p><strong>Risk Level:</strong> <span class="finding-${risk.level}">${risk.level.toUpperCase()}</span> (Threat Score: ${score}%)</p>
+    
+    <div class="evidence-box">
+        <strong>AI Risk Analysis Narrative:</strong>
+        <p style="white-space: pre-wrap; font-family: monospace; font-size: 10pt;">${risk.ai_risk_analysis?.analysis || "Configure GROQ_API_KEY to enable narrative risk report details."}</p>
+    </div>
+
     <p><strong>Indicators Found:</strong></p>
     <ul>
         ${indicatorsItems}
     </ul>
     
-    <div class="section-title">7. CRITICAL DISCOVERIES</div>
+    <div class="section-title">7. CRITICAL DISCOVERIES & BENCHMARKS</div>
     ${discoveriesItems}
+    <p><strong>OSINT Training Dataset Benchmarking:</strong></p>
+    <p style="font-style: italic;">${trainExamplesStr}</p>
     
     <div class="section-title">8. EVIDENCE SUMMARY</div>
     <table>

@@ -4,7 +4,8 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
+import httpx
 
 from backend.schemas.investigation import (
     InvestigationHistoryItem,
@@ -100,8 +101,22 @@ async def ai_correlate(platform_data: dict[str, Any], cross_matches: list[dict[s
     positive_matches = [match for match in cross_matches if match.get("exists")]
     confidence = min(0.95, 0.35 + (len(positive_matches) * 0.1))
     ai_analysis = await AIAnalyzer().analyze_correlation(platform_data, cross_matches)
+    
+    parsed = ai_analysis.get("parsed") or {}
+    decision = parsed.get("decision", "UNKNOWN")
+    confidence_val = parsed.get("confidence", int(confidence * 100))
+    reasons = parsed.get("reasons", [])
+    
+    is_groq = ai_analysis.get("success", False) and ai_analysis.get("model_used") != "rules_fallback"
+    engine_status = "AI correlation completed with Groq" if is_groq else "rules fallback is used"
+    
+    if reasons:
+        summary = f"{engine_status}. Identity consolidation decision: {decision} ({confidence_val}% confidence). Key findings: {'; '.join(reasons)}"
+    else:
+        summary = f"{engine_status}. Identity consolidation decision: {decision} ({confidence_val}% confidence)."
+
     return {
-        "summary": "AI correlation completed with DeepSeek when configured; otherwise rules fallback is used.",
+        "summary": summary,
         "confidence": round(confidence, 2),
         "matching_platforms": [match["platform"] for match in positive_matches],
         "primary_platform": platform_data.get("platform"),
@@ -179,3 +194,21 @@ async def list_investigations(
         )
         for item in items
     ]
+
+
+@router.get("/proxy-image")
+async def proxy_image(url: str) -> Response:
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing url parameter")
+    try:
+        async with httpx.AsyncClient() as client:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            response = await client.get(url, headers=headers, follow_redirects=True, timeout=10.0)
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail="Failed to fetch image from source")
+            content_type = response.headers.get("content-type", "image/jpeg")
+            return Response(content=response.content, media_type=content_type)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Proxy error: {str(e)}")

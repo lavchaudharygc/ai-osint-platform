@@ -225,6 +225,18 @@
                                             </div>
                                         </div>
                                         <div class="risk-indicator-badge risk-medium" id="risk-badge">MEDIUM THREAT</div>
+
+                                        <!-- AI Risk Error Notice -->
+                                        <div id="risk-error-notice" style="display:none; background: rgba(255, 51, 102, 0.1); border: 1px solid rgba(255, 51, 102, 0.3); padding: 10px; border-radius: 6px; font-size: 0.75rem; color: var(--accent-crimson); margin-top: 10px; text-align: left; line-height: 1.4;">
+                                            <div style="font-weight: 600; margin-bottom: 2px;">⚠️ AI Risk Analysis Unavailable</div>
+                                            <div id="risk-error-message" style="font-size:0.7rem; font-family:monospace; word-break: break-all;"></div>
+                                        </div>
+
+                                        <!-- AI Risk Analysis Text Report Section -->
+                                        <div id="risk-analysis-text-section" style="margin-top: 15px; text-align: left; font-size: 0.8rem; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 12px; display: none;">
+                                            <div style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">AI Risk Analysis Report</div>
+                                            <div id="risk-analysis-text-content" style="line-height: 1.5; color: var(--text-primary); white-space: pre-wrap; font-family: monospace; font-size: 0.75rem; background: rgba(0,0,0,0.25); padding: 8px; border-radius: 4px; border: 1px solid var(--border-glow); max-height: 150px; overflow-y: auto;"></div>
+                                        </div>
                                     </div>
 
                                     <!-- PRIMARY DETAILS CARD -->
@@ -234,7 +246,9 @@
                                         </div>
                                         <div class="target-profile-card">
                                             <div class="profile-avatar-row">
-                                                <div class="avatar-placeholder" id="target-avatar-char">U</div>
+                                                <div class="avatar-placeholder" id="target-avatar-container" style="position: relative; overflow: hidden;">
+                                                    <span id="target-avatar-char">U</span>
+                                                </div>
                                                 <div>
                                                     <div class="profile-username" id="target-profile-name">unknown</div>
                                                     <div class="profile-platform-badge" id="target-profile-platform">instagram</div>
@@ -242,16 +256,40 @@
                                             </div>
                                             <div class="profile-details-grid">
                                                 <div class="detail-item">
+                                                    <span>Full Name</span>
+                                                    <span id="target-profile-fullname" style="font-weight: 500;">N/A</span>
+                                                </div>
+                                                <div class="detail-item" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+                                                    <span>Biography</span>
+                                                    <span id="target-profile-bio" style="font-weight: normal; font-size: 0.75rem; text-align: left; word-break: break-word; line-height: 1.4; color: var(--text-secondary);">N/A</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span>Followers</span>
+                                                    <span id="target-profile-followers" class="mono">0</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span>Following</span>
+                                                    <span id="target-profile-following" class="mono">0</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span>Total Posts</span>
+                                                    <span id="target-profile-posts" class="mono">0</span>
+                                                </div>
+                                                <div class="detail-item">
                                                     <span>Verified Account</span>
                                                     <span id="target-profile-verified">False</span>
+                                                </div>
+                                                <div class="detail-item">
+                                                    <span>Data Source</span>
+                                                    <span class="mono gold-text" id="target-profile-source">Scraper</span>
                                                 </div>
                                                 <div class="detail-item">
                                                     <span>Status Flag</span>
                                                     <span class="mono blue-text" id="target-profile-status">completed</span>
                                                 </div>
-                                                <div class="detail-item" style="flex-direction:column; gap:4px;">
+                                                <div class="detail-item" style="flex-direction: column; gap: 4px;">
                                                     <span>Scraped At (UTC)</span>
-                                                    <span id="target-profile-time" style="font-family:'Share Tech Mono'; font-size:0.75rem; word-break: break-all;">2026-06-28</span>
+                                                    <span id="target-profile-time" style="font-family: 'Share Tech Mono'; font-size: 0.75rem; word-break: break-all;">2026-06-28</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -274,11 +312,37 @@
                                     <div class="glass-card">
                                         <div class="card-header-bar">
                                             <span class="card-title">Intelligence Correlation Analysis</span>
-                                            <span class="mono gold-text" id="ai-confidence">Confidence: 65%</span>
+                                            <div style="display: flex; gap: 10px; align-items: center;">
+                                                <span class="mono gold-text" id="ai-confidence">Confidence: 65%</span>
+                                                <span id="ai-engine-status" class="risk-indicator-badge" style="margin-top: 0; font-size: 0.65rem; padding: 2px 6px;">rules fallback</span>
+                                            </div>
                                         </div>
-                                        <div style="font-size: 0.9rem; line-height: 1.6;">
+                                        <div style="font-size: 0.9rem; line-height: 1.6; display: flex; flex-direction: column; gap: 15px;">
+                                            <!-- AI Error Notice -->
+                                            <div id="ai-error-notice" style="display:none; background: rgba(255, 51, 102, 0.1); border: 1px solid rgba(255, 51, 102, 0.3); padding: 12px; border-radius: 6px; font-size: 0.8rem; color: var(--accent-crimson); line-height: 1.4;">
+                                                <div style="font-weight: 600; margin-bottom: 2px;">⚠️ AI Correlation Analysis Failed</div>
+                                                <div id="ai-error-message" style="font-size:0.75rem; font-family:monospace; word-break: break-all;"></div>
+                                            </div>
+
+                                            <div>
+                                                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Correlation Decision</div>
+                                                <span id="ai-decision-badge" class="risk-indicator-badge" style="margin-top: 0;">UNKNOWN</span>
+                                            </div>
                                             <p id="ai-summary">Rule-based placeholder correlation pending AI provider configuration.</p>
-                                            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap: wrap;">
+                                            
+                                            <div id="ai-reasons-section" style="display:none;">
+                                                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Key Reasons</div>
+                                                <ul id="ai-reasons-list" style="padding-left: 20px; font-size: 0.85rem; color: var(--text-primary); display: flex; flex-direction: column; gap: 4px;">
+                                                </ul>
+                                            </div>
+
+                                            <div id="ai-steps-section" style="display:none;">
+                                                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Recommended Next Steps</div>
+                                                <ul id="ai-steps-list" style="padding-left: 20px; font-size: 0.85rem; color: var(--text-primary); display: flex; flex-direction: column; gap: 4px;">
+                                                </ul>
+                                            </div>
+
+                                            <div style="display:flex; gap:8px; margin-top:5px; flex-wrap: wrap;">
                                                 <span style="font-size:0.75rem; color:var(--text-secondary); align-self: center;">Associated Platform Handles:</span>
                                                 <div id="ai-associated-platforms" style="display:flex; gap:6px;">
                                                     <!-- Dynamic tag badges -->
@@ -295,6 +359,53 @@
                                         </div>
                                         <div class="cross-platform-grid" id="cross-platform-grid">
                                             <!-- Dynamic platform cards -->
+                                        </div>
+                                    </div>
+
+                                    <!-- INTERNAL DATABASE RECORDS LOOKUP CARD -->
+                                    <div class="glass-card">
+                                        <div class="card-header-bar">
+                                            <span class="card-title">Internal Database Records Lookup</span>
+                                            <span class="mono blue-text" id="internal-matches-count">Records Checked</span>
+                                        </div>
+                                        <div id="internal-database-results" style="display:flex; flex-direction:column; gap:10px;">
+                                            <!-- Dynamic content: database matches or empty state -->
+                                        </div>
+                                    </div>
+
+                                    <!-- HASHTAG LINK ANALYSIS (REVERSE LOOKUP) CARD -->
+                                    <div class="glass-card">
+                                        <div class="card-header-bar">
+                                            <span class="card-title">Hashtag Reverse Lookup & Link Analysis</span>
+                                            <span class="mono gold-text" id="hashtag-analysis-status">Status Check</span>
+                                        </div>
+                                        <div style="font-size: 0.9rem; line-height: 1.6; display: flex; flex-direction: column; gap: 12px;">
+                                            <div>
+                                                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Extracted Hashtags</div>
+                                                <div id="extracted-hashtags-list" style="display:flex; flex-wrap:wrap; gap:6px;">
+                                                    <!-- List of hashtags -->
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Potential Network Connections (Twitter)</div>
+                                                <div id="hashtag-connections-list" style="display:flex; flex-direction:column; gap:8px;">
+                                                    <!-- List of connection cards -->
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- AI TRAINING REFERENCE MATCHES CARD -->
+                                    <div class="glass-card">
+                                        <div class="card-header-bar">
+                                            <span class="card-title">AI Training Reference Examples</span>
+                                            <span class="mono text-secondary" id="training-dataset-meta">Loaded</span>
+                                        </div>
+                                        <div class="training-context-container" id="training-context-container" style="font-size: 0.9rem; line-height: 1.6; display: flex; flex-direction: column; gap: 10px;">
+                                            <p id="training-suggested-category" style="font-weight: 600; color: var(--accent-gold); margin-bottom: 4px;"></p>
+                                            <div id="training-examples-list" style="display:flex; flex-direction:column; gap:8px;">
+                                                <!-- Dynamic training examples -->
+                                            </div>
                                         </div>
                                     </div>
 
@@ -347,7 +458,7 @@
                             </div>
                             <div>
                                 <span style="font-size: 0.8rem; color:var(--text-secondary);">Core URL</span>
-                                <div class="diagnostic-value">http://127.0.0.1:8000</div>
+                                <div class="diagnostic-value">http://127.0.0.1:8010</div>
                             </div>
                             <div style="margin-top: 15px;">
                                 <span style="font-size: 0.8rem; color:var(--text-secondary);">Operational Connection</span>

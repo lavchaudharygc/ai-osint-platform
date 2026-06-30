@@ -17,7 +17,7 @@ AI-Assisted OSINT Investigation Platform for Indian Law Enforcement Agencies.
 ## Tech Stack
 - Backend: Python + FastAPI
 - Frontend: HTML + CSS + JavaScript (Phase 1)
-- AI: DeepSeek API (Phase 1)
+- AI: Groq API (Phase 1)
 - Database: SQLite (Phase 1)
 
 ## Setup and Running Instructions

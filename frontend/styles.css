@@ -1134,3 +1134,69 @@ body::before {
     justify-content: flex-end;
     gap: 12px;
 }
+
+/* Sprint 2 Upgraded Pipeline Styles */
+.db-match-row {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-glow);
+    border-radius: 6px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.db-match-row:hover {
+    background: rgba(0, 188, 212, 0.03);
+    border-color: var(--accent-blue);
+}
+.db-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    font-size: 0.8rem;
+}
+.tag-pill {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 215, 0, 0.08);
+    color: var(--accent-gold);
+    border: 1px solid rgba(255, 215, 0, 0.25);
+    text-transform: uppercase;
+}
+.connection-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-glow);
+    border-radius: 6px;
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.8rem;
+}
+.connection-card:hover {
+    border-color: var(--accent-gold);
+    background: rgba(255, 215, 0, 0.02);
+}
+.example-card {
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px solid rgba(26, 54, 93, 0.4);
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.example-card:hover {
+    border-color: var(--accent-blue);
+    background: rgba(0, 188, 212, 0.02);
+}
+.list-inline-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
