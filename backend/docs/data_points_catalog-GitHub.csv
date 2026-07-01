@@ -1,0 +1,30 @@
+GITHUB — Username OSINT Data Point Map,,,,,,
+Tab of Username_OSINT_DataPoints.xlsx — Developer platform OSINT for technical & identity correlation,,,,,,
+,,,,,,
+#,DATA POINT,INVESTIGATIVE VALUE,DIFFICULTY,TECHNICAL APPROACH,LEGAL CONSIDERATIONS,PRIORITY
+1,Username (@handle),Primary identifier — exact match to other platforms is very strong identity signal,Easy,Scrape,Public data,P0
+2,Full Name,Real name disclosed in profile — links to professional/legal identity,Easy,Scrape,Public data,P0
+3,Profile Picture (Avatar),Reused image across platforms — pHash / face match,Easy,Scrape,Public data,P0
+4,Bio / About Text,"Self-description — often includes employer, links, NLP similarity to other bios",Easy,Scrape,Public data,P0
+5,Email Address (Public/Commit),Direct identifier — often exposed in commit metadata even if hidden on profile,Medium,Scrape / API,Public data,P0
+6,Website / Blog Link,"External URL in profile — leads to personal site, portfolio, other socials",Easy,Scrape,Public data,P0
+7,Twitter/X Handle (linked in profile),Direct cross-platform link disclosed by user themselves,Easy,Scrape,Public data,P0
+8,Company / Organization Field,Employer disclosed — verify against LinkedIn for confirmation,Easy,Scrape,Public data,P0
+9,Location,Self-reported city/country — narrows geographic search,Easy,Scrape,Public data,P1
+10,Public Repositories,"Codebase — reveals technical skillset, project topics, and naming conventions",Easy,Scrape / API,Public data,P0
+11,Repo Names & Descriptions,"Naming patterns may repeat across platforms (portfolio sites, npm, etc.)",Easy,Scrape / API,Public data,P1
+12,README Content,"Often contains author bio, contact info, social links not shown elsewhere",Medium,Scrape,Public data,P0
+13,Stars Given,Interest mapping — reveals tech stack preferences and topics followed,Easy,Scrape / API,Public data,P2
+14,Stars Received,Popularity / reputation indicator — flags high-profile or notable accounts,Easy,Scrape / API,Public data,P2
+15,Organizations (Membership),"Reveals employer, open-source teams, or community affiliations",Easy,Scrape / API,Public data,P0
+16,Contribution Graph (Activity Heatmap),Activity pattern — daily/weekly rhythm hints at timezone and routine,Easy,Scrape,Public data,P1
+17,Contribution Timestamps (Commits),Precise commit times reveal timezone with high accuracy across many data points,Medium,API,Public data,P1
+18,Followers / Following List,Social graph — overlap with known associates confirms real-world connections,Easy,Scrape / API,Public data,P1
+19,Gists (Public Code Snippets),"Quick-shared snippets may contain personal info, configs, or leaked credentials",Medium,Scrape / API,Public data,P1
+20,Pinned Repositories,Curated showcase — reveals primary skill area and current focus projects,Easy,Scrape,Public data,P2
+21,Account Creation Date,Account age — established account adds credibility; brand new = caution flag,Easy,Scrape / API,Public data,P1
+22,Sponsor / Funding Links,"Payment platform links (Patreon, Ko-fi) — may expose real name or PayPal email",Easy,Scrape,Public data,P1
+23,Commit Email History,Past commit emails sometimes differ from current — reveals old aliases or personal email,Hard,git log analysis,Public if repo public,P0
+24,SSH/GPG Key Fingerprints,Cryptographic identifiers — rarely reused but can confirm identity across dev platforms,Hard,API,Public data,P2
+25,Private Repository List,Not visible without access — requires account compromise or legal request,Impossible,Not accessible,"Private, requires legal process",P2
+26,Private Email (account settings),Not publicly visible unless leaked via commit,Impossible,Not accessible,"Private, requires legal process",P2

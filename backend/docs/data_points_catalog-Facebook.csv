@@ -1,0 +1,35 @@
+FACEBOOK — Username OSINT Data Point Map,,,,,,
+Tab 4 of Username_OSINT_DataPoints.xlsx — for Developer 1 (Backend),,,,,,
+,,,,,,
+#,DATA POINT,INVESTIGATIVE VALUE,DIFFICULTY,TECHNICAL APPROACH,LEGAL CONSIDERATIONS,PRIORITY
+1,Profile Name / Vanity URL,"Primary identifier, often subject's real name (real-name policy)",Easy,Scrape,Public data,P0
+2,Profile Picture,"Reverse image search, face comparison across platforms",Easy,Download,Public data,P0
+3,Cover Photo,"Lifestyle, location, event, family clues",Easy,Download,Public if profile is public,P1
+4,About / Bio Section,"Work, education, contact info — richest identity tab on FB",Medium,Scrape,Public sections only,P0
+5,Work and Education History,Employer/school — strongest professional identity link,Medium,Scrape,Public if set to Public,P0
+6,Current City & Hometown,"Geographic history, jurisdiction, travel patterns",Medium,Scrape,Public if set to Public,P1
+7,Relationship Status & Partner Tag,"Associate mapping, household identification",Medium,Scrape,Public if set to Public,P1
+8,Family Members Listed,Direct family network — strongest association data,Medium,Scrape,Public if set to Public,P1
+9,Contact Info (Phone/Email),"Direct identifier, traceable via records",Hard,Scrape,Often hidden by privacy setting,P1
+10,Friends List,Full social network map,Hard,Scrape,Visible only if not restricted,P1
+11,Mutual Friends,Quick association check vs. known associates,Easy,Scrape (while logged in),Visible if logged in,P1
+12,Followers Count,Reach/influence estimate,Easy,Scrape,"Public, Pages/public figures",P1
+13,Public Posts (Text/Photo/Video),"Behaviour, opinions, associates, daily routine",Medium,Scrape,Posts set to Public only,P0
+14,Check-ins / Location Tags,Physical movement history,Medium,Scrape,Public if tagged publicly,P1
+15,Photos Tagged By Others,"Real face photos, real-world associates, events",Hard,Scrape,Depends on tag-review setting,P1
+16,Life Events,Major milestone timeline for biography reconstruction,Easy,Scrape,Public if set to Public,P2
+17,Pages Liked / Followed,"Interests, brand affiliations, political/religious leanings",Hard,Scrape,Often hidden by privacy setting,P2
+18,Groups Joined (Public),"Community membership, activism, regional groups",Hard,Scrape,Only public memberships shown,P1
+19,Events Attending / Hosted,"Real-world activity, associates, locations",Hard,Scrape,Only if event is public,P2
+20,Reviews & Recommendations,"Opinions, places frequented, writing-style fingerprint",Easy,Scrape,Public by default,P2
+21,Marketplace Listings,"Items sold/bought, approximate location, income clues",Easy,Scrape,Public listings,P2
+22,Birthday,"Identity verification, age confirmation",Medium,Scrape,Many users hide year/date,P1
+23,Religious & Political Views,"Ideology/affiliation clues — sensitive, use only when case-relevant",Medium,Scrape,Frequently left blank/hidden,P2
+24,Page Admin / Transparency Info,Reveals who runs a suspicious business/news Page,Easy,Scrape (Page Transparency),"Meta-disclosed, public",P1
+25,Comments on Public Posts / Pages,"Communication style, associates, threats, confessions",Medium,Scrape,Public posts only,P1
+26,Private Messages (Messenger),"Planning, threats, deals",Impossible,Not accessible,"Private, court order required",P2
+27,Private / Friends-Only Posts,Restricted content,Impossible,Not accessible,Requires friendship/login,P2
+28,Login IP / Device Info,"Geolocation, device fingerprint",Impossible,Not accessible,Only Meta/court order,P2
+29,Ad Account / Payment Info,"Financial trail, real-name billing match",Impossible,Not accessible,Only Meta/court order,P2
+30,Work & Education (cross-ref LinkedIn),Facebook work history often mirrors LinkedIn — discrepancies reveal deception,Medium,Scrape,Public if shared,P0
+31,Professional Title / Employer Tag,Voluntarily disclosed employer — pivot to LinkedIn for full work history,Medium,Scrape,Public if shared,P1

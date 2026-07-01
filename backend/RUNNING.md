@@ -95,9 +95,9 @@ The backend automatically reads `.env` through `pydantic-settings`. The `.env` f
 For AI correlation and risk assessment, add this to `.env`:
 
 ```text
-GROQ_API_KEY=your-groq-key
-GROQ_API_URL=https://api.groq.com/openai/v1/chat/completions
-GROQ_MODEL=llama-3.3-70b-versatile
+DEEPSEEK_API_KEY=your-deepseek-key
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+DEEPSEEK_MODEL=deepseek-chat
 ```
 
 For hashtag reverse lookup, add:

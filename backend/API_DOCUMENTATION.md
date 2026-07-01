@@ -1,9 +1,8 @@
 # AI-OSINT Platform API Documentation
 
-Base URL: `http://localhost:8010`
+Base URL: `http://localhost:8000`
 
 FastAPI also exposes interactive documentation at `/docs` and OpenAPI JSON at `/openapi.json`.
-
 
 ## Root API Info
 
@@ -75,18 +74,17 @@ Username investigations also include a lightweight `ai_correlation_result.traini
 
 Username investigations now include additional backend sections when configured:
 
-- `ai_correlation_result.ai_analysis` uses Groq when `GROQ_API_KEY` is set, otherwise returns a rules-based fallback.
-- `risk_assessment.ai_risk_analysis` uses Groq for risk review when configured.
+- `ai_correlation_result.ai_analysis` uses DeepSeek when `DEEPSEEK_API_KEY` is set, otherwise returns a rules-based fallback.
+- `risk_assessment.ai_risk_analysis` uses DeepSeek for risk review when configured.
 - `internal_database_matches` searches the local SQLite `user_database` table by username, phone, and email.
 - `hashtag_analysis` searches recent Twitter/X hashtag usage when Instagram hashtags and `TWITTER_BEARER_TOKEN` are available.
 
 The Instagram service uses `instaloader` to return profile metadata, recent posts, hashtags, tagged users, business fields, and privacy/rate-limit status when public data is available.
 
-## Image Proxy
+## Instagram Catalog Coverage
 
-`GET /api/v1/investigation/proxy-image`
+The Instagram extractor is aligned with `docs/data_points_catalog-Instagram.csv` and returns stable keys for the catalog's high-priority username OSINT fields. Public/profile fields include username, display name, bio, profile image URLs, profile image hash, follower/following/post counts, verification/private/business status, account type, external URLs, business contact fields, recent post captions, hashtags, timestamps, locations, tagged users, mentioned users, pinned posts, collab posts, LinkedIn links in bio, and professional email hints.
 
-Query Parameters:
-- `url` (string, required): The external image URL to be proxied.
+Fields that are not reliably available through public Instagram scraping, such as direct messages, full follower/following lists, EXIF metadata, exact creation date, former usernames, active ads, tagged photos, comments made by subject, story highlights, and account country/region are returned as `null` where appropriate and explained in `catalog_coverage_notes`.
 
-Fetches the target image from the source URL from the backend server to bypass browser CORS constraints and CDN hotlink protections.
+FlashAPI enrichment also normalizes provider fields into the main `platform_data` response when Instaloader fails but FlashAPI returns a valid Instagram user object, including related Instagram suggestions from `chaining_results` under `related_instagram_profiles`.

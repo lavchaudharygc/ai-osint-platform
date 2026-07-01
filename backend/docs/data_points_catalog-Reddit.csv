@@ -1,0 +1,27 @@
+REDDIT — Username OSINT Data Point Map,,,,,,
+Tab of Username_OSINT_DataPoints.xlsx — Anonymous-leaning platform OSINT for behavioural & identity correlation,,,,,,
+,,,,,,
+#,DATA POINT,INVESTIGATIVE VALUE,DIFFICULTY,TECHNICAL APPROACH,LEGAL CONSIDERATIONS,PRIORITY
+1,Username (u/handle),Primary identifier — exact/pattern match to other platforms is a strong signal,Easy,Scrape,Public data,P0
+2,Account Age,Older account = more credible history; brand new account = caution flag,Easy,Scrape / API,Public data,P1
+3,Karma (Post + Comment),Activity/reputation indicator — high karma suggests long-term genuine user,Easy,Scrape / API,Public data,P2
+4,Profile Picture / Avatar (Snoovatar),Custom avatars rarely reused but default ones can hint at account creation period,Easy,Scrape,Public data,P2
+5,Bio / About Text,Self-description — sometimes includes other platform handles or contact info,Easy,Scrape,Public data,P0
+6,Social Links in Profile,Direct cross-platform links — Reddit allows linking Twitter/Instagram/etc. on profile,Easy,Scrape,Public data,P0
+7,Active Subreddits,"Interest & community mapping — reveals hobbies, profession, location-based subs",Easy,Scrape / API,Public data,P0
+8,Post History (Public),"Behavioural & opinion trail — writing style, topics, claims made over time",Medium,Scrape / API,Public data,P0
+9,Comment History (Public),Largest data source — reveals personal details often shared unintentionally,Medium,Scrape / API,Public data,P0
+10,Writing Style / Stylometrics,"Vocabulary, sentence patterns — can be cross-matched with Twitter/Telegram posts",Hard,NLP analysis,Public content,P1
+11,Self-Disclosed Location,"Mentioned in comments (e.g. ""here in Delhi"") — geographic narrowing",Medium,Scrape + NLP,Public content,P1
+12,Self-Disclosed Age/Job/Personal Info,"Users often reveal personal info in r/AskIndia, advice subs, AMAs",Medium,Scrape + NLP,Public content,P0
+13,Posting Time Patterns,Timestamp clustering reveals likely timezone and daily routine,Medium,API + analysis,Public data,P1
+14,Cross-Posted Content,Same image/text posted elsewhere — reverse search links to other accounts,Medium,Reverse search,Public data,P1
+15,Awards Given/Received,Spending pattern indicator — awards tied to Reddit Premium purchases (minor financial signal),Easy,Scrape,Public data,P2
+16,Moderator Status (Subreddits),"If subject moderates a subreddit, reveals niche interest/community leadership role",Easy,Scrape,Public data,P1
+17,Trophy Case,"Achievement badges — minor signal, mostly account longevity/verification status",Easy,Scrape,Public data,P2
+18,Deleted/Edited Post Recovery,Archived versions (Pushshift/Wayback) may reveal originally posted personal info,Medium,Archive lookup,Public archived data,P1
+19,Username History (Old Usernames),Reddit doesn’t show this directly but old posts under prior username may surface via search,Hard,Archive + search,Public if archived,P1
+20,Linked Reddit Premium / Coins Purchase,Indicates payment method tied to account — financial trail (requires legal process),Impossible,Not accessible,"Private, requires legal process",P2
+21,Private Messages (DMs),Direct evidence of planning/coordination — not publicly accessible,Impossible,Not accessible,"Private, requires court order",P2
+22,Email Used for Registration,Account-linked email — ties Reddit to other platform registrations,Impossible,Not accessible,"Private, requires legal process",P2
+23,IP Address / Login Logs,"Access metadata — geolocation of logins, device fingerprint",Impossible,Not accessible,"Private, requires legal process",P2

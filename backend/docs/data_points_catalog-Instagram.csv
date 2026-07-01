@@ -1,0 +1,44 @@
+INSTAGRAM — Username OSINT Data Point Map,,,,,,
+Tab 1 of Username_OSINT_DataPoints.xlsx — for Developer 1 (Backend),,,,,,
+,,,,,,
+#,DATA POINT,INVESTIGATIVE VALUE,DIFFICULTY,TECHNICAL APPROACH,LEGAL CONSIDERATIONS,PRIORITY
+1,Username,Primary identifier — same username across platforms suggests same person,Easy,API,None,P0
+2,Full Name / Display Name,"Real identity clue, compare across platforms / records",Easy,Scrape,Public data,P0
+3,Bio Text,"Often contains email, phone, other accounts, location",Easy,Scrape,Public data,P0
+4,Profile Picture (URL + Download),"Reverse image search, compare faces across platforms, detect fake accounts",Easy,Download,Public data,P0
+5,Followers Count,"Bot detection — unusual ratios flag fake accounts, gauge influence",Easy,API,None,P0
+6,Following Count,"Ratio check — bots follow thousands, few followers",Easy,API,None,P0
+7,Post Count,"Account-age estimation, activity level",Easy,API,None,P0
+8,External URL in Bio,"Leads to other websites, business pages, hidden identities",Easy,Scrape,Public data,P0
+9,Account Verified Status,"Confirms identity for public figures, rules out impersonation",Easy,API,None,P0
+10,Business Category,"Reveals profession/industry, useful for fraud cases",Easy,API,None,P1
+11,Account Creation Date,"New account during incident period = suspicious, old account = more credible",Medium,Estimate / About-section,None,P1
+12,Last 12 Posts — Captions,"Behaviour patterns, associates, hashtags, locations visited",Medium,Scrape,Public content,P0
+13,Post Hashtags,"Interest mapping, group affiliations, campaign or radicalisation tracking",Easy,Scrape,Public data,P0
+14,Post Timestamps,"Activity pattern analysis, time-zone detection",Easy,Scrape,Public data,P1
+15,Post Location Tags,Physical location history — where has subject been?,Medium,Scrape,Potential privacy concern,P1
+16,Tagged Users in Posts,Network mapping — who subject interacts with physically,Medium,Scrape,Public data,P1
+17,Mentioned Users in Captions,Communication network — who subject talks about/to,Easy,Scrape,Public data,P1
+18,Comments Made by Subject,"Communication style, associates, threats, confessions",Hard,Scrape,May need authorisation,P1
+19,Tagged Photos (Photos of Subject),"Real face photos, real-name tags, location tags by others",Medium,Scrape,Privacy-settings dependent,P1
+20,Profile Picture Hash (Perceptual),Match same photo across platforms even if cropped/filtered,Easy,Compute locally,None,P0
+21,Linked Facebook Account,Cross-platform identity link — Facebook has real-name requirement,Medium,API / scrape,Not always visible,P1
+22,Story Highlights (Titles),"Reveals interests, business, relationships — titles always public",Easy,Scrape,Public data,P2
+23,Reels / IGTV Count,Content-creator vs casual-user profiling,Easy,API,None,P2
+24,Account Country / Region,"Geographic location of account — jurisdiction, cross-border cases",Easy,About-section scrape,Public data,P1
+25,Former Usernames,Old usernames if subject changed handle to hide identity — critical for tracking,Easy,About-section scrape,Public data,P1
+26,Active Ads,"If subject runs ads — reveals business, products, scam campaigns, reach",Easy,About-section scrape,Public data,P1
+27,Account Type (Personal/Creator/Business),Business/Creator accounts expose extra contact info,Easy,About-section scrape,Public data,P0
+28,Contact Email (Business accounts),Direct contact info — sometimes real email linked to other accounts,Easy,Scrape,"Public, business/creator only",P0
+29,Contact Phone (Business accounts),"Real phone number — traceable via Truecaller, police records",Easy,Scrape,"Public, business/creator only",P0
+30,Contact Address (Business accounts),"Physical address of business — for raids, verification",Easy,Scrape,"Public, business/creator only",P1
+31,Pinned Posts,What subject WANTS people to see — most important content to them,Easy,Scrape,Public content,P1
+32,Collab Posts (Joint posts),Reveals close associates who collaborated on content,Medium,Scrape,Public content,P1
+33,Story Replies / Reactions (if visible),Direct interaction trace between subject and a known associate,Hard,Scrape,Only while story is live,P2
+34,Followers List,Full network map of who follows subject,Impossible,Not feasible at scale,Requires login + rate limit,P2
+35,Following List,"Who subject follows — interests, associates, targets",Impossible,Not feasible at scale,Requires login + rate limit,P2
+36,Likes on Others' Posts,"Interest graph, stalker/association patterns",Impossible,Not publicly available,Privacy concern,P2
+37,Post Image EXIF Metadata,"GPS coordinates, device model, original timestamp before editing",Impossible,Not available — Instagram strips EXIF,None,P2
+38,Direct Message Content,"Evidence of planning, threats, deals — most critical for cases",Impossible,Not accessible,"Private, requires court order",P2
+39,LinkedIn Profile Link in Bio,Direct cross-platform link — confirms professional identity of account owner,Easy,Scrape,Public data,P0
+40,Professional Email in Bio,"Work email (company domain) — ties Instagram to employer, enables LinkedIn lookup",Easy,Scrape,Public data,P0

@@ -15,12 +15,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class AIAnalyzer:
-    """Groq-backed analyzer with deterministic fallback behavior."""
+    """DeepSeek-backed analyzer with deterministic fallback behavior."""
 
     def __init__(self) -> None:
-        self.api_key = settings.groq_api_key
-        self.api_url = settings.groq_api_url
-        self.model = settings.groq_model
+        self.api_key = settings.deepseek_api_key
+        self.api_url = settings.deepseek_api_url
+        self.model = settings.deepseek_model
         self.training_examples = self._load_training_examples()
         self.system_prompt = self._load_system_prompt()
         self.correlation_rules = self._load_correlation_rules()
@@ -63,7 +63,7 @@ Conflicting locations = reduce confidence
 
     async def analyze_correlation(self, primary_profile: dict[str, Any], discovered_profiles: list[dict[str, Any]]) -> dict[str, Any]:
         if not self.is_configured():
-            return self._fallback_correlation(primary_profile, discovered_profiles, "missing GROQ_API_KEY")
+            return self._fallback_correlation(primary_profile, discovered_profiles, "missing DEEPSEEK_API_KEY")
 
         messages = self._build_correlation_messages(primary_profile, discovered_profiles)
         try:
@@ -90,7 +90,7 @@ Conflicting locations = reduce confidence
 
     async def assess_risk(self, profile_data: dict[str, Any]) -> dict[str, Any]:
         if not self.is_configured():
-            return self._fallback_risk(profile_data, "missing GROQ_API_KEY")
+            return self._fallback_risk(profile_data, "missing DEEPSEEK_API_KEY")
 
         prompt = self._build_risk_prompt(profile_data)
         try:
@@ -204,7 +204,7 @@ RECOMMENDATIONS:
                 "decision": "PROBABLY SAME" if confidence >= 60 else "POSSIBLY SAME",
                 "confidence": confidence,
                 "reasons": [f"{len(positive_matches)} public username matches found"],
-                "next_steps": ["Configure GROQ_API_KEY for full AI analysis", "Manually verify profile photos, bios, and linked URLs"],
+                "next_steps": ["Configure DEEPSEEK_API_KEY for full AI analysis", "Manually verify profile photos, bios, and linked URLs"],
             },
             "model_used": "rules_fallback",
             "training_context": get_training_dataset_service().build_correlation_context(len(positive_matches)),
@@ -215,6 +215,6 @@ RECOMMENDATIONS:
             "success": False,
             "status": "not_configured",
             "reason": reason,
-            "analysis": "Configure GROQ_API_KEY for AI risk assessment.",
+            "analysis": "Configure DEEPSEEK_API_KEY for AI risk assessment.",
             "parsed": {"risk_level": "UNKNOWN", "risk_score": 0, "indicators": [], "recommendations": []},
         }

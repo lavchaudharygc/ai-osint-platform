@@ -1,0 +1,34 @@
+LINKEDIN — Username OSINT Data Point Map,,,,,,
+Tab 3.5 of Username_OSINT_DataPoints.xlsx — Professional network OSINT for identity confirmation,,,,,,
+,,,,,,
+#,DATA POINT,INVESTIGATIVE VALUE,DIFFICULTY,TECHNICAL APPROACH,LEGAL CONSIDERATIONS,PRIORITY
+1,Profile URL / Vanity URL,Unique identifier — custom URL reveals real name or chosen handle,Easy,Scrape,Public data,P0
+2,Full Name,Real name — LinkedIn enforces real-name policy; high identity confidence,Easy,Scrape,Public data,P0
+3,Profile Picture,"Professional photo — reverse image search for other accounts, face match",Easy,Download,Public data,P0
+4,Headline / Title,"Current role and company — reveals employer, industry, seniority",Easy,Scrape,Public data,P0
+5,About / Summary Section,Self-written bio — often copied to other platforms; NLP similarity match,Easy,Scrape,Public data,P0
+6,Current Company & Role,"Employer verification — cross-check against company records, MCA filings",Easy,Scrape,Public data,P0
+7,Work History (Past Employers),"Career trail — confirms identity timeline, detects false claims, links to colleagues",Medium,Scrape,Public data,P0
+8,Education History,"College/University — confirms identity, links to alumni networks",Medium,Scrape,Public data,P1
+9,Skills & Endorsements,Expertise mapping — identifies technical capabilities relevant to investigation,Easy,Scrape,Public data,P1
+10,Connections Count,Network size indicator — <500 may indicate fake/new account,Easy,Scrape,Public data,P1
+11,Mutual Connections,Social graph overlap — shared connections confirm real-world association,Easy,Scrape (logged in),Requires account,P1
+12,Location (City/Region),Geographic presence — current city + country for jurisdiction mapping,Easy,Scrape,Public data,P1
+13,Contact Info (Email/Phone),Direct identifiers — visible to connections; email links to other accounts,Hard,Scrape (1st degree),Visible to connections only,P0
+14,Website / Portfolio Link,"External URL — leads to personal site, GitHub, other social handles",Easy,Scrape,Public data,P0
+15,Posts & Articles Published,"Behaviour & opinion trail — writing style, topics, associates who engage",Medium,Scrape,Public content,P1
+16,Comments & Reactions on Posts,"Communication network — who subject interacts with, communication style",Medium,Scrape,Public content,P1
+17,Certifications & Licences,"Professional credentials — confirms claimed qualifications, links to certifying bodies",Easy,Scrape,Public data,P2
+18,Volunteer / Causes Section,"Values and affiliations — NGOs, political causes, religious organisations",Easy,Scrape,Public data,P2
+19,Recommendations Received,Associate network — recommenders are confirmed real-world contacts,Easy,Scrape,Public data,P1
+20,Recommendations Given,Who subject vouches for — reveals close professional relationships,Easy,Scrape,Public data,P2
+21,Followed Companies & Hashtags,"Interest mapping — sectors, competitors, topics subject monitors",Hard,Scrape (logged in),Semi-public,P2
+22,Groups Joined (Public),"Community affiliations — industry groups, alumni groups, niche communities",Medium,Scrape,Public if group is public,P1
+23,Profile Creation / Join Date,Account age — new account during incident = suspicious; old = credible,Medium,Estimate via posts,None,P1
+24,Profile Picture Hash (Perceptual),Same photo across platforms — pHash match even if cropped/resized,Easy,Compute locally,None,P0
+25,Open-to-Work / Hiring Badge,"Current employment status — useful for social engineering context, timing",Easy,Scrape,Public data,P2
+26,Languages Listed,"Multilingual profile — narrows regional identity, corroborates location data",Easy,Scrape,Public data,P2
+27,Connections List (1st Degree),Full associate network — who subject is directly connected to,Impossible,Not accessible,"Private, requires court order",P2
+28,InMail / Message Content,"Private communications — direct evidence of planning, coordination",Impossible,Not accessible,"Private, requires court order",P2
+29,Email Used for Registration,Account-linked email — ties LinkedIn to other platform registrations,Impossible,Not accessible,"Private, requires legal process",P2
+30,Login IP / Device Info,"Access metadata — geolocation of logins, device fingerprint",Impossible,Not accessible,"Private, requires legal process",P2

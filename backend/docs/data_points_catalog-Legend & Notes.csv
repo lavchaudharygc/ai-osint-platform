@@ -1,0 +1,20 @@
+LEGEND & DEVELOPER NOTES,
+,
+Difficulty: Easy,"Direct public API / page element, no special technique needed."
+Difficulty: Medium,"Needs scraping logic, pagination, or scroll handling but still public data."
+Difficulty: Hard,"Rate-limited, login-gated, or partially hidden — possible but fragile/slow."
+Difficulty: Impossible,Not technically or legally accessible without platform/court cooperation.
+,
+Priority: P0,"Must-have for Sprint 1 — core identifiers, build first."
+Priority: P1,"Important, build once P0 is stable."
+Priority: P2,"Nice-to-have, time-sensitive or low-value-add — build later."
+,
+PRIMARY LIBRARY (Instagram),"instaloader (Python) — handles session, rate limiting, profile extraction."
+PRIMARY ACCESS (Twitter/X),Official X API v2 (paid tiers); use for legal compliance and stability.
+PRIMARY ACCESS (Facebook),Graph API (heavily restricted for non-Page data); most profile data needs login + consent.
+RATE LIMIT NOTE,Add random delays of 2-5 seconds between requests on every platform.
+LEGAL NOTE,Authorised Law Enforcement use only. Log every extraction with a case ID; comply with India's IT Act and each platform's Terms of Service.
+PRIORITY ORDER,Username/Handle -> Bio/About -> Profile Picture -> Posts -> Hashtags/Mentions -> Tags/Associates.
+CROSS-PLATFORM TIP,Profile-picture hash + username + bio keywords + work/education info = strongest signals for same-person matching.
+TWITTER vs X NOTE,"Twitter and X are the same platform (X Corp rebrand, 2023). 'Twitter' tab covers classic tweet mechanics; 'X' tab covers newer features (Premium, Communities, Spaces, Articles). Use both together for one target — they are not two separate accounts."
+FACEBOOK PRIVACY REALITY,"Default FB privacy hides most fields (friends list, contact info, pages liked) from non-friends. Treat anything not explicitly Public as best-effort only."

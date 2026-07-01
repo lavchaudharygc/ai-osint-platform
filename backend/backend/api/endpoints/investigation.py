@@ -4,8 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query, Response
-import httpx
+from fastapi import APIRouter, HTTPException, Query
 
 from backend.schemas.investigation import (
     InvestigationHistoryItem,
@@ -21,16 +20,63 @@ from backend.services.hashtag_analyzer import HashtagAnalyzer
 from backend.services.telegram_service import TelegramDataService
 from backend.services.twitter_service import TwitterDataService
 from backend.services.training_dataset_service import get_training_dataset_service
-from backend.services.hitek_service import HiTekConnectorService
 
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
-hitek_service = HiTekConnectorService()
 
 _INVESTIGATION_STORE: dict[str, InvestigationResponse] = {}
 
 
 def generate_investigation_id() -> str:
     return f"inv_{uuid4().hex}"
+
+
+def extract_flashapi_bio_links(user_data: dict[str, Any]) -> list[str]:
+    links = []
+    for item in user_data.get("bio_links") or []:
+        if isinstance(item, dict):
+            url = item.get("url") or item.get("lynx_url")
+            if url:
+                links.append(str(url))
+    external_url = user_data.get("external_url")
+    if external_url:
+        links.append(str(external_url))
+    return sorted(set(links))
+
+
+def clean_flashapi_text(value: Any) -> str | None:
+    """Return provider text only when it is real profile content."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    blocked_markers = (
+        "access delayed",
+        "only owner can access",
+        "login required",
+        "not available",
+    )
+    if any(marker in text.lower() for marker in blocked_markers):
+        return None
+    return text
+
+
+def extract_flashapi_related_profiles(user_data: dict[str, Any]) -> list[dict[str, Any]]:
+    related_profiles = []
+    for item in user_data.get("chaining_results") or []:
+        if not isinstance(item, dict):
+            continue
+        related_profiles.append(
+            {
+                "username": item.get("username"),
+                "full_name": item.get("full_name"),
+                "profile_pic_url": item.get("profile_pic_url"),
+                "is_verified": item.get("is_verified"),
+                "is_private": item.get("is_private"),
+                "source": "flashapi_chaining_results",
+            }
+        )
+    return [profile for profile in related_profiles if profile.get("username")]
 
 
 def apply_flashapi_instagram_fallback(
@@ -42,15 +88,22 @@ def apply_flashapi_instagram_fallback(
     if not isinstance(user_data, dict):
         return platform_data
 
+    bio_links = extract_flashapi_bio_links(user_data)
+    related_profiles = extract_flashapi_related_profiles(user_data)
+    full_name = clean_flashapi_text(user_data.get("full_name")) or clean_flashapi_text(
+        platform_data.get("full_name")
+    )
+    bio = clean_flashapi_text(user_data.get("biography")) or clean_flashapi_text(platform_data.get("bio"))
     normalized = {
         "success": True,
         "exists": True,
         "platform": "instagram",
         "username": user_data.get("username") or platform_data.get("username"),
-        "full_name": user_data.get("full_name") or platform_data.get("full_name"),
-        "bio": user_data.get("biography") or platform_data.get("bio"),
+        "full_name": full_name,
+        "bio": bio,
         "profile_pic_url": user_data.get("profile_pic_url") or platform_data.get("profile_pic_url"),
-        "profile_pic_hd": (user_data.get("hd_profile_pic_url_info") or {}).get("url"),
+        "profile_pic_hd": (user_data.get("hd_profile_pic_url_info") or {}).get("url")
+        or platform_data.get("profile_pic_hd"),
         "follower_count": user_data.get("follower_count"),
         "following_count": user_data.get("following_count"),
         "post_count": user_data.get("media_count"),
@@ -61,7 +114,20 @@ def apply_flashapi_instagram_fallback(
         "is_private": user_data.get("is_private"),
         "is_business": user_data.get("is_business"),
         "business_category": user_data.get("category"),
+        "account_type": "business" if user_data.get("is_business") else "personal_or_creator",
         "external_url": user_data.get("external_url"),
+        "external_urls": bio_links,
+        "linkedin_profile_link_in_bio": next(
+            (url for url in bio_links if "linkedin.com" in url.lower()), None
+        ),
+        "professional_email_in_bio": user_data.get("public_email"),
+        "contact_email": user_data.get("public_email"),
+        "contact_phone": user_data.get("public_phone_number"),
+        "contact_address": user_data.get("address_street"),
+        "account_country_region": user_data.get("account_country"),
+        "linked_facebook_account": user_data.get("fbid"),
+        "related_instagram_profiles": related_profiles,
+        "catalog_coverage_notes": InstagramDataService._catalog_coverage_notes(),
         "raw_data": raw_data,
     }
     platform_data.pop("error", None)
@@ -103,22 +169,8 @@ async def ai_correlate(platform_data: dict[str, Any], cross_matches: list[dict[s
     positive_matches = [match for match in cross_matches if match.get("exists")]
     confidence = min(0.95, 0.35 + (len(positive_matches) * 0.1))
     ai_analysis = await AIAnalyzer().analyze_correlation(platform_data, cross_matches)
-    
-    parsed = ai_analysis.get("parsed") or {}
-    decision = parsed.get("decision", "UNKNOWN")
-    confidence_val = parsed.get("confidence", int(confidence * 100))
-    reasons = parsed.get("reasons", [])
-    
-    is_groq = ai_analysis.get("success", False) and ai_analysis.get("model_used") != "rules_fallback"
-    engine_status = "AI correlation completed with Groq" if is_groq else "rules fallback is used"
-    
-    if reasons:
-        summary = f"{engine_status}. Identity consolidation decision: {decision} ({confidence_val}% confidence). Key findings: {'; '.join(reasons)}"
-    else:
-        summary = f"{engine_status}. Identity consolidation decision: {decision} ({confidence_val}% confidence)."
-
     return {
-        "summary": summary,
+        "summary": "AI correlation completed with DeepSeek when configured; otherwise rules fallback is used.",
         "confidence": round(confidence, 2),
         "matching_platforms": [match["platform"] for match in positive_matches],
         "primary_platform": platform_data.get("platform"),
@@ -153,19 +205,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     investigation_id = generate_investigation_id()
     platform_data = await scrape_platform(request.username, request.platform)
     cross_matches = await cross_platform_search(request.username, platform_data, request.correlation_depth)
-    full_name = platform_data.get("full_name") or platform_data.get("name")
-    internal_matches = DatabaseLookup().search_strict(request.username, full_name)
-    try:
-        hitek_matches = hitek_service.search_strict(request.username, full_name)
-        internal_matches["by_username"].extend(hitek_matches.get("by_username", []))
-        internal_matches["by_phone"].extend(hitek_matches.get("by_phone", []))
-        internal_matches["by_email"].extend(hitek_matches.get("by_email", []))
-        if "database_path" in hitek_matches:
-            internal_matches["database_path"] = f"{internal_matches['database_path']}; Hi-Tek: {hitek_matches['database_path']}"
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error("Failed to query Hi-Tek database: %s", e)
-
+    internal_matches = DatabaseLookup().search_all(request.username)
     hashtag_analysis = await HashtagAnalyzer().analyze_hashtags(extract_hashtags(platform_data), request.username)
     ai_result = await ai_correlate(platform_data, cross_matches)
     risk = await assess_risk(platform_data, ai_result)
@@ -208,35 +248,3 @@ async def list_investigations(
         )
         for item in items
     ]
-
-
-@router.get("/proxy-image")
-async def proxy_image(url: str) -> Response:
-    if not url:
-        raise HTTPException(status_code=400, detail="Missing url parameter")
-    try:
-        async with httpx.AsyncClient() as client:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            response = await client.get(url, headers=headers, follow_redirects=True, timeout=10.0)
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail="Failed to fetch image from source")
-            content_type = response.headers.get("content-type", "image/jpeg")
-            return Response(content=response.content, media_type=content_type)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Proxy error: {str(e)}")
-
-
-@router.get("/hitek/status")
-async def get_hitek_status() -> dict[str, Any]:
-    return hitek_service.get_status()
-
-
-@router.post("/hitek/index")
-async def trigger_hitek_index() -> dict[str, str]:
-    started = hitek_service.start_indexing()
-    if started:
-        return {"status": "indexing_started"}
-    return {"status": "already_indexing"}
-

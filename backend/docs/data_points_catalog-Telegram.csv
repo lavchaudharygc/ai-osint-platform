@@ -1,0 +1,32 @@
+TELEGRAM — Username OSINT Data Point Map,,,,,,
+"Tab 5 of Username_OSINT_DataPoints.xlsx — channels, groups, bots, and encrypted-chat boundaries",,,,,,
+,,,,,,
+#,DATA POINT,INVESTIGATIVE VALUE,DIFFICULTY,TECHNICAL APPROACH,LEGAL CONSIDERATIONS,PRIORITY
+1,Username (@handle),Primary identifier — match same handle across platforms,Easy,API (Bot/MTProto),None,P0
+2,Display Name (First/Last),"Real identity clue, often differs from username",Easy,API,None,P0
+3,Profile Picture,"Reverse image search, cross-platform face match",Easy,Download via API,Public data,P0
+4,Bio / About Text,"Email, links, self-description, affiliation clues",Easy,API,Public data,P0
+5,Phone Number,Direct identifier — strongest possible link if visible,Hard,API (only if privacy allows),Often hidden by privacy setting,P1
+6,User ID (numeric),Stable identifier even if username changes,Easy,API,None,P0
+7,Last Seen / Online Status,"Activity pattern, time-zone estimation",Medium,API,Depends on privacy setting,P1
+8,Common Groups (Groups in Common),Network mapping — shared community membership,Medium,API (while in shared group),Visible only if in common group,P1
+9,Channel Subscriptions (Public),"Interest mapping, ideology, news sources followed",Hard,Not directly exposed,Not publicly listed,P2
+10,Channel/Group Ownership,Reveals admin role — organiser of community or campaign,Medium,Scrape (channel info page),Public if channel is public,P0
+11,Channel Description & Pinned Message,"Purpose of channel, key messaging, links",Easy,Scrape,Public data,P0
+12,Channel Member Count,Reach/influence estimate of a channel,Easy,Scrape,Public data,P1
+13,Public Channel Posts,"Behaviour, opinions, associates, propaganda/campaign tracking",Medium,Scrape / API,Public channel content only,P0
+14,Forwarded Messages (Source Tracing),Tracks origin of information — propaganda/misinformation chains,Medium,Scrape,Public channel content only,P0
+15,Media Shared in Public Channels/Groups,"Images, documents, videos — evidentiary content, EXIF if present",Medium,Scrape / API,Public content only,P1
+16,Message Timestamps,"Activity pattern, time-zone detection",Easy,API,Public content only,P1
+17,Bot Interactions (Public Bots Used),Reveals tools/services subject relies on,Hard,Not directly exposed,Not publicly visible,P2
+18,Linked Discussion Group (for Channels),Connects a broadcast channel to its discussion/comments group,Easy,Scrape,Public if linked publicly,P1
+19,Verified Badge,Confirms identity for public figures/organisations,Easy,API,None,P1
+20,Premium Badge,Indicates paid subscriber — minor profiling signal only,Easy,API,None,P2
+21,Username History / Changes,Previous handles if changed to hide identity,Hard,Not exposed by API,Not publicly available,P2
+22,Group Member List (Public Groups),Network map of group members,Hard,"API (rate-limited, may need membership)",Visible only while member,P1
+23,Secret Chat Content,"Evidence of planning, threats, deals",Impossible,Not accessible — end-to-end encrypted,"Private, requires device/court access",P2
+24,Regular Chat (DM) Content,Private conversation content,Impossible,Not accessible without participant access,"Private, requires court order",P2
+25,IP Address / Device Info,"Geolocation, device fingerprint",Impossible,Not accessible,Only Telegram/court order (Telegram rarely complies),P2
+26,Deleted Messages,Content subject tried to retract,Impossible,Not recoverable via API,Not accessible post-deletion,P2
+27,LinkedIn Link in Channel Description,Channel owner self-doxxes — direct link to professional identity,Easy,Scrape,Public data,P0
+28,Professional Role Mentioned in Bio,Claimed employer/role — pivot point to LinkedIn for verification,Easy,Scrape,Public data,P1
