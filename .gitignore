@@ -20,4 +20,7 @@ credentials.json
 
 # DBs / Large Data Files
 DBs/hi-tek/*.csv
-DBs/hi-tek/*.db
+DBs/hi-tek/*.db
+
+# Local Dev Scripts
+start_servers.py
