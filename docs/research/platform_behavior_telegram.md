@@ -1,7 +1,7 @@
 # Telegram Platform Behavior — OSINT Data Extraction Reference
 
 **Prepared by:** Shubham Jha
-**Date:** 02 July 2026
+**Date:** 30 june 2026
 **Sprint:** Sprint 1
 **Reference:** Telegram Data Points Catalog
 
