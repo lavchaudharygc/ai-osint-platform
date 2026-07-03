@@ -24,6 +24,7 @@ class InvestigationResponse(BaseModel):
     risk_assessment: dict[str, Any] | None = None
     internal_database_matches: dict[str, Any] | None = None
     hashtag_analysis: dict[str, Any] | None = None
+    dorking_results: dict[str, Any] | None = None
     timestamp: datetime
 
 

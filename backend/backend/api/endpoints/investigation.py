@@ -17,10 +17,10 @@ from backend.services.instagram_service import InstagramDataService
 from backend.services.ai_analyzer import AIAnalyzer
 from backend.services.database_lookup import DatabaseLookup
 from backend.services.hashtag_analyzer import HashtagAnalyzer
+from backend.services.google_dorking import GoogleDorkingService
 from backend.services.telegram_service import TelegramDataService
 from backend.services.twitter_service import TwitterDataService
 from backend.services.training_dataset_service import get_training_dataset_service
-from backend.services.hitek_service import HiTekConnectorService
 
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
 
@@ -166,6 +166,10 @@ async def cross_platform_search(username: str, platform_data: dict[str, Any], de
     return results[: max(depth * 3, 1)]
 
 
+async def google_dork_username(username: str) -> dict[str, Any]:
+    return await GoogleDorkingService().search_username(username)
+
+
 async def ai_correlate(platform_data: dict[str, Any], cross_matches: list[dict[str, Any]]) -> dict[str, Any]:
     positive_matches = [match for match in cross_matches if match.get("exists")]
     confidence = min(0.95, 0.35 + (len(positive_matches) * 0.1))
@@ -206,20 +210,9 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     investigation_id = generate_investigation_id()
     platform_data = await scrape_platform(request.username, request.platform)
     cross_matches = await cross_platform_search(request.username, platform_data, request.correlation_depth)
-    
     internal_matches = DatabaseLookup().search_all(request.username)
-    # Search Hi-Tek index and merge if configured
-    hitek_service = HiTekConnectorService()
-    if hitek_service.get_status()["configured"]:
-        try:
-            hitek_matches = hitek_service.search_all(request.username)
-            internal_matches["by_username"].extend(hitek_matches.get("by_username") or [])
-            internal_matches["by_phone"].extend(hitek_matches.get("by_phone") or [])
-            internal_matches["by_email"].extend(hitek_matches.get("by_email") or [])
-        except Exception:
-            pass
-
     hashtag_analysis = await HashtagAnalyzer().analyze_hashtags(extract_hashtags(platform_data), request.username)
+    dorking_results = await google_dork_username(request.username)
     ai_result = await ai_correlate(platform_data, cross_matches)
     risk = await assess_risk(platform_data, ai_result)
     response = InvestigationResponse(
@@ -231,6 +224,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         risk_assessment=risk,
         internal_database_matches=internal_matches,
         hashtag_analysis=hashtag_analysis,
+        dorking_results=dorking_results,
         timestamp=datetime.now(UTC),
     )
     _INVESTIGATION_STORE[investigation_id] = response
@@ -261,16 +255,3 @@ async def list_investigations(
         )
         for item in items
     ]
-
-
-@router.get("/hitek/status")
-async def get_hitek_status() -> dict[str, Any]:
-    """Get the current indexing status of Hi-Tek CSV database files."""
-    return HiTekConnectorService().get_status()
-
-
-@router.post("/hitek/index")
-async def trigger_hitek_indexing() -> dict[str, Any]:
-    """Trigger background indexing of all pending/modified Hi-Tek database CSV files."""
-    started = HiTekConnectorService().start_indexing()
-    return {"status": "started" if started else "already_indexing"}

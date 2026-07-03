@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     flashapi_nocors: bool = Field(default=False, validation_alias="FLASHAPI_NOCORS")
     flashapi_timeout_seconds: float = Field(default=15.0, validation_alias="FLASHAPI_TIMEOUT_SECONDS")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
+    serpapi_key: str | None = Field(default=None, validation_alias="SERPAPI_KEY")
+    serpapi_base_url: str = Field(default="https://serpapi.com/search.json", validation_alias="SERPAPI_BASE_URL")
+    serpapi_timeout_seconds: float = Field(default=20.0, validation_alias="SERPAPI_TIMEOUT_SECONDS")
+    serpapi_results_per_query: int = Field(default=5, validation_alias="SERPAPI_RESULTS_PER_QUERY")
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:5500"]
 
 

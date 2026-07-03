@@ -32,7 +32,20 @@ Request body:
 ```
 
 Supported primary platforms are `instagram`, `twitter`, `telegram`, and `linkedin`.
-The response includes a generated investigation ID, primary platform data, cross-platform matches, a placeholder AI correlation summary, and a risk assessment.
+The response includes a generated investigation ID, primary platform data, cross-platform matches, Google dorking results, AI correlation summary, database matches, hashtag analysis, and a risk assessment.
+
+### Google Dorking Results
+
+The investigation response includes `dorking_results`. When `SERPAPI_KEY` is configured, the backend runs approved public Google dork queries through SerpAPI and returns normalized public search results grouped by category. When the key is missing, the response returns `status: not_configured` plus the prepared query list so local development remains deterministic.
+
+Configure:
+
+```env
+SERPAPI_KEY=your-serpapi-key
+SERPAPI_BASE_URL=https://serpapi.com/search.json
+SERPAPI_TIMEOUT_SECONDS=20
+SERPAPI_RESULTS_PER_QUERY=5
+```
 
 ## Investigation History
 
