@@ -1,0 +1,148 @@
+Google Dorking Intelligence Guide
+
+Google Dorking:----  i)  intext: — finds the word inside page body text
+                     ii) intitle: — finds the word inside the page title
+                     iii) inurl: — finds the word inside the URL
+                     iv) site: — restricts results to a specific website only
+                      v)  -site: — excludes a specific website from results
+                     vi) cache: — shows Google's last saved version of a page
+                     vii) filetype: — searches for a specific file type like pdf, doc, csv
+                     viii) OR — finds pages matching either of two terms
+                     ix) AND — finds pages matching both terms together
+                     x)  " " (quotes) — searches for exact phrase only, no variations
+                     xi) (asterisk) — wildcard, fills in any word in that position
+                     xii) (minus) — excludes a word from results
+                     xiii) related: — finds websites similar to a given site
+                     xiv) link: — finds pages that link to a specific URL
+                     xv) before: — filters results published before a specific date
+                     xvi) after: — filters results published after a specific date
+                     
+                     
+Platform to Search (50+):----  Social platforms:
+
+1. Instagram
+2. Twitter / X
+3. Facebook
+4. LinkedIn
+5. Snapchat
+6. TikTok
+7. Pinterest
+8. Tumblr
+9. Flickr
+10. VK (Russian, but used by some Indians)
+
+Professional platforms:
+11. GitHub
+12. GitLab
+13. Stack Overflow
+14. Medium
+15. Dev.to
+16. Behance
+17. Dribbble
+18. Hashnode
+19. HackerNews
+20. AngelList / Wellfound
+
+Forums and Q&A:
+21. Reddit
+22. Quora
+23. Stack Exchange
+24. Warrior Forum
+25. IndiaMART forums
+26. TeamBHP (automotive forum, popular in India)
+27. LocalCircles
+
+Video platforms:
+28. YouTube
+29. Vimeo
+30. Dailymotion
+31. Rumble
+
+Gaming:
+32. Steam
+33. Xbox / Microsoft profile
+34. PlayStation Network
+35. Twitch
+36. Discord (public servers only)
+
+Adult platforms (flag if found, do not correlate into main score):
+37. OnlyFans
+38. AdultFriendFinder
+39. Xvideos profiles
+40. Pornhub profiles
+41. FetLife
+
+Indian platforms:
+42. ShareChat
+43. Koo
+44. Moj
+45. Josh
+46. Shaadi.com
+47. Jeevansaathi
+48. OLX
+49. Quikr
+50. JustDial
+51. Sulekha
+
+Dark web indicators and paste sites (critical alert if found):
+52. Pastebin
+53. JustPaste.it
+54. Ghostbin
+55. Rentry.co
+56. ControlC.com
+57. Hastebin
+
+Other useful sources:
+58. Scribd (documents with personal info)
+59. SlideShare
+60. Academia.edu
+61. ResearchGate
+62. Gravatar (email to profile pic mapping)
+63. About.me
+64. Linktree (aggregator pages)
+
+
+Advance Dork Queries (30+):---- 
+                                1)  "lavchaudharygc" site:youtube.com
+                                2)  "lavchaudharygc" "phone" OR "email" OR "contact"
+                                3)  "lavchaudharygc" "@gmail.com" OR "@yahoo.com" OR "@hotmail.com"
+                                4)  "lavchaudharygc" site:pastebin.com OR site:justpaste.it OR site:ghostbin.com
+                                5)  "lavchaudharygc" filetype:pdf OR filetype:doc OR filetype:csv
+                                6)  "lavchaudharygc" "joined" OR "member since" OR "registered"
+                                7)  "lavchaudharygc" "real name" OR "aka" OR "also known as" 
+                                8)  cache:instagram.com/lavchaudharygc
+                                9)  "lavchaudharygc" after:2022-01-01
+                                10)  intext:"salman khan" intext:"studied at" OR intext:"college" OR intext:"university"
+                                11)  "lavchaudharygc" site:instagram.com|site:twitter.com|site:facebook.com|site:linkedin.com
+                                12)  site:*.* "lavchaudharygc"
+                                13)  site:instagram.com OR site:facebook.com OR site:github.com OR site:reddit.com Lav Chaudhary
+                                14)  intext:"lavchaudharygc" site:pastebin.com
+                                15)  intext:"lavchaudharygc" site:justpaste.it
+                                16)  filetype:pdf intext:"lavchaudharygc" intext:"phone" OR intext:"email"
+                                17)  filetype:txt intext:"lavchaudharygc" intext:"password" OR intext:"leaked"
+                                18)  filetype:csv intext:"lavchaudharygc" intext:"address" OR intext:"contact"
+                                19)  intitle:"lavchaudharygc" -site:instagram.com -site:twitter.com -site:facebook.com
+                                20)  "lavchaudharygc" "whatsapp" OR "telegram" OR "signal"
+                                21)  intext:"lav chaudhary" site:courts.gov.in OR site:ecourts.gov.in
+                                22)  intext:"lav chaudhary" site:barcouncilofIndia.org 
+                                23)  intext:"lav chaudhary" filetype:pdf site:gov.in
+                                24)  intext:"lav chaudhary" intext:"FIR" OR intext:"chargesheet" OR intext:"case registered" filetype:pdf
+                                25)  intext:"lav chaudhary" site:mca.gov.in
+                                26)  intext:"lav chaudhary" intext:"pension" OR intext:"employee" OR intext:"service record" site:gov.in
+                                27)  intext:"lav chaudhary" site:cbdt.gov.in OR site:incometaxindia.gov.in intext:"PAN" OR intext:"assessment"
+                                28)  inurl:"lavchaudharygc" intext:"contact" OR intext:"email" OR intext:"hire me" intext:"security"
+                                29)  intitle:"lav chaudhary" site:gov.in
+                                30)  intitle:"lavchaudharygc" inurl:profile
+
+
+Result Interpretation:----
+                            1) Found on adult site → Flag in risk assessment, do not add to correlation score
+                            2) Found on dark web paste → Critical alert, escalate immediately, save a copy before it gets deleted
+                            3) Found on professional site → Correlate with employment data, add relevant signals to correlation score
+                            4) Found on multiple platforms → Same person likely, run full correlation scoring starting with Rule 1
+                            5) Found on Indian regional platform → Check display name and profile pic, add to correlation if username or photo matches
+                            6) Found on matrimonial or classifieds site → High value, cross reference all fields, phone number is direct identifier
+                            7) Found on gaming platform → Lower priority, check display name and profile pic for cross platform match
+                            8) Found on government site → High value, note any case numbers, FIR details, company records, or official mentions
+                            9) Found on paste site with credentials → Critical, check if phone, email, or password linked to lavchaudharygc, cross reference with DB
+                            10) Not found anywhere → Try username variations, try full name dork, check Wayback Machine before concluding
