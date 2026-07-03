@@ -42,10 +42,29 @@ class FlashAPIService:
         }
         params = {self.username_param: username, "nocors": str(settings.flashapi_nocors).lower()}
 
-        async with httpx.AsyncClient(timeout=settings.flashapi_timeout_seconds) as client:
-            response = await client.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            payload = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=settings.flashapi_timeout_seconds) as client:
+                response = await client.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            return {
+                "provider": "flashapi1",
+                "status": "error",
+                "error": f"API error {exc.response.status_code}: {exc.response.text}",
+                "username": username,
+                "platform": platform,
+                "fetched_at": datetime.now(UTC).isoformat(),
+            }
+        except httpx.HTTPError as exc:
+            return {
+                "provider": "flashapi1",
+                "status": "error",
+                "error": f"HTTP request failed: {str(exc)}",
+                "username": username,
+                "platform": platform,
+                "fetched_at": datetime.now(UTC).isoformat(),
+            }
 
         provider_status = "completed"
         provider_error = None

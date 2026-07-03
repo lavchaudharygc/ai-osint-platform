@@ -185,6 +185,11 @@
                                 </div>
                             </div>
 
+                            <div class="form-row" style="display:flex; align-items:center; gap:8px; margin-bottom:18px;">
+                                <input type="checkbox" id="filter-hitek" style="width:16px; height:16px; margin:0; cursor:pointer;" checked>
+                                <label for="filter-hitek" style="display:inline; margin:0; font-size:0.75rem; color:var(--text-secondary); cursor:pointer; text-transform:uppercase; letter-spacing:0.5px;">Filter Hi-Tek by Name/Loc</label>
+                            </div>
+
                             <div class="form-row" style="margin-bottom:25px;">
                                 <label>Investigation Ref / Case ID</label>
                                 <input type="text" id="case-reference" class="form-control" placeholder="Leave empty for auto-generate" style="background:var(--bg-input);">
@@ -373,7 +378,7 @@
                                                 <span class="card-title">Internal Database Records Lookup</span>
                                                 <span class="mono blue-text" id="internal-matches-count">Records Checked</span>
                                             </div>
-                                            <div id="internal-database-results" style="display:flex; flex-direction:column; gap:10px; overflow-x: auto;">
+                                            <div id="internal-database-results" style="display:flex; flex-direction:column; gap:10px; max-height:280px; overflow-y:auto; overflow-x:auto; padding-right:5px;">
                                                 <!-- Dynamic content: database matches or empty state -->
                                             </div>
                                         </div>
@@ -402,18 +407,17 @@
                                                 </div>
                                             </div>
                                         </div>
+                                    </div>
 
-                                        <!-- AI TRAINING REFERENCE MATCHES CARD -->
-                                        <div class="glass-card">
+                                    <!-- ROW 4: GOOGLE DORKING RESULTS -->
+                                    <div class="results-grid-row">
+                                        <div class="glass-card" style="grid-column: 1 / -1;">
                                             <div class="card-header-bar">
-                                                <span class="card-title">AI Training Reference Examples</span>
-                                                <span class="mono text-secondary" id="training-dataset-meta">Loaded</span>
+                                                <span class="card-title">Google Dorking Discovery Results</span>
+                                                <span class="mono blue-text" id="dorking-results-count">Results Resolved</span>
                                             </div>
-                                            <div class="training-context-container" id="training-context-container" style="font-size: 0.9rem; line-height: 1.6; display: flex; flex-direction: column; gap: 10px;">
-                                                <p id="training-suggested-category" style="font-weight: 600; color: var(--accent-gold); margin-bottom: 4px;"></p>
-                                                <div id="training-examples-list" style="display:flex; flex-direction:column; gap:8px;">
-                                                    <!-- Dynamic training examples -->
-                                                </div>
+                                            <div id="dorking-results-container" style="display:flex; flex-direction:column; gap:12px; max-height: 450px; overflow-y: auto; padding-right: 5px;">
+                                                <!-- Dynamic content: category grouped dorking results or empty state/prepared queries -->
                                             </div>
                                         </div>
                                     </div>

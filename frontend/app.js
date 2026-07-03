@@ -303,7 +303,8 @@ async function triggerInvestigation() {
                 username: username,
                 platform: platform,
                 case_id: currentCaseId,
-                correlation_depth: depth
+                correlation_depth: depth,
+                filter_hitek: document.getElementById("filter-hitek") ? document.getElementById("filter-hitek").checked : true
             })
         });
 
@@ -614,6 +615,23 @@ function renderInvestigationResults(data) {
 
     if (dbResultsEl) {
         dbResultsEl.innerHTML = "";
+        
+        // Show Hi-Tek filter info if applicable
+        if (dbMatches.hitek_filtered && (dbMatches.hitek_filter_name || (dbMatches.hitek_filter_locations && dbMatches.hitek_filter_locations.length > 0))) {
+            const filterDiv = document.createElement("div");
+            filterDiv.className = "hitek-filter-info-banner";
+            filterDiv.style.cssText = "font-size:0.75rem; background:rgba(0,180,255,0.08); border:1px solid rgba(0,180,255,0.2); padding:6px 10px; border-radius:4px; margin-bottom:8px; display:flex; flex-direction:column; gap:2px; color:var(--text-primary);";
+            
+            let namePart = dbMatches.hitek_filter_name ? `Name: <strong style="color:var(--accent-blue);">${dbMatches.hitek_filter_name}</strong>` : "";
+            let locPart = (dbMatches.hitek_filter_locations && dbMatches.hitek_filter_locations.length > 0) 
+                ? `Locations: <strong style="color:var(--accent-blue);">${dbMatches.hitek_filter_locations.join(", ")}</strong>` 
+                : "";
+            
+            let parts = [namePart, locPart].filter(Boolean).join(" | ");
+            filterDiv.innerHTML = `<div>🛡️ Hi-Tek DB filtered by profile parameters:</div><div style="font-size:0.7rem; color:var(--text-secondary); margin-top:2px;">${parts}</div>`;
+            dbResultsEl.appendChild(filterDiv);
+        }
+
         if (totalDbCount === 0) {
             dbResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No internal registry matches found.</span>`;
         } else {
@@ -724,75 +742,113 @@ function renderInvestigationResults(data) {
         }
     }
 
-    // AI Training Reference Matches rendering
-    const trainContext = (ai.training_context) ? ai.training_context : {};
-    const datasetMeta = trainContext.dataset || {};
-    const trainMetaEl = document.getElementById("training-dataset-meta");
-    const suggestedCategoryEl = document.getElementById("training-suggested-category");
-    const examplesListEl = document.getElementById("training-examples-list");
 
-    if (trainMetaEl) {
-        if (datasetMeta.configured) {
-            trainMetaEl.innerText = `Active DB (${datasetMeta.total_examples} Cases)`;
-            trainMetaEl.style.color = "var(--accent-blue)";
-        } else {
-            trainMetaEl.innerText = "Inactive";
-            trainMetaEl.style.color = "var(--text-secondary)";
-        }
-    }
 
-    if (suggestedCategoryEl) {
-        suggestedCategoryEl.innerText = trainContext.suggested_category ? `SUGGESTED TIER: ${trainContext.suggested_category}` : "";
-    }
+    // Google Dorking Results rendering
+    const dorking = data.dorking_results || {};
+    const dorkCountEl = document.getElementById("dorking-results-count");
+    const dorkContainerEl = document.getElementById("dorking-results-container");
 
-    if (examplesListEl) {
-        examplesListEl.innerHTML = "";
-        const refIds = trainContext.reference_example_ids || [];
-        if (refIds.length === 0) {
-            examplesListEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No relevant training examples referenced.</span>`;
-        } else {
-            refIds.forEach(async (id) => {
-                const card = document.createElement("div");
-                card.className = "example-card";
-                card.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-weight:600; color:var(--accent-blue);">Loading Case #${id}...</span>
-                    </div>
-                `;
-                examplesListEl.appendChild(card);
+    if (dorkContainerEl) {
+        dorkContainerEl.innerHTML = "";
+        
+        if (dorking.status === "not_configured") {
+            if (dorkCountEl) {
+                dorkCountEl.innerText = "SerpAPI Not Configured";
+                dorkCountEl.style.color = "var(--accent-crimson)";
+            }
+            
+            // Build prepared queries view
+            const warningEl = document.createElement("div");
+            warningEl.style.cssText = "background:rgba(255, 51, 102, 0.08); border:1px solid rgba(255, 51, 102, 0.2); padding:10px 12px; border-radius:6px; font-size:0.8rem; color:var(--text-primary); line-height:1.4;";
+            warningEl.innerHTML = `
+                <div style="font-weight:600; color:var(--accent-crimson); margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+                    <span>⚠️ Google Dorking Service Offline</span>
+                </div>
+                <div style="font-size:0.75rem; color:var(--text-secondary);">
+                    SerpAPI provider key is missing. You can configure <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">SERPAPI_KEY</code> in your environment, or manually run these prepared dork queries in Google:
+                </div>
+            `;
+            dorkContainerEl.appendChild(warningEl);
+            
+            const queriesList = dorking.queries || [];
+            if (queriesList.length > 0) {
+                const queriesContainer = document.createElement("div");
+                queriesContainer.style.cssText = "display:flex; flex-direction:column; gap:6px; margin-top:8px;";
                 
-                try {
-                    const resp = await fetch(`${API_BASE}/api/v1/training/dataset/examples/${id}`);
-                    if (resp.ok) {
-                        const exData = await resp.json();
-                        const tier = exData.confidence_tier || "N/A";
-                        const cat = exData.category || "N/A";
-                        const primaryUser = exData.input?.primary_profile?.username || "unknown";
+                queriesList.forEach(q => {
+                    const row = document.createElement("div");
+                    row.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:6px 10px; border-radius:4px; font-size:0.75rem; font-family:'Share Tech Mono', monospace;";
+                    
+                    const catBadge = document.createElement("span");
+                    catBadge.className = "tag-pill";
+                    catBadge.style.cssText = "font-size:0.6rem; padding:1px 5px; text-transform:uppercase;";
+                    catBadge.innerText = q.category.replace(/_/g, ' ');
+                    
+                    const queryText = document.createElement("span");
+                    queryText.style.cssText = "flex:1; margin-left:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--accent-gold);";
+                    queryText.innerText = q.query;
+                    
+                    const btnCopy = document.createElement("button");
+                    btnCopy.style.cssText = "background:transparent; border:1px solid rgba(255,215,0,0.3); color:var(--accent-gold); font-size:0.65rem; padding:2px 6px; border-radius:3px; cursor:pointer;";
+                    btnCopy.innerText = "COPY";
+                    btnCopy.onclick = () => {
+                        navigator.clipboard.writeText(q.query);
+                        btnCopy.innerText = "COPIED!";
+                        setTimeout(() => { btnCopy.innerText = "COPY"; }, 1500);
+                    };
+                    
+                    row.appendChild(catBadge);
+                    row.appendChild(queryText);
+                    row.appendChild(btnCopy);
+                    queriesContainer.appendChild(row);
+                });
+                dorkContainerEl.appendChild(queriesContainer);
+            }
+        } else {
+            const results = dorking.results || [];
+            if (dorkCountEl) {
+                dorkCountEl.innerText = `Results: ${results.length} Found`;
+                dorkCountEl.style.color = "var(--accent-blue)";
+            }
+            
+            if (results.length === 0) {
+                dorkContainerEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:15px;">Google search indexing returned 0 matching organic items.</span>`;
+            } else {
+                const grouped = dorking.grouped_by_category || {};
+                
+                Object.keys(grouped).forEach(cat => {
+                    const catResults = grouped[cat] || [];
+                    if (catResults.length === 0) return;
+                    
+                    const catHeader = document.createElement("div");
+                    catHeader.style.cssText = "font-size:0.75rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:4px; margin-top:8px; display:flex; justify-content:space-between;";
+                    catHeader.innerHTML = `<span>📂 Category: ${cat.replace(/_/g, ' ')}</span> <span class="mono blue-text" style="font-size:0.7rem;">${catResults.length} hits</span>`;
+                    dorkContainerEl.appendChild(catHeader);
+                    
+                    catResults.forEach(r => {
+                        const card = document.createElement("div");
+                        card.style.cssText = "background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:10px 12px; border-radius:6px; display:flex; flex-direction:column; gap:4px;";
+                        
                         card.innerHTML = `
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="font-weight:600; color:var(--accent-blue);">Case #${id} (${primaryUser})</span>
-                                <span class="tag-pill">${tier}</span>
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                                <a href="${r.url}" target="_blank" style="font-size:0.85rem; font-weight:600; color:var(--accent-blue); text-decoration:none; line-height:1.3; hover:text-decoration:underline;">
+                                    ${r.title || "No Title"}
+                                </a>
+                                <span class="system-badge" style="font-size:0.6rem; padding:1px 5px; flex-shrink:0; background:rgba(0,180,255,0.08); border-color:rgba(0,180,255,0.2); color:var(--accent-blue);">${r.domain}</span>
                             </div>
-                            <div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">
-                                <strong>Category:</strong> ${cat}<br>
-                                <strong>Description:</strong> ${exData.input?.primary_profile?.bio ? exData.input.primary_profile.bio.substring(0, 80) + '...' : 'No bio recorded.'}
+                            <div style="font-size:0.75rem; color:var(--text-primary); line-height:1.4; margin-top:2px;">
+                                ${r.snippet || "No description cached."}
+                            </div>
+                            <div style="font-size:0.65rem; color:var(--text-secondary); font-family:monospace; margin-top:4px; display:flex; gap:10px;">
+                                <span><strong>Query:</strong> ${r.query}</span>
+                                ${r.position ? `<span><strong>Rank:</strong> #${r.position}</span>` : ""}
                             </div>
                         `;
-                    } else {
-                        throw new Error("Failed response");
-                    }
-                } catch (e) {
-                    card.innerHTML = `
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="font-weight:600; color:var(--accent-blue);">Training Case #${id}</span>
-                            <a href="${API_BASE}/api/v1/training/dataset/examples/${id}" target="_blank" style="font-size:0.7rem; color:var(--accent-gold); text-decoration:none; border:1px solid rgba(255,215,0,0.2); padding:2px 6px; border-radius:4px;">View JSON</a>
-                        </div>
-                        <div style="font-size:0.75rem; color:var(--text-secondary);">
-                            Linked historical investigation dataset file mapping.
-                        </div>
-                    `;
-                }
-            });
+                        dorkContainerEl.appendChild(card);
+                    });
+                });
+            }
         }
     }
 }
@@ -927,6 +983,16 @@ function renderOfficialReportTemplate(data, caseId) {
         dbMatchesRows = `<tr><td colspan="5" style="text-align: center; color: #555;">No records matched in internal user registry.</td></tr>`;
     }
 
+    let hitekFilterNote = "";
+    if (dbMatches.hitek_filtered && (dbMatches.hitek_filter_name || (dbMatches.hitek_filter_locations && dbMatches.hitek_filter_locations.length > 0))) {
+        let parts = [];
+        if (dbMatches.hitek_filter_name) parts.push(`Name: ${dbMatches.hitek_filter_name}`);
+        if (dbMatches.hitek_filter_locations && dbMatches.hitek_filter_locations.length > 0) parts.push(`Locations: ${dbMatches.hitek_filter_locations.join(", ")}`);
+        hitekFilterNote = `<p style="font-size: 9pt; color: #004d80; background: #eef7fc; border: 1px solid #bce1f7; padding: 6px 10px; border-radius: 4px; margin-bottom: 8px; font-family: sans-serif;">
+            <strong>Hi-Tek DB Filtering:</strong> Matches refined using profile parameters (${parts.join(" | ")})
+        </p>`;
+    }
+
     // Hashtag Linkage tables
     const hashData = data.hashtag_analysis || {};
     const analyzedTags = hashData.hashtags_analyzed || [];
@@ -947,15 +1013,29 @@ function renderOfficialReportTemplate(data, caseId) {
         hashtagConnectionsRows = `<tr><td colspan="3" style="text-align: center; color: #555;">No multiple-hashtag connection links identified on Twitter/X network.</td></tr>`;
     }
 
-    // AI Training Case Context
-    const trainContext = ai.training_context || {};
-    const trainRefIds = trainContext.reference_example_ids || [];
-    let trainExamplesStr = "";
-    if (trainRefIds.length > 0) {
-        trainExamplesStr = `Case ID reference links matched in database: ${trainRefIds.map(id => `#${id}`).join(", ")} (Suggested Correlation Category: ${trainContext.suggested_category || "N/A"})`;
+    // Dorking Results
+    const dorking = data.dorking_results || {};
+    let dorkingRows = "";
+    if (dorking.status === "not_configured") {
+        dorkingRows = `<tr><td colspan="4" style="text-align: center; color: #555;">Google Dorking Service (SerpAPI) not configured during run.</td></tr>`;
     } else {
-        trainExamplesStr = "No relevant historical training examples matched.";
+        const dResults = dorking.results || [];
+        if (dResults.length > 0) {
+            dResults.forEach(r => {
+                dorkingRows += `
+                <tr>
+                    <td><strong>\${r.category.toUpperCase().replace(/_/g, ' ')}</strong></td>
+                    <td><a href="\${r.url}" target="_blank" style="color: #004d80; text-decoration: underline;">\${r.title || "Link"}</a><br><span style="font-size: 0.75rem; color: #666;">\${r.domain}</span></td>
+                    <td style="font-size: 0.8rem; line-height: 1.3;">\${r.snippet || ""}</td>
+                    <td style="font-family: monospace; font-size: 0.75rem;">\${r.query}</td>
+                </tr>`;
+            });
+        } else {
+            dorkingRows = `<tr><td colspan="4" style="text-align: center; color: #555;">No organic results resolved via Google Dorking.</td></tr>`;
+        }
     }
+
+
 
     // AI Parsing Details
     const parsedAI = (ai.ai_analysis && ai.ai_analysis.parsed) ? ai.ai_analysis.parsed : ai.parsed;
@@ -1174,6 +1254,7 @@ function renderOfficialReportTemplate(data, caseId) {
     <p>No anomalous content flags or illegal activity alerts observed on target timeline. Secondary posts examination is pending legal warrant verification.</p>
     
     <h4>3.3 Internal Database Registry Matches</h4>
+    ${hitekFilterNote}
     <table>
         <thead>
             <tr>
@@ -1215,6 +1296,21 @@ function renderOfficialReportTemplate(data, caseId) {
             ${hashtagConnectionsRows}
         </tbody>
     </table>
+
+    <h4>4.3 Google Dorking Discovery Results</h4>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 15%;">Category</th>
+                <th style="width: 25%;">Title / Source</th>
+                <th style="width: 40%;">Description Snippet</th>
+                <th style="width: 20%;">Query Used</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${dorkingRows}
+        </tbody>
+    </table>
     
     <div class="section-title">5. AI CORRELATION ANALYSIS</div>
     <div class="evidence-box">
@@ -1246,10 +1342,8 @@ function renderOfficialReportTemplate(data, caseId) {
         ${indicatorsItems}
     </ul>
     
-    <div class="section-title">7. CRITICAL DISCOVERIES & BENCHMARKS</div>
+    <div class="section-title">7. CRITICAL DISCOVERIES</div>
     ${discoveriesItems}
-    <p><strong>OSINT Training Dataset Benchmarking:</strong></p>
-    <p style="font-style: italic;">${trainExamplesStr}</p>
     
     <div class="section-title">8. EVIDENCE SUMMARY</div>
     <table>
