@@ -1,0 +1,84 @@
+                                                  Database Usage Guide for Developers
+
+
+What's in the database:----  i)  Username — primary search key, stored as-is but compared case-insensitively
+                                 ii)  Phone number — stored in normalized 10 digit Indian format, no +91 or leading 0
+                                 iii)  Email — stored in lowercase
+                                 iv)  Address — full address as available, may include city, area, state
+                                 v)  Source of data — where this record came from (sample_db, manual entry, etc)
+                                 vi)  Date added — when this record was added, useful for timeline mapping
+                                 vii)  Date last updated — if a record is modified, track when
+                                 viii)  Confidence level of record — how reliable the source was (high, medium, low)
+                                 
+                                 
+How to use in investigation:----
+   
+   i)  Search by username:----  i) Input the username exactly as found on the platform
+                                ii) System normalizes it before searching (strips @, lowercases, removes spaces)
+                                iii) Returns all linked phone numbers, emails, and addresses
+                                iv) If multiple records come back, review each one separately
+
+   ii)  Search by phone number:----  i) Input in any format — +91 9876543210, 09876543210, or 9876543210
+                                     ii) System normalizes to 10 digits before searching
+                                     iii) Returns all usernames and emails linked to that number
+                                     iv) Multiple usernames on same phone = shared number or same person on multiple platforms
+                                     
+   iii)  Search by email:----  i) Input in any format, system lowercases before searching
+                               ii) Returns all usernames and phone numbers linked to that email
+                               iii) Multiple accounts on same email = strong clustering signal
+                               
+   iv)  Search by address or city:----  i) Useful when you have a location from social media and want to narrow down records
+                                        ii) Returns all records where address contains the search term
+                                        iii) Treat as a supporting search only, not a primary identifier
+                                         
+      
+Correlation Logic:----  1) Username in DB matches username on platform exactly — add 30 points to correlation score, treat as primary signal
+                        ii) Phone in DB matches phone found in Instagram, Twitter, or Telegram bio — HIGH confidence, add 30 points
+                        iii) Email in DB matches email found in any platform bio — CONFIRMED direct identifier, add 30 points
+                        iv) Address in DB matches location mentioned across social profiles — supporting signal, add 10 points
+                        v) If phone and email both match — VERY HIGH confidence, near certain same person
+                        vi) If username, phone, and email all match — treat as CONFIRMED, document and escalate 
+                        vii) only address matches and nothing else — weak signal, do not act on this alone
+                        viii) If DB has multiple records for same username with different phones — flag as possible shared account or data conflict, review manually
+
+
+Expected Output Format:----  
+         i)  Search by username (example: rahul_sharma)
+             username: rahul_sharma
+             phone: 9876543210
+             email: rahul@gmail.com
+             address: Sector 12, Dwarka, New Delhi
+             source: sample_db
+             date_added: 2024-01-15
+             date_last_updated: 2024-03-10
+             record_confidence: high
+
+         ii)  Search by phone (example: 9876543210):
+
+         match 1:
+                  username: rahul_sharma
+                  email: rahul@gmail.com
+                  address: Sector 12, Dwarka, New Delhi
+
+         match 2:
+                  username: rahul_official
+                  email: rahul99@hotmail.com
+                  address: Rohini, New Delhi
+
+         note: multiple records found for this number, flag as shared number
+
+         iii)  Search by email (example: rahul@gmail.com):
+
+          match 1:
+                   username: rahul_sharma
+                   phone: 9876543210
+                   address: Sector 12, Dwarka, New Delhi
+
+          note: single record found, clean result 
+          
+                   
+        
+
+
+
+
