@@ -1,95 +1,468 @@
-# AI-OSINT Platform
+# 🔍 AI-OSINT Investigation Engine
 
-AI-Assisted OSINT Investigation Platform for Indian Law Enforcement Agencies.
+> **AI-powered Open Source Intelligence platform for cross-platform identity correlation, social media profiling, and digital footprint analysis.**
+> Built for authorized Law Enforcement and Cybersecurity investigations.
 
-## Current Status
-🚧 Sprint 1: Username OSINT Module (In Development)
-
-## Team
-- Lav (Team Lead / OSINT SME / Research)
-- Developer 1 (Backend)
-- Developer 2 (Frontend)
-- OSINT Teammate 1 (Data Specialist)
-- OSINT Teammate 2 (AI Training)
-- Researcher 1 (Platform Research)
-- Researcher 2 (AI Research)
-
-## Tech Stack
-- Backend: Python + FastAPI
-- Frontend: HTML + CSS + JavaScript (Phase 1)
-- AI: Groq API (Phase 1)
-- Database: SQLite (Phase 1)
-
-## Setup and Running Instructions
-
-To run this platform locally, follow these steps to configure and boot both the backend API and the frontend dashboard.
-
-### 1. Prerequisites
-- **Python 3.10+** installed on your system.
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![OSINT](https://img.shields.io/badge/Category-OSINT-red.svg)](https://en.wikipedia.org/wiki/Open-source_intelligence)
+[![Status](https://img.shields.io/badge/Status-Active%20Development-orange.svg)]()
 
 ---
 
-### 2. Backend API Setup
-The backend is a FastAPI application that processes scans, handles correlation, runs risk evaluations, and stores history logs.
+## 📋 Table of Contents
 
-1. Open a terminal and navigate to the `backend` directory:
-   ```powershell
-   cd backend
-   ```
-2. Create a virtual environment:
-   ```powershell
-   python -m venv .venv
-   ```
-3. Activate the virtual environment:
-   - **Windows (PowerShell)**:
-     ```powershell
-     .\.venv\Scripts\Activate.ps1
-     ```
-   - **macOS / Linux**:
-     ```bash
-     source .venv/bin/activate
-     ```
-4. Install the required python packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
-5. Configure environment variables. A `.env` file should be located in the `backend/` directory:
-   - To configure the database cache file (defaults to SQLite):
-     ```ini
-     DATABASE_URL=sqlite:///./osint.db
-     ```
-   - To integrate the RapidAPI FlashAPI enrichment service for live target scans (optional):
-     ```ini
-     RAPIDAPI_KEY=your-rapidapi-key
-     FLASHAPI_HOST=flashapi1.p.rapidapi.com
-     FLASHAPI_BASE_URL=https://flashapi1.p.rapidapi.com
-     ```
-6. Start the API server:
-   ```bash
-   python -m backend.main
-   ```
-   The backend API service will bind to **[http://127.0.0.1:8000](http://127.0.0.1:8000)**. You can view the OpenAPI interactive docs at `http://127.0.0.1:8000/docs`.
+- [Overview](#overview)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Data Extraction Specification](#data-extraction-specification)
+- [AI Training Datasets](#ai-training-datasets)
+- [Installation](#installation)
+- [Usage](#usage)
+- [API Integration](#api-integration)
+- [UI Enhancement Ideas](#ui-enhancement-ideas)
+- [Safety & Legal Guidelines](#safety--legal-guidelines)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-### 3. Frontend Web Server Setup
-To bypass browser CORS security limitations when connecting to the local API, the frontend needs to be served from a web server on one of the backend's allowed origins (`http://127.0.0.1:5500`).
+## 🎯 Overview
 
-1. Open a new terminal session at the repository root folder.
-2. Run Python's built-in lightweight HTTP server, specifying the `frontend` directory and port `5500`:
-   ```bash
-   python -m http.server 5500 --directory ./frontend
-   ```
-3. Open your web browser and navigate to:
-   **[http://127.0.0.1:5500](http://127.0.0.1:5500)**
+The **AI-OSINT Investigation Engine** is a comprehensive platform designed to:
+
+- **Scrape and analyze** public Instagram profiles for investigative intelligence
+- **Correlate identities** across multiple social platforms using AI-powered matching
+- **Detect impersonators** and fake celebrity accounts
+- **Extract enriched data** including bios, posts, hashtags, contacts, and cross-platform links
+- **Generate official investigation reports** with confidence scoring
+
+### Key Capabilities
+
+| Capability | Description |
+|-----------|-------------|
+| 🔍 **Profile Scraping** | Extract 38+ data points from Instagram profiles |
+| 🤖 **AI Identity Matching** | Cross-platform correlation with confidence scoring |
+| 🏷️ **Hashtag Analysis** | Link accounts via distinctive personal-brand hashtags |
+| 🎭 **Impersonator Detection** | Identify fake accounts using structural red flags |
+| 📊 **Threat Scoring** | Generate risk scores and investigation reports |
+| 📱 **Contact Enrichment** | Discover phone numbers via LinkedIn + SignalHire integration |
 
 ---
 
-### 4. Accessing the Secure Portal
-When the web page opens, you will be greeted by the **U.P. Police Cyber Cell preloader**. Once the backend API connection checks are verified, you will be prompted for security credentials.
+## ✨ Features
 
-Use the following default investigator access parameters:
-- **Investigator ID / Username**: `uppolice`
-- **Security Keyphrase / Password**: `testingaccount`
+### 1. Instagram Data Extraction (38+ Fields)
 
-Once authorized, you can run target OSINT scans, view risk threat assessments, and click **Export Official PDF Report** to view and download dossier reports in paper print format.
+Extracts comprehensive profile intelligence including:
+
+- **Basic Identity**: Username, Full Name, Bio, Profile Picture, Verified Status
+- **Engagement Metrics**: Followers, Following, Post Count, Account Type
+- **Contact Info**: Email, Phone, Address (Business accounts), External URLs
+- **Content Analysis**: Last 12 posts, captions, hashtags, timestamps, location tags
+- **Network Mapping**: Tagged users, mentioned users, comments, collab posts
+- **Account History**: Creation date, former usernames, active ads, country/region
+- **Cross-Platform Links**: Linked Facebook, YouTube, GitHub, LinkedIn references
+
+> 📄 **Full specification**: See [`Instagram_OSINT_DataSpec_v2.xlsx`](docs/Instagram_OSINT_DataSpec_v2.xlsx)
+
+### 2. AI-Powered Identity Correlation
+
+Trained on **36+ real-world examples** across 6 confidence tiers:
+
+| Confidence Tier | Range | Example Cases |
+|------------------|-------|---------------|
+| 🔴 **VERY HIGH** | 90-100% | Same username + cross-linked bios + matching content |
+| 🟠 **HIGH** | 75-90% | Similar username + brand anchor + bidirectional bio refs |
+| 🟡 **MEDIUM-HIGH** | 70-85% | Distinctive hashtag patterns + follower count corroboration |
+| 🟢 **MEDIUM** | 50-65% | Founder/company relationship detection |
+| 🔵 **LOW-MEDIUM** | 30-50% | Similar usernames but different demographics |
+| ⚪ **LOW** | 0-20% | No relation — coincidental name/brand overlap |
+
+#### Correlation Categories:
+
+- ✅ **Same Username → Same Person** (e.g., `arkagrawall` across IG/Twitter/GitHub/LinkedIn)
+- ⚠️ **Similar Username → Same Person** (e.g., `jatinjangir` vs `jatinjangir_`)
+- 🚫 **Similar Username → Different Person** (e.g., two different `Sumit Shah`s)
+- 🎭 **Different Username → Same Person** (e.g., `bhuvan.bam22` → `BBKiVines`)
+- 🏢 **Company vs Personal Account** (e.g., `tacsecurity` vs `trishneetarora`)
+- 👻 **Impersonator Detection** (fake `carryminati` accounts)
+- 🏷️ **Hashtag-Based Linking** (e.g., `#dutchosintguy` personal brand)
+
+> 📄 **Training Data**: See [`Sprint_1_OSINT_AI_Training.json`](data/training/Sprint_1_OSINT_AI_Training.json) and [`Sprint_2_OSINT_Hashtags.json`](data/training/Sprint_2_OSINT_Hashtags.json)
+
+### 3. Contact Enrichment via SignalHire
+
+**Idea**: When a LinkedIn profile is discovered during investigation, use **SignalHire** browser extension/API to extract:
+
+- 📞 **Phone numbers** associated with the profile
+- 📧 **Personal/Work email addresses**
+- 💼 **Employment history** and contact details
+
+**Integration Flow:**
+```
+Instagram Profile → Cross-Platform Discovery → LinkedIn Found 
+    → SignalHire API Call → Enriched Contact Data → Investigation Report
+```
+
+> 🔑 **API Key**: Store securely in environment variables (see `.env.example`)
+
+### 4. Subject Identity Card (UI Enhancement)
+
+Proposed **Subject Identity Panel** displaying:
+
+```
+┌─────────────────────────────────────────┐
+│  [PROFILE PIC]  sumit_._shah_           │
+│               ─────────────────         │
+│  Name:        Sumit Shah                │
+│  Location:    Mumbai                    │
+│  Bio:         S/W Dev | Tech Enthusiast │
+│  Followers:   12.5k                     │
+│  Following:   870                       │
+│  Verified:    False                     │
+│  Status:      ACTIVE                    │
+│  Scraped At:  2026-06-30 05:29:29       │
+│  Case ID:     UPP-CASE-2026-088110      │
+└─────────────────────────────────────────┘
+```
+
+> 🖼️ **UI Mockup**: See [`ui_mockup_subject_identity_card.jpeg`](docs/ui_mockup_subject_identity_card.jpeg)
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    AI-OSINT ENGINE                          │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │  Instagram  │  │   Apify     │  │   SignalHire API    │ │
+│  │  Scraper    │  │   Actors    │  │   (Contact Enrich)  │ │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘ │
+│         │                │                     │            │
+│         └────────────────┼─────────────────────┘            │
+│                          ▼                                  │
+│              ┌─────────────────────┐                        │
+│              │  Data Normalization │                        │
+│              │  & Feature Extraction│                       │
+│              └──────────┬──────────┘                       │
+│                         ▼                                   │
+│              ┌─────────────────────┐                        │
+│              │  AI Correlation     │                        │
+│              │  Engine (DeepSeek)  │                        │
+│              │  Confidence Scoring │                        │
+│              └──────────┬──────────┘                       │
+│                         ▼                                   │
+│              ┌─────────────────────┐                        │
+│              │  Subject Identity   │                        │
+│              │  Card + Report Gen  │                        │
+│              └─────────────────────┘                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📊 Data Extraction Specification
+
+### Extractable Data Points (Public Accounts)
+
+| # | Field | Source | Investigation Value |
+|---|-------|--------|---------------------|
+| 1 | Username | Profile page | Primary cross-platform identifier |
+| 2 | Full Name | Below profile pic | Real identity clue |
+| 3 | Bio Text | Below full name | Emails, phones, links, locations |
+| 4 | Profile Picture | Left side | Reverse image search, face match |
+| 5-7 | Followers/Following/Posts | Stats row | Bot detection, influence gauging |
+| 8 | External URL | Bio section | Cross-platform link discovery |
+| 9 | Verified Status | Blue tick badge | Identity confirmation |
+| 10 | Business Category | Business accounts | Profession/industry reveal |
+| 11-12 | Account Creation Date | "About This Account" | Account age = credibility signal |
+| 13-14 | Former Usernames | "About This Account" | Identity change tracking |
+| 15-18 | Last 12 Posts | Profile grid | Behavior patterns, interests, associates |
+| 19-22 | Hashtags, Timestamps, Locations, Tags | Post metadata | Activity mapping, network analysis |
+| 23-26 | Contact Info (Email/Phone/Address) | Business accounts | Direct tracing via Truecaller/police |
+| 27-38 | Pinned Posts, Collabs, Story Highlights, etc. | Various | Priority content, close associates |
+
+### Legend
+
+| Symbol | Meaning |
+|--------|---------|
+| ✅ | Public — freely extractable via Instaloader or public HTTP |
+| ⚠️ | Partial — depends on privacy settings, login, or API limits |
+| ❌ | Private — requires court order or Meta cooperation |
+
+> 📄 **Full 38-point spec with extraction methods**: [`Instagram_OSINT_DataSpec_v2.xlsx`](docs/Instagram_OSINT_DataSpec_v2.xlsx)
+
+---
+
+## 🤖 AI Training Datasets
+
+### Sprint 1: Cross-Platform Identity Correlation
+**File**: [`Sprint_1_OSINT_AI_Training.json`](data/training/Sprint_1_OSINT_AI_Training.json)
+
+- **15 real-world examples** (IDs 6-20)
+- Covers: Same username, similar username, different username patterns
+- Includes: Instagram → Twitter/X, LinkedIn, GitHub, YouTube, personal websites
+- **Key lesson**: Common names (e.g., "Sumit Shah") create false positives — demographics and content context are primary identifiers
+
+### Sprint 2: Hashtag-Based Identity Linking
+**File**: [`Sprint_2_OSINT_Hashtags.json`](data/training/Sprint_2_OSINT_Hashtags.json)
+
+- **21 real-world examples** (IDs 21-36)
+- Covers: Personal-brand hashtags, generic hashtag traps, impersonator detection
+- Includes: Celebrity cases (Bhuvan Bam, CarryMinati, Technical Guruji)
+- **Key lessons**:
+  - Distinctive personal-brand hashtags (`#dutchosintguy`) > generic tags (`#osint`)
+  - Bidirectional bio tagging is gold-standard for identity linking
+  - Founder/company relationships must be modeled separately from personal aliases
+  - Verified badge + follower count disparity = reliable impersonator detection
+
+### Training Data Structure
+
+```json
+{
+  "example_id": 21,
+  "category": "DIFFERENT_USERNAME_SAME_PERSON",
+  "confidence_tier": "HIGH (90-100%)",
+  "input": {
+    "primary_profile": { /* Instagram profile data */ },
+    "discovered_profiles": [ /* Cross-platform matches */ ]
+  },
+  "expected_output": {
+    "platform_matches": [ /* Confidence scores & reasons */ ],
+    "consolidated_identity": { /* Unified profile */ }
+  }
+}
+```
+
+---
+
+## 🚀 Installation
+
+### Prerequisites
+
+```bash
+# Python 3.10+
+python --version
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Core Dependencies
+
+```txt
+instaloader>=4.10
+requests>=2.28
+pandas>=1.5
+python-dotenv>=1.0
+apify-client>=1.5
+selenium>=4.15
+pillow>=10.0
+imagehash>=4.3
+```
+
+### Environment Setup
+
+```bash
+cp .env.example .env
+
+# Edit .env with your credentials:
+# APIFY_API_TOKEN=your_apify_token_here
+# SIGNALHIRE_API_KEY=your_signalhire_key_here
+# RAPIDAPI_KEY=your_rapidapi_key_here
+```
+
+---
+
+## 💻 Usage
+
+### Basic Profile Scan
+
+```python
+from osint_engine import InstagramScanner, IdentityCorrelator
+
+# Initialize scanner
+scanner = InstagramScanner(
+    apify_token="your_token",
+    rate_limit_delay=3  # seconds between requests
+)
+
+# Scan target profile
+profile = scanner.scan_profile("target_username")
+
+# Correlate across platforms
+correlator = IdentityCorrelator(training_data="data/training/")
+results = correlator.correlate(profile)
+
+# Generate report
+report = correlator.generate_report(results)
+report.export_pdf("investigation_report.pdf")
+```
+
+### Using Apify Actors
+
+```python
+from apify_client import ApifyClient
+
+client = ApifyClient("your_apify_token")
+
+# Instagram Profile Scraper
+actor = client.actor("apify/instagram-profile-scraper")
+run = actor.call(run_input={
+    "usernames": ["target_user"],
+    "resultsLimit": 1
+})
+
+# Retrieve results
+dataset = client.dataset(run["defaultDatasetId"])
+items = dataset.list_items().items
+```
+
+### Rate Limiting
+
+> ⚠️ **Max ~200 requests/hour** on Instagram. Add random delays of 2-5 seconds between requests to avoid blocks.
+
+---
+
+## 🔌 API Integration
+
+### Supported APIs & Tools
+
+| Service | Purpose | Documentation |
+|---------|---------|---------------|
+| **Apify** | Instagram/Twitter/LinkedIn scraping | [apify.com](https://apify.com) |
+| **SignalHire** | Contact enrichment (phone/email from LinkedIn) | [signalhire.com](https://signalhire.com) |
+| **RapidAPI** | Fallback Instagram scraper | [rapidapi.com](https://rapidapi.com) |
+| **Instaloader** | Primary Python library for IG extraction | [instaloader.github.io](https://instaloader.github.io) |
+
+### Apify Actor Recommendations
+
+| Actor | Use Case |
+|-------|----------|
+| `apify/instagram-profile-scraper` | Profile + posts extraction |
+| `apify/instagram-hashtag-scraper` | Hashtag-based post discovery |
+| `harvestapi/linkedin-profile-scraper` | LinkedIn profile enrichment |
+| `coderx/instagram-profile-scraper-bio-posts` | Bio + posts combined scrape |
+
+---
+
+## 🎨 UI Enhancement Ideas
+
+### Subject Identity Card Panel
+
+Proposed dashboard component showing consolidated subject intelligence:
+
+```
+┌────────────────────────────────────────────────────┐
+│ CASE: UPP-CASE-2026-088110    [Export PDF] [🟢]  │
+├────────────────────────────────────────────────────┤
+│  [📷]  @sumit_._shah_              Score: 65%    │
+│  ───────────────────────────────────────────────   │
+│  📛 Name:        Sumit Shah                        │
+│  📍 Location:    Mumbai                            │
+│  💼 Bio:         S/W Dev | Tech Enthusiast         │
+│  👥 Followers:   12.5k    Following: 870           │
+│  ✅ Verified:    False                             │
+│  🟢 Status:      ACTIVE                            │
+│  🕐 Scraped:     2026-06-30 05:29:29               │
+│  ───────────────────────────────────────────────   │
+│  CROSS-PLATFORM PRESENCE:                          │
+│  [Instagram 🟢] [Twitter 🔴] [LinkedIn 🟡]        │
+│  [Telegram 🟢]  [GitHub 🔴]   [Reddit 🔴]          │
+└────────────────────────────────────────────────────┘
+```
+
+### Features to Implement
+
+- [ ] **Real-time correlation score** with animated gauge
+- [ ] **Platform presence matrix** with HTTP status indicators
+- [ ] **One-click PDF export** for official investigation reports
+- [ ] **Timeline view** of account activity and post history
+- [ ] **Network graph** of tagged/mentioned user relationships
+- [ ] **Dark mode** optimized for extended investigation sessions
+
+> 🖼️ **Mockup Reference**: [`WhatsApp_Image_2026-06-30_UI_Mockup.jpeg`](docs/ui_mockup.jpeg)
+
+---
+
+## ⚖️ Safety & Legal Guidelines
+
+### ⚠️ CRITICAL RULES
+
+1. **Authorized Use Only** — This tool is for authorized Law Enforcement and licensed investigators
+2. **Case ID Logging** — Every extraction must be logged with a unique case ID
+3. **Rate Limiting** — Never exceed 200 requests/hour. Use random delays (2-5s)
+4. **Private Accounts** — Most data returns empty/blocked. Respect privacy settings
+5. **No Illegal Access** — Do NOT attempt to access DMs, IPs, or backend Meta data
+6. **Court Orders** — For private data (DMs, device info), proper legal process is required
+
+### Legal Notice
+
+> This tool is for **authorized Law Enforcement use only**. All extractions must be logged with case ID. Unauthorized use may violate platform Terms of Service and applicable privacy laws.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please follow these guidelines:
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
+4. **Push** to the branch (`git push origin feature/amazing-feature`)
+5. **Open** a Pull Request
+
+### Contribution Areas
+
+- 🌍 Additional platform scrapers (TikTok, Telegram, Discord)
+- 🤖 More AI training examples for edge cases
+- 🎨 UI/UX improvements and dashboard components
+- 📚 Documentation and use-case guides
+- 🔒 Security enhancements and anonymization features
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+> **Disclaimer**: This tool is intended for legal, authorized investigations only. Users are responsible for complying with all applicable laws and platform terms of service.
+
+---
+
+## 📎 External Documentation
+
+Additional project documentation and research files:
+
+- 📄 [Google Doc 1 — Project Research & Notes](https://drive.google.com/file/d/1maRJUrxyB2W7unQ0_zSlSy-h17-QZ6mR/view?usp=drive_link)
+- 📄 [Google Doc 2 — Additional Specifications](https://drive.google.com/file/d/1A5RJ_E7vyhq2eB8yfTU3CHlWQkrFVTWt/view?usp=drive_link)
+
+## 🙏 Acknowledgments
+
+- **Apify** for reliable social media scraping infrastructure
+- **SignalHire** for contact enrichment capabilities
+- **Instaloader** community for Instagram extraction tools
+- All contributors to the OSINT and cybersecurity community
+
+---
+
+## 📬 Contact
+
+For questions, suggestions, or collaboration:
+
+- 📧 Email: [sumitshahpvt@gmail.com](mailto:sumitshahpvt@gmail.com)
+- 📸 Instagram: [@sumit_._shah_](https://instagram.com/sumit_._shah_)
+- 💼 LinkedIn: [Sumit Shah](https://www.linkedin.com/in/sumit-shah-934386392/)
+
+---
+
+<div align="center">
+
+**⭐ Star this repo if you find it useful! ⭐**
+
+*Built with ❤️ for the OSINT community*
+
+</div>
