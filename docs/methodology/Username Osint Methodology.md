@@ -214,7 +214,9 @@ STEP 3 ----  Cross Platform Discovery
                                          iv)  If adult platform detection is needed, run the username through dorking with relevant site filters and flag separately — do not mix this into the main correlation score
 
 
-SECTION 3 ----  Correlation Rules (Weighted Scoring):----  Rule 1: Exact username match = 30 points
+SECTION 3 ----  Correlation Rules (Weighted Scoring):---- 
+                                                           
+                                                           Rule 1: Exact username match = 30 points
                                                            Rule 2: Same profile picture = 25 points
                                                            Rule 3: Same phone number in bio = 30 points
                                                            Rule 4: Same email in bio = 30 points
