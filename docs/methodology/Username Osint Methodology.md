@@ -239,6 +239,7 @@ Confidence Scoring:----
 Below 30: Low — not enough evidence, collect more data or drop the lead
 
 
+
 SECTION 4 ----  Indian Platform Specific:----
                                                1) Koo:---  i)  Check for exact username and common variations
                                                            ii)  Popular with politicians, journalists, and public figures
