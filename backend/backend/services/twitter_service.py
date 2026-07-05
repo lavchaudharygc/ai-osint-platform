@@ -21,19 +21,10 @@ class TwitterDataService:
         url = f"https://api.twitter.com/2/users/by/username/{username}"
         params = {"user.fields": "created_at,description,location,public_metrics,verified,url"}
         headers = {"Authorization": f"Bearer {self.bearer_token}"}
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(url, params=params, headers=headers)
-                response.raise_for_status()
-                return self._normalize_profile(response.json(), username)
-        except Exception as exc:
-            return {
-                "platform": "twitter",
-                "username": username,
-                "status": "error",
-                "error": str(exc),
-                "scraped_at": datetime.now(UTC).isoformat(),
-            }
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            return self._normalize_profile(response.json(), username)
 
     def _placeholder_profile(self, username: str, reason: str) -> dict[str, Any]:
         return {

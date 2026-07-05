@@ -36,7 +36,7 @@ The response includes a generated investigation ID, primary platform data, cross
 
 ### Google Dorking Results
 
-The investigation response includes `dorking_results`. When `SERPAPI_KEY` is configured, the backend runs approved public Google dork queries through SerpAPI and returns normalized public search results grouped by category. When the key is missing, the response returns `status: not_configured` plus the prepared query list so local development remains deterministic.
+The investigation response includes `dorking_results`. When `SERPAPI_KEY` is configured, the backend runs approved public Google dork queries through SerpAPI and returns normalized public search results grouped by category. The service includes Indian-specific platform categories, exact-match filtering to reduce similar-username noise, lightweight intelligence extraction, and a complex-dorking readiness flag. When the key is missing, the response returns `status: not_configured` plus the prepared query list so local development remains deterministic.
 
 Configure:
 

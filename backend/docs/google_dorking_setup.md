@@ -2,7 +2,6 @@
 
 ## Project Scope
 
-<<<<<<< HEAD
 This document describes the backend approach for automating public search-engine discovery with Google dorking and SerpAPI for OSINT, digital investigations, brand monitoring, and public profile discovery.
 
 The service only collects public search-result metadata. It must not bypass logins, scrape private pages, or access non-public data.
@@ -28,151 +27,34 @@ The implementation lives in:
 backend/services/google_dorking.py
 ```
 
-It runs approved dork templates, calls SerpAPI, normalizes organic search results, deduplicates URLs, and groups results by category.
+It runs approved Indian-platform dork templates, calls SerpAPI, normalizes organic search results, filters close-but-not-exact username matches, deduplicates URLs, extracts lightweight intelligence, and groups results by category.
 
 When `SERPAPI_KEY` is missing, the service returns `status: not_configured` with the prepared queries so local development still works.
 
+The service is adapted from the standalone dorking engine idea for this repo:
+
+- Search provider remains SerpAPI, matching the existing backend configuration.
+- Extra dependencies such as `duckduckgo_search`, `aiohttp`, and `BeautifulSoup` are intentionally not required.
+- Indian-specific categories are included for professional, social, developer, education, ecommerce, forums, matrimony, blogs, and risk mentions.
+- Exact-match filtering is applied so similar usernames do not appear as target matches.
+- Complex/AI dorking is reported as a future phase until the current `AIAnalyzer` supports the needed entity-extraction methods.
+- Compatibility wrappers named `execute_simple_dorking()` and `execute_complex_dorking()` are available so future code can call the supplied engine-style API without changing the current SerpAPI-backed implementation.
+
 ## Dork Categories
 
+The backend implementation includes these categories:
+
+- `professional`
+- `social_media`
+- `developer_tech`
+- `education`
+- `ecommerce`
+- `forums`
+- `matrimony`
+- `blogs`
+- `risk_mentions`
+
 ### Social Media Discovery
-=======
-This document evaluates methods for automating public search engine discovery using Google dorking techniques and search APIs for OSINT, digital investigations, brand monitoring, and public profile discovery.
-
-Research period: Day 8
-Document version: 1.0
-
----
-
-# 1. SerpAPI Research
-
-## Platform
-
-SerpAPI
-
-Website:
-
-https://serpapi.com/
-
-Documentation:
-
-https://serpapi.com/search-api
-
----
-
-## Overview
-
-SerpAPI provides a structured API interface for Google Search and other search engines, allowing programmatic retrieval of publicly available search results without directly scraping search engine pages.
-
-Supported search engines include:
-
-* Google
-* Bing
-* Yahoo
-* DuckDuckGo
-* Baidu
-* Yandex
-* Google Images
-* Google News
-* Google Scholar
-
----
-
-## Pricing
-
-| Plan           | Searches                |
-| -------------- | ----------------------- |
-| Free Tier      | 100 searches/month      |
-| Developer Plan | 5,000 searches/month    |
-| Business Plans | Higher limits available |
-
----
-
-## Setup Process
-
-1. Create an account at:
-
-```text
-https://serpapi.com/users/sign_up
-```
-
-2. Generate an API key from:
-
-```text
-https://serpapi.com/manage-api-key
-```
-
-3. Store the key securely:
-
-```env
-SERPAPI_KEY=your_api_key_here
-```
-
----
-
-## Installation
-
-```bash
-pip install google-search-results
-```
-
----
-
-## Example Python Implementation
-
-```python
-from serpapi import GoogleSearch
-
-params = {
-    "q": 'openai site:github.com',
-    "api_key": "SERPAPI_KEY"
-}
-
-search = GoogleSearch(params)
-
-results = search.get_dict()
-
-print(results)
-```
-
----
-
-## Example Environment Configuration
-
-```env
-SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
-```
-
----
-
-## Advantages
-
-* Structured JSON output
-* Multiple search engine support
-* Pagination support
-* Geographic targeting
-* Language targeting
-* Image search support
-
----
-
-## Limitations
-
-* Monthly search quotas
-* Costs increase with scale
-* Dependent on third-party service availability
-
----
-
-## Verdict
-
-✅ Recommended for automated public search discovery workflows.
-
----
-
-# 2. Google Dork Templates for OSINT
-
-## Social Media Discovery
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf
 
 ```text
 "{username}" site:instagram.com
@@ -187,13 +69,7 @@ SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 "{username}" site:youtube.com
 ```
 
-<<<<<<< HEAD
 ### Profile Discovery
-=======
----
-
-## Profile Discovery
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf
 
 ```text
 "{username}" intitle:"{username}"
@@ -203,13 +79,7 @@ SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 "{username}" "bio"
 ```
 
-<<<<<<< HEAD
 ### Contact Discovery
-=======
----
-
-## Contact Discovery
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf
 
 ```text
 "{username}" "email"
@@ -219,13 +89,7 @@ SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 "{username}" "@outlook.com"
 ```
 
-<<<<<<< HEAD
 ### Geographic Correlation
-=======
----
-
-## Geographic Correlation
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf
 
 ```text
 "{username}" "location"
@@ -235,13 +99,7 @@ SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 "{username}" "university"
 ```
 
-<<<<<<< HEAD
 ### Employment Correlation
-=======
----
-
-## Employment Correlation
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf
 
 ```text
 "{username}" "works at"
@@ -251,13 +109,7 @@ SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 "{username}" "team"
 ```
 
-<<<<<<< HEAD
 ### Technical Attribution
-=======
----
-
-## Technical Attribution
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf
 
 ```text
 "{username}" site:github.com
@@ -267,13 +119,7 @@ SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 "{username}" site:pypi.org
 ```
 
-<<<<<<< HEAD
 ### Document Discovery
-=======
----
-
-## Document Discovery
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf
 
 ```text
 "{username}" filetype:pdf
@@ -283,36 +129,19 @@ SERPAPI_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 "{username}" ext:pdf
 ```
 
-<<<<<<< HEAD
 ### Academic and Media Discovery
-=======
----
-
-## Academic Discovery
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf
 
 ```text
 "{username}" site:scholar.google.com
 "{username}" site:researchgate.net
 "{username}" site:orcid.org
 "{username}" site:academia.edu
-<<<<<<< HEAD
-=======
-```
-
----
-
-## Media Discovery
-
-```text
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf
 "{username}" site:youtube.com
 "{username}" site:vimeo.com
 "{username}" site:soundcloud.com
 "{username}" site:spotify.com
 ```
 
-<<<<<<< HEAD
 ## Investigation Workflow
 
 ```text
@@ -361,86 +190,3 @@ Return dorking_results in investigation response
 - Results depend on Google indexing and SerpAPI availability.
 - Search snippets are not proof of identity; they need correlation and human review.
 - Private, login-only, or legally restricted data must not be collected.
-=======
----
-
-# 3. Example Automation Workflow
-
-```text
-Target Username
-        ↓
-Generate Dork Templates
-        ↓
-Execute Search Queries
-        ↓
-Collect Results
-        ↓
-Extract Candidate Profiles
-        ↓
-Cross Platform Correlation
-        ↓
-Confidence Scoring
-        ↓
-Final Investigation Report
-```
-
----
-
-# 4. Example Automation Code
-
-```python
-from serpapi import GoogleSearch
-
-username = "target_username"
-
-queries = [
-    f'"{username}" site:instagram.com',
-    f'"{username}" site:x.com',
-    f'"{username}" site:github.com',
-    f'"{username}" site:linkedin.com',
-    f'"{username}" site:reddit.com'
-]
-
-for query in queries:
-    params = {
-        "engine": "google",
-        "q": query,
-        "api_key": "SERPAPI_KEY"
-    }
-
-    search = GoogleSearch(params)
-
-    results = search.get_dict()
-
-    print(results)
-```
-
----
-
-# 5. Recommended Technology Stack
-
-| Category             | Tool                  |
-| -------------------- | --------------------- |
-| Search Automation    | SerpAPI               |
-| Search Engine        | Google                |
-| Image Discovery      | Google Images         |
-| Reverse Image Search | Google Lens           |
-| Historical Archives  | Wayback Machine       |
-| Correlation Engine   | Custom Matching Logic |
-
----
-
-# Conclusion
-
-Search engine automation significantly improves public discovery workflows and reduces manual investigation effort.
-
-The most effective workflows combine:
-
-1. Search engine APIs.
-2. Dork query templates.
-3. Cross-platform verification.
-4. Historical archives.
-5. Multi-source validation.
-
-Confidence increases substantially when findings are independently confirmed across multiple public sources.
->>>>>>> d07da9fc81636f7cd19e526ef817bd3c411907cf

@@ -21,7 +21,6 @@ from backend.services.google_dorking import GoogleDorkingService
 from backend.services.telegram_service import TelegramDataService
 from backend.services.twitter_service import TwitterDataService
 from backend.services.training_dataset_service import get_training_dataset_service
-from backend.services.hitek_service import HiTekConnectorService
 
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
 
@@ -71,7 +70,7 @@ def extract_flashapi_related_profiles(user_data: dict[str, Any]) -> list[dict[st
         related_profiles.append(
             {
                 "username": item.get("username"),
-                "full_name": item.get("full_name"),
+                "full_name": clean_flashapi_text(item.get("full_name")),
                 "profile_pic_url": item.get("profile_pic_url"),
                 "is_verified": item.get("is_verified"),
                 "is_private": item.get("is_private"),
@@ -167,8 +166,9 @@ async def cross_platform_search(username: str, platform_data: dict[str, Any], de
     return results[: max(depth * 3, 1)]
 
 
-async def google_dork_username(username: str) -> dict[str, Any]:
-    return await GoogleDorkingService().search_username(username)
+async def google_dork_username(username: str, platform_data: dict[str, Any]) -> dict[str, Any]:
+    full_name = clean_flashapi_text(platform_data.get("full_name")) if isinstance(platform_data, dict) else None
+    return await GoogleDorkingService().search_username(username, full_name=full_name)
 
 
 async def ai_correlate(platform_data: dict[str, Any], cross_matches: list[dict[str, Any]]) -> dict[str, Any]:
@@ -211,108 +211,9 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     investigation_id = generate_investigation_id()
     platform_data = await scrape_platform(request.username, request.platform)
     cross_matches = await cross_platform_search(request.username, platform_data, request.correlation_depth)
-    
     internal_matches = DatabaseLookup().search_all(request.username)
-    
-    # Restored Hi-Tek index search & merge + added parameter filtering
-    hitek_service = HiTekConnectorService()
-    hitek_filtered = False
-    fetched_name = None
-    fetched_locations = []
-    
-    if hitek_service.get_status()["configured"]:
-        try:
-            hitek_matches = hitek_service.search_all(request.username)
-            
-            if request.filter_hitek:
-                fetched_name = platform_data.get("full_name") or platform_data.get("name")
-                
-                if isinstance(platform_data.get("post_location_tags"), list):
-                    fetched_locations.extend(platform_data.get("post_location_tags"))
-                if platform_data.get("location"):
-                    fetched_locations.append(platform_data.get("location"))
-                # Clean location list
-                fetched_locations = [loc.strip() for loc in fetched_locations if loc and str(loc).strip()]
-                
-                # Only apply filters if at least one parameter was successfully fetched
-                if fetched_name or fetched_locations:
-                    import re
-                    hitek_filtered = True
-                    
-                    def clean_name_tokens(name_str: str) -> set[str]:
-                        if not name_str:
-                            return set()
-                        tokens = re.findall(r'[a-zA-Z0-9]{3,}', name_str.lower())
-                        stop_words = {"mr", "mrs", "ms", "dr", "sir", "father", "son", "unknown", "na", "n/a", "kumar", "singh", "devi", "sharma", "ji"}
-                        return set(t for t in tokens if t not in stop_words)
-
-                    def name_matches(f_name: str | None, r_name: str | None) -> bool:
-                        if not f_name:
-                            return True
-                        if not r_name:
-                            return False
-                        f_clean = f_name.lower().strip()
-                        r_clean = r_name.lower().strip()
-                        if f_clean == r_clean or f_clean in r_clean or r_clean in f_clean:
-                            return True
-                        f_tokens = clean_name_tokens(f_name)
-                        r_tokens = clean_name_tokens(r_name)
-                        if f_tokens & r_tokens:
-                            return True
-                        return False
-
-                    def location_matches(f_locs: list[str], addr: str | None, ds: str | None) -> bool:
-                        if not f_locs:
-                            return True
-                        addr_clean = (addr or "").lower()
-                        ds_clean = (ds or "").lower()
-                        for loc in f_locs:
-                            loc_clean = loc.lower().strip()
-                            if not loc_clean or len(loc_clean) < 3:
-                                continue
-                            if loc_clean in addr_clean or loc_clean in ds_clean:
-                                return True
-                            loc_tokens = set(re.findall(r'[a-zA-Z0-9]{3,}', loc_clean))
-                            addr_tokens = set(re.findall(r'[a-zA-Z0-9]{3,}', addr_clean))
-                            ds_tokens = set(re.findall(r'[a-zA-Z0-9]{3,}', ds_clean))
-                            if loc_tokens & (addr_tokens | ds_tokens):
-                                return True
-                        return False
-
-                    # Filter the records
-                    filtered_by_username = [
-                        r for r in (hitek_matches.get("by_username") or [])
-                        if name_matches(fetched_name, r.get("username")) and location_matches(fetched_locations, r.get("address"), r.get("data_source"))
-                    ]
-                    filtered_by_phone = [
-                        r for r in (hitek_matches.get("by_phone") or [])
-                        if name_matches(fetched_name, r.get("username")) and location_matches(fetched_locations, r.get("address"), r.get("data_source"))
-                    ]
-                    filtered_by_email = [
-                        r for r in (hitek_matches.get("by_email") or [])
-                        if name_matches(fetched_name, r.get("username")) and location_matches(fetched_locations, r.get("address"), r.get("data_source"))
-                    ]
-                    
-                    hitek_matches = {
-                        "by_username": filtered_by_username,
-                        "by_phone": filtered_by_phone,
-                        "by_email": filtered_by_email
-                    }
-            
-            # Merge
-            internal_matches["by_username"].extend(hitek_matches.get("by_username") or [])
-            internal_matches["by_phone"].extend(hitek_matches.get("by_phone") or [])
-            internal_matches["by_email"].extend(hitek_matches.get("by_email") or [])
-        except Exception:
-            pass
-
-    # Add filter tracking metadata to the dict
-    internal_matches["hitek_filtered"] = hitek_filtered
-    internal_matches["hitek_filter_name"] = fetched_name if hitek_filtered else None
-    internal_matches["hitek_filter_locations"] = fetched_locations if hitek_filtered else []
-
     hashtag_analysis = await HashtagAnalyzer().analyze_hashtags(extract_hashtags(platform_data), request.username)
-    dorking_results = await google_dork_username(request.username)
+    dorking_results = await google_dork_username(request.username, platform_data)
     ai_result = await ai_correlate(platform_data, cross_matches)
     risk = await assess_risk(platform_data, ai_result)
     response = InvestigationResponse(
@@ -355,16 +256,3 @@ async def list_investigations(
         )
         for item in items
     ]
-
-
-@router.get("/hitek/status")
-async def get_hitek_status() -> dict[str, Any]:
-    """Get the current indexing status of Hi-Tek CSV database files."""
-    return HiTekConnectorService().get_status()
-
-
-@router.post("/hitek/index")
-async def trigger_hitek_indexing() -> dict[str, Any]:
-    """Trigger background indexing of all pending/modified Hi-Tek database CSV files."""
-    started = HiTekConnectorService().start_indexing()
-    return {"status": "started" if started else "already_indexing"}
