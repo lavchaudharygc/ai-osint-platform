@@ -13,6 +13,7 @@ class UsernameInvestigationRequest(BaseModel):
     platform: SupportedPlatform = Field(..., examples=["instagram"])
     case_id: str | None = Field(default=None, max_length=50)
     correlation_depth: int = Field(default=2, ge=1, le=5)
+    filter_hitek: bool = Field(default=True)
 
 
 class InvestigationResponse(BaseModel):
