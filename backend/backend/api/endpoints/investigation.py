@@ -246,38 +246,172 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
                         stop_words = {"mr", "mrs", "ms", "dr", "sir", "father", "son", "unknown", "na", "n/a", "kumar", "singh", "devi", "sharma", "ji"}
                         return set(t for t in tokens if t not in stop_words)
 
-                    def name_matches(f_name: str | None, r_name: str | None) -> bool:
-                        if not f_name:
+                    def levenshtein_distance(s1: str, s2: str) -> int:
+                        if len(s1) < len(s2):
+                            return levenshtein_distance(s2, s1)
+                        if len(s2) == 0:
+                            return len(s1)
+                        previous_row = range(len(s2) + 1)
+                        for i, c1 in enumerate(s1):
+                            current_row = [i + 1]
+                            for j, c2 in enumerate(s2):
+                                insertions = previous_row[j + 1] + 1
+                                deletions = current_row[j] + 1
+                                substitutions = previous_row[j] + (c1 != c2)
+                                current_row.append(min(insertions, deletions, substitutions))
+                            previous_row = current_row
+                        return previous_row[-1]
+
+                    def name_matches(target_name: str | None, record_name: str | None) -> bool:
+                        if not target_name:
                             return True
-                        if not r_name:
+                        if not record_name:
                             return False
-                        f_clean = f_name.lower().strip()
-                        r_clean = r_name.lower().strip()
-                        if f_clean == r_clean or f_clean in r_clean or r_clean in f_clean:
+                        
+                        target_clean = target_name.lower().strip()
+                        record_clean = record_name.lower().strip()
+                        
+                        if target_clean == record_clean or target_clean in record_clean or record_clean in target_clean:
                             return True
-                        f_tokens = clean_name_tokens(f_name)
-                        r_tokens = clean_name_tokens(r_name)
-                        if f_tokens & r_tokens:
+                            
+                        target_tokens = clean_name_tokens(target_name)
+                        record_tokens = clean_name_tokens(record_name)
+                        
+                        if not target_tokens:
                             return True
-                        return False
+                            
+                        matched_tokens = 0
+                        for t_tok in target_tokens:
+                            for r_tok in record_tokens:
+                                if t_tok == r_tok or t_tok in r_tok or r_tok in t_tok:
+                                    matched_tokens += 1
+                                    break
+                                else:
+                                    max_dist = 1 if len(t_tok) <= 5 else 2
+                                    if levenshtein_distance(t_tok, r_tok) <= max_dist:
+                                        matched_tokens += 1
+                                        break
+                                        
+                        threshold = 0.70 if len(target_tokens) >= 2 else 1.0
+                        return (matched_tokens / len(target_tokens)) >= threshold
+
+                    indian_cities = {
+                        "lucknow": "Uttar Pradesh", "kanpur": "Uttar Pradesh", "noida": "Uttar Pradesh",
+                        "ghaziabad": "Uttar Pradesh", "agra": "Uttar Pradesh", "varanasi": "Uttar Pradesh",
+                        "delhi": "Delhi", "new delhi": "Delhi", "mumbai": "Maharashtra", "pune": "Maharashtra",
+                        "thane": "Maharashtra", "nagpur": "Maharashtra", "bangalore": "Karnataka",
+                        "bengaluru": "Karnataka", "chennai": "Tamil Nadu", "hyderabad": "Telangana",
+                        "secunderabad": "Telangana", "kolkata": "West Bengal", "jaipur": "Rajasthan",
+                        "jodhpur": "Rajasthan", "ahmedabad": "Gujarat", "surat": "Gujarat",
+                        "indore": "Madhya Pradesh", "bhopal": "Madhya Pradesh", "patna": "Bihar",
+                        "ranchi": "Jharkhand", "ludhiana": "Punjab", "amritsar": "Punjab",
+                        "chandigarh": "Punjab", "gurgaon": "Haryana", "gurugram": "Haryana",
+                        "faridabad": "Haryana", "panchkula": "Haryana", "kochi": "Kerala",
+                        "trivandrum": "Kerala", "bhubaneswar": "Odisha", "guwahati": "Assam",
+                        "dehradun": "Uttarakhand", "shimla": "Himachal Pradesh", "jammu": "Jammu and Kashmir",
+                        "srinagar": "Jammu and Kashmir", "raipur": "Chhattisgarh"
+                    }
+
+                    def extract_city_state(location_str: str) -> tuple[str | None, str | None]:
+                        loc_lower = location_str.lower()
+                        for city, state in indian_cities.items():
+                            if city in loc_lower:
+                                return city, state
+                        states = [
+                            "Uttar Pradesh", "Delhi", "Maharashtra", "Karnataka", "Tamil Nadu",
+                            "Telangana", "West Bengal", "Rajasthan", "Gujarat", "Madhya Pradesh",
+                            "Bihar", "Jharkhand", "Punjab", "Haryana", "Kerala", "Odisha",
+                            "Assam", "Uttarakhand", "Himachal Pradesh", "Jammu and Kashmir",
+                            "Chhattisgarh", "Goa", "Andhra Pradesh"
+                        ]
+                        for state in states:
+                            if state.lower() in loc_lower:
+                                return None, state
+                        return None, None
+
+                    def circle_matches_state(circle: str | None, state: str | None) -> bool:
+                        if not circle or not state:
+                            return True
+                        circle_lower = circle.lower()
+                        state_lower = state.lower()
+                        circle_to_states = {
+                            "delhi": ["delhi", "ncr"],
+                            "mumbai": ["maharashtra"],
+                            "maharashtra": ["maharashtra", "goa"],
+                            "up": ["uttar pradesh", "uttarakhand", "up"],
+                            "uttar": ["uttar pradesh", "uttarakhand", "up"],
+                            "haryana": ["haryana"],
+                            "punjab": ["punjab"],
+                            "hp": ["himachal pradesh"],
+                            "rajasthan": ["rajasthan"],
+                            "gujarat": ["gujarat"],
+                            "mp": ["madhya pradesh", "chhattisgarh"],
+                            "bihar": ["bihar", "jharkhand"],
+                            "west bengal": ["west bengal"],
+                            "kolkata": ["west bengal"],
+                            "orissa": ["odisha", "orissa"],
+                            "assam": ["assam"],
+                            "north east": ["meghalaya", "mizoram", "tripura", "nagaland", "manipur", "arunachal"],
+                            "karnataka": ["karnataka"],
+                            "ap": ["andhra pradesh", "telangana"],
+                            "andhra": ["andhra pradesh", "telangana"],
+                            "tamil nadu": ["tamil nadu"],
+                            "chennai": ["tamil nadu"],
+                            "kerala": ["kerala"],
+                        }
+                        for c_key, states in circle_to_states.items():
+                            if c_key in circle_lower:
+                                return any(s in state_lower or state_lower in s for s in states)
+                        return True
 
                     def location_matches(f_locs: list[str], addr: str | None, ds: str | None) -> bool:
                         if not f_locs:
                             return True
                         addr_clean = (addr or "").lower()
                         ds_clean = (ds or "").lower()
+                        
+                        target_cities = []
+                        target_states = []
+                        for loc in f_locs:
+                            city, state = extract_city_state(loc)
+                            if city: target_cities.append(city)
+                            if state: target_states.append(state)
+                            
+                        loc_matched = False
                         for loc in f_locs:
                             loc_clean = loc.lower().strip()
                             if not loc_clean or len(loc_clean) < 3:
                                 continue
                             if loc_clean in addr_clean or loc_clean in ds_clean:
-                                return True
+                                loc_matched = True
+                                break
                             loc_tokens = set(re.findall(r'[a-zA-Z0-9]{3,}', loc_clean))
                             addr_tokens = set(re.findall(r'[a-zA-Z0-9]{3,}', addr_clean))
                             ds_tokens = set(re.findall(r'[a-zA-Z0-9]{3,}', ds_clean))
                             if loc_tokens & (addr_tokens | ds_tokens):
-                                return True
-                        return False
+                                loc_matched = True
+                                break
+                            for lt in loc_tokens:
+                                for at in (addr_tokens | ds_tokens):
+                                    if levenshtein_distance(lt, at) <= 1:
+                                        loc_matched = True
+                                        break
+                                if loc_matched:
+                                    break
+                                    
+                        if not loc_matched:
+                            if target_cities:
+                                if any(city.lower() in addr_clean for city in target_cities):
+                                    loc_matched = True
+                            if target_states:
+                                circle_name = None
+                                circle_match = re.search(r'Circle:\s*([^,)]+)', ds or "")
+                                if circle_match:
+                                    circle_name = circle_match.group(1).strip()
+                                if any(circle_matches_state(circle_name, state) for state in target_states):
+                                    loc_matched = True
+                                    
+                        return loc_matched
 
                     # Filter the records
                     filtered_by_username = [
