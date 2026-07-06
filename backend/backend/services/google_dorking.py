@@ -453,6 +453,18 @@ class GoogleDorkingService:
     @staticmethod
     def _extract_provider_error(payload: dict[str, Any]) -> dict[str, str] | None:
         """Extract provider-level errors that can arrive with HTTP 200 responses."""
+        # Check for BrightData proxy-level status codes inside HTTP 200 response payload
+        status_code = payload.get("status_code")
+        if status_code is not None and int(status_code) != 200:
+            headers = payload.get("headers") or {}
+            msg = (
+                headers.get("x-brd-error")
+                or headers.get("x-brd-err-msg")
+                or headers.get("proxy-status")
+                or f"BrightData proxy error {status_code}"
+            )
+            return {"status": str(status_code), "message": str(msg)}
+
         raw_error = payload.get("error") or payload.get("errors")
         if raw_error:
             return {"status": "provider_error", "message": str(raw_error)}

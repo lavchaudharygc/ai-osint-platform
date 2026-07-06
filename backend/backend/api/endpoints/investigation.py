@@ -458,12 +458,11 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
 
     hashtag_analysis = await HashtagAnalyzer().analyze_hashtags(extract_hashtags(platform_data), request.username)
 
-    # Fetch Instagram posts/reels concurrently with dorking for public accounts
+    # Fetch Instagram posts/reels concurrently with dorking if not explicitly private
     import asyncio as _asyncio
     is_public_instagram = (
         request.platform == "instagram"
-        and platform_data.get("success")
-        and not platform_data.get("is_private")
+        and platform_data.get("is_private") is not True
     )
     if is_public_instagram:
         dorking_results, instagram_posts = await _asyncio.gather(
