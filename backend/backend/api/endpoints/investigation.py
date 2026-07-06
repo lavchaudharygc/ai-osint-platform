@@ -22,6 +22,7 @@ from backend.services.telegram_service import TelegramDataService
 from backend.services.twitter_service import TwitterDataService
 from backend.services.training_dataset_service import get_training_dataset_service
 from backend.services.hitek_service import HiTekConnectorService
+from backend.services.instagram_posts_service import InstagramPostsService
 
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
 
@@ -446,7 +447,22 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     internal_matches["hitek_filter_locations"] = fetched_locations if hitek_filtered else []
 
     hashtag_analysis = await HashtagAnalyzer().analyze_hashtags(extract_hashtags(platform_data), request.username)
-    dorking_results = await google_dork_username(request.username, platform_data)
+
+    # Fetch Instagram posts/reels concurrently with dorking for public accounts
+    import asyncio as _asyncio
+    is_public_instagram = (
+        request.platform == "instagram"
+        and platform_data.get("success")
+        and not platform_data.get("is_private")
+    )
+    if is_public_instagram:
+        dorking_results, instagram_posts = await _asyncio.gather(
+            google_dork_username(request.username, platform_data),
+            InstagramPostsService().fetch_posts(request.username, scrape_type="posts"),
+        )
+    else:
+        dorking_results = await google_dork_username(request.username, platform_data)
+        instagram_posts = None
     ai_result = await ai_correlate(platform_data, cross_matches)
     risk = await assess_risk(platform_data, ai_result)
     response = InvestigationResponse(
@@ -459,6 +475,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         internal_database_matches=internal_matches,
         hashtag_analysis=hashtag_analysis,
         dorking_results=dorking_results,
+        instagram_posts=instagram_posts,
         timestamp=datetime.now(UTC),
     )
     _INVESTIGATION_STORE[investigation_id] = response

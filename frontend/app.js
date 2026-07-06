@@ -851,6 +851,91 @@ function renderInvestigationResults(data) {
             }
         }
     }
+
+    // Instagram Posts Intelligence Card
+    renderInstagramPosts(data.instagram_posts);
+}
+
+function renderInstagramPosts(igPosts) {
+    const row = document.getElementById("instagram-posts-row");
+    if (!row) return;
+
+    if (!igPosts || !igPosts.configured) {
+        row.style.display = "none";
+        return;
+    }
+
+    row.style.display = "";
+
+    const badge = document.getElementById("posts-count-badge");
+    const posts = igPosts.posts || igPosts.reels || [];
+    const hashtags = igPosts.all_hashtags || [];
+
+    if (badge) {
+        if (igPosts.error) {
+            badge.innerText = `Error: ${igPosts.error}`;
+            badge.style.color = "var(--accent-crimson)";
+        } else {
+            badge.innerText = `${posts.length} posts · ${hashtags.length} hashtags`;
+            badge.style.color = "";
+        }
+    }
+
+    // Hashtag Cloud
+    const hashContainer = document.getElementById("ig-posts-hashtags");
+    if (hashContainer) {
+        hashContainer.innerHTML = "";
+        if (hashtags.length === 0) {
+            hashContainer.innerHTML = `<span style="color:var(--text-secondary); font-size:0.8rem;">No hashtags found</span>`;
+        } else {
+            hashtags.forEach(tag => {
+                const pill = document.createElement("span");
+                pill.className = "tag-pill";
+                pill.style.cssText = "cursor:default; font-size:0.72rem; padding:2px 8px;";
+                pill.innerText = `#${tag}`;
+                hashContainer.appendChild(pill);
+            });
+        }
+    }
+
+    // Posts Feed
+    const feed = document.getElementById("ig-posts-feed");
+    if (!feed) return;
+    feed.innerHTML = "";
+
+    if (posts.length === 0) {
+        feed.innerHTML = `<div style="color:var(--text-secondary); font-size:0.82rem; padding:10px 0;">${igPosts.error ? igPosts.error : "No posts retrieved."}</div>`;
+        return;
+    }
+
+    posts.forEach(post => {
+        const card = document.createElement("div");
+        card.style.cssText = "background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:6px;";
+
+        const dateStr = post.taken_at ? new Date(post.taken_at * 1000).toLocaleString() : "Unknown date";
+        const mediaIcon = post.product_type === "clips" ? "🎬" : (post.media_type === "carousel" ? "🎠" : "🖼️");
+        const caption = (post.caption || "").trim().substring(0, 200);
+        const tags = (post.hashtags || []).slice(0, 8).map(t => `<span style="color:var(--accent-blue); font-size:0.7rem;">#${String(t).replace(/^#/, "")}</span>`).join(" ");
+        const mentions = (post.mentions || []).slice(0, 5).map(m => `<span style="color:var(--accent-gold); font-size:0.7rem;">@${String(m).replace(/^@/, "")}</span>`).join(" ");
+        const location = post.location && typeof post.location === "object" ? post.location.name || "" : "";
+
+        card.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.75rem; color:var(--text-secondary);">${mediaIcon} ${dateStr}</span>
+                <div style="display:flex; gap:10px; font-size:0.72rem; color:var(--text-secondary);">
+                    ${post.like_count != null ? `<span>❤️ ${Number(post.like_count).toLocaleString()}</span>` : ""}
+                    ${post.comment_count != null ? `<span>💬 ${Number(post.comment_count).toLocaleString()}</span>` : ""}
+                    ${post.play_count != null ? `<span>▶️ ${Number(post.play_count).toLocaleString()}</span>` : ""}
+                    ${post.url ? `<a href="${post.url}" target="_blank" rel="noopener" style="color:var(--accent-blue); text-decoration:none;">Open ↗</a>` : ""}
+                </div>
+            </div>
+            ${caption ? `<div style="font-size:0.82rem; color:var(--text-primary); line-height:1.5;">${caption}${(post.caption||"").length > 200 ? "…" : ""}</div>` : ""}
+            ${tags ? `<div style="display:flex; flex-wrap:wrap; gap:4px;">${tags}</div>` : ""}
+            ${mentions ? `<div style="display:flex; flex-wrap:wrap; gap:4px;">${mentions}</div>` : ""}
+            ${location ? `<div style="font-size:0.7rem; color:var(--text-secondary);">📍 ${location}</div>` : ""}
+        `;
+        feed.appendChild(card);
+    });
 }
 
 // Helper to return platform-specific SVG vector icons

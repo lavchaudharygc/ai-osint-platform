@@ -26,6 +26,7 @@ class InvestigationResponse(BaseModel):
     internal_database_matches: dict[str, Any] | None = None
     hashtag_analysis: dict[str, Any] | None = None
     dorking_results: dict[str, Any] | None = None
+    instagram_posts: dict[str, Any] | None = None
     timestamp: datetime
 
 

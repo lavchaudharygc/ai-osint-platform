@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     groq_api_url: str = Field(default="https://api.groq.com/openai/v1/chat/completions", validation_alias="GROQ_API_URL")
     groq_model: str = Field(default="llama-3.3-70b-versatile", validation_alias="GROQ_MODEL")
     rapidapi_key: str | None = Field(default=None, validation_alias="RAPIDAPI_KEY")
+    apify_api_token: str | None = Field(default=None, validation_alias="APIFY_API_TOKEN")
     flashapi_host: str = Field(default="flashapi1.p.rapidapi.com", validation_alias="FLASHAPI_HOST")
     flashapi_base_url: str = Field(default="https://flashapi1.p.rapidapi.com", validation_alias="FLASHAPI_BASE_URL")
     flashapi_endpoint_path: str = Field(default="ig/info_username/", validation_alias="FLASHAPI_ENDPOINT_PATH")
