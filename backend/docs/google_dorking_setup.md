@@ -6,17 +6,24 @@ This document describes the backend approach for automating public search-engine
 
 The service only collects public search-result metadata. It must not bypass logins, scrape private pages, or access non-public data.
 
-## SerpAPI Setup
+## SERP Provider Setup
 
-1. Create an account: <https://serpapi.com/users/sign_up>
-2. Generate an API key: <https://serpapi.com/manage-api-key>
-3. Store the key locally in `.env`:
+The backend tries configured providers in this order:
+
+1. `SERPAPI_KEY` (primary SerpAPI key)
+2. `BRIGHTDATA_SERP_API_KEY` (Bright Data SERP API fallback)
+
+If a provider returns quota exhaustion, HTTP `429`, `402`, `403`, or a provider-specific quota/limit/credits error, the service automatically retries the same query with the next configured provider. Do not commit real keys. Store them locally in `.env`:
 
 ```env
-SERPAPI_KEY=your_api_key_here
+SERPAPI_KEY=your_primary_serpapi_key
 SERPAPI_BASE_URL=https://serpapi.com/search.json
 SERPAPI_TIMEOUT_SECONDS=20
 SERPAPI_RESULTS_PER_QUERY=5
+BRIGHTDATA_SERP_API_KEY=your_brightdata_bearer_token
+BRIGHTDATA_SERP_BASE_URL=https://api.brightdata.com/request
+BRIGHTDATA_SERP_ZONE=serp_api1
+BRIGHTDATA_SERP_TARGET_URL=https://www.google.com/search?q={query}
 ```
 
 ## Backend Implementation
@@ -27,13 +34,13 @@ The implementation lives in:
 backend/services/google_dorking.py
 ```
 
-It runs approved Indian-platform dork templates, calls SerpAPI, normalizes organic search results, filters close-but-not-exact username matches, deduplicates URLs, extracts lightweight intelligence, and groups results by category.
+It runs approved Indian-platform dork templates, calls the configured SERP provider chain, normalizes organic search results, filters close-but-not-exact username matches, deduplicates URLs, extracts lightweight intelligence, and groups results by category.
 
-When `SERPAPI_KEY` is missing, the service returns `status: not_configured` with the prepared queries so local development still works.
+When no SERP provider key is configured, the service returns `status: not_configured` with the prepared queries so local development still works. When fallback happens, response metadata includes `provider_metadata.configured_providers`, `provider_metadata.providers_used`, `provider_metadata.fallback_used`, and provider failure details.
 
 The service is adapted from the standalone dorking engine idea for this repo:
 
-- Search provider remains SerpAPI, matching the existing backend configuration.
+- Search provider fallback now supports primary SerpAPI and Bright Data through environment variables.
 - Extra dependencies such as `duckduckgo_search`, `aiohttp`, and `BeautifulSoup` are intentionally not required.
 - Indian-specific categories are included for professional, social, developer, education, ecommerce, forums, matrimony, blogs, and risk mentions.
 - Exact-match filtering is applied so similar usernames do not appear as target matches.
@@ -164,7 +171,7 @@ Return dorking_results in investigation response
 
 ```json
 {
-  "provider": "serpapi",
+  "provider": "serpapi_primary",
   "status": "completed",
   "queries_run": 50,
   "result_count": 12,
@@ -177,16 +184,22 @@ Return dorking_results in investigation response
       "domain": "github.com",
       "snippet": "Public search snippet",
       "position": 1,
-      "source": "google_serpapi"
+      "source": "google_serpapi_primary",
+      "serp_provider": "serpapi_primary"
     }
   ],
-  "grouped_by_category": {}
+  "grouped_by_category": {},
+  "provider_metadata": {
+    "configured_providers": ["serpapi_primary", "brightdata"],
+    "providers_used": ["brightdata"],
+    "fallback_used": true
+  }
 }
 ```
 
 ## Limitations
 
-- SerpAPI free tier has limited monthly searches.
+- SERP providers have limited monthly searches/credits; configure backup providers to avoid hard failures when a primary quota is exhausted.
 - Results depend on Google indexing and SerpAPI availability.
 - Search snippets are not proof of identity; they need correlation and human review.
 - Private, login-only, or legally restricted data must not be collected.
