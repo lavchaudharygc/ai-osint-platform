@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     serpapi_base_url: str = Field(default="https://serpapi.com/search.json", validation_alias="SERPAPI_BASE_URL")
     serpapi_timeout_seconds: float = Field(default=20.0, validation_alias="SERPAPI_TIMEOUT_SECONDS")
     serpapi_results_per_query: int = Field(default=5, validation_alias="SERPAPI_RESULTS_PER_QUERY")
+    brightdata_serp_api_key: str | None = Field(default=None, validation_alias="BRIGHTDATA_SERP_API_KEY")
+    brightdata_serp_base_url: str = Field(default="https://api.brightdata.com/request", validation_alias="BRIGHTDATA_SERP_BASE_URL")
+    brightdata_serp_zone: str = Field(default="serp_api1", validation_alias="BRIGHTDATA_SERP_ZONE")
+    brightdata_serp_target_url: str = Field(default="https://www.google.com/search?q={query}", validation_alias="BRIGHTDATA_SERP_TARGET_URL")
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:5500"]
 
 

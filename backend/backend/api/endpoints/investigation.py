@@ -504,6 +504,7 @@ async def list_investigations(
             status=item.status,
             timestamp=item.timestamp,
         )
+        for item in items
     ]
 
 
