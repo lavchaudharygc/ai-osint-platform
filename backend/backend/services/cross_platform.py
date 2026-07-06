@@ -34,26 +34,11 @@ class CrossPlatformSearchService:
         if template is None:
             return None
         url = template.format(username=username)
-        probe_url = url
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        
-        if platform == "reddit":
-            probe_url = f"https://old.reddit.com/user/{username}"
-        elif platform == "pinterest":
-            probe_url = f"https://www.pinterest.com/oembed.json?url=https://www.pinterest.com/{username}/"
-
         try:
             async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
-                response = await client.get(probe_url, headers=headers)
+                response = await client.head(url)
+            exists = response.status_code < 400
             status_code = response.status_code
-            if platform == "pinterest":
-                exists = (status_code == 200)
-            elif platform == "reddit":
-                exists = (status_code == 200)
-            else:
-                exists = status_code < 400
         except httpx.HTTPError as exc:
             exists = False
             status_code = None

@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
+import json
 import re
 
 import httpx
@@ -30,6 +31,17 @@ class DorkingConfig:
     max_complex_dorks: int = 100
     max_variations: int = 7
     min_confidence_for_complex: float = 0.4
+
+
+@dataclass(frozen=True)
+class SearchProvider:
+    """Configured SERP provider used for fallback search execution."""
+
+    name: str
+    kind: str
+    api_key: str
+    base_url: str
+    priority: int
 
 
 class IndianPlatformDorks:
@@ -164,19 +176,44 @@ class GoogleDorkingService:
     """Run approved public-search dorks for username discovery.
 
     This adapts the supplied dorking engine idea to this repository's current
-    architecture: SerpAPI remains the search provider, external optional
-    dependencies are avoided, and AI-heavy complex dorking is represented as a
-    future phase instead of calling unavailable AIAnalyzer methods.
+    architecture: SerpAPI is tried first, Bright Data is used as the configured
+    quota fallback, external optional dependencies are avoided, and AI-heavy
+    complex dorking is represented as a future phase instead of calling
+    unavailable AIAnalyzer methods.
     """
 
     def __init__(self) -> None:
         self.config = DorkingConfig()
-        self.api_key = settings.serpapi_key
-        self.base_url = settings.serpapi_base_url
         self.timeout = settings.serpapi_timeout_seconds
+        self.providers = self._build_provider_chain()
 
     def is_configured(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.providers)
+
+    def _build_provider_chain(self) -> list[SearchProvider]:
+        """Build provider fallback order without hardcoding any API keys."""
+        providers: list[SearchProvider] = []
+        if settings.serpapi_key:
+            providers.append(
+                SearchProvider(
+                    name="serpapi_primary",
+                    kind="serpapi",
+                    api_key=settings.serpapi_key,
+                    base_url=settings.serpapi_base_url,
+                    priority=1,
+                )
+            )
+        if settings.brightdata_serp_api_key:
+            providers.append(
+                SearchProvider(
+                    name="brightdata",
+                    kind="brightdata",
+                    api_key=settings.brightdata_serp_api_key,
+                    base_url=settings.brightdata_serp_base_url,
+                    priority=4,
+                )
+            )
+        return providers
 
     def build_queries(
         self,
@@ -219,13 +256,13 @@ class GoogleDorkingService:
         full_name: str | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
-        """Run simple dorking through SerpAPI and return normalized results."""
+        """Run simple dorking through the configured SERP provider chain."""
         queries = self.build_queries(username, full_name, limit)
         if not self.is_configured():
             return {
-                "provider": "serpapi",
+                "provider": "serp_fallback",
                 "status": "not_configured",
-                "reason": "missing SERPAPI_KEY",
+                "reason": "missing SERPAPI_KEY or BRIGHTDATA_SERP_API_KEY",
                 "phase": "simple_dorking",
                 "queries_prepared": len(queries),
                 "queries": queries,
@@ -235,25 +272,46 @@ class GoogleDorkingService:
                 "ready_for_complex": False,
                 "complex_dorking": {
                     "status": "skipped",
-                    "reason": "SerpAPI key is required before complex dorking can use live results.",
+                    "reason": "At least one SERP provider key is required before complex dorking can use live results.",
+                },
+                "provider_metadata": {
+                    "configured_providers": [],
+                    "providers_used": [],
+                    "fallback_used": False,
+                    "failed_providers": [],
                 },
                 "searched_at": datetime.now(UTC).isoformat(),
             }
 
         results: list[dict[str, Any]] = []
         errors: list[dict[str, str]] = []
+        provider_failures: list[dict[str, str]] = []
+        providers_used: list[str] = []
+        disabled_providers: set[str] = set()
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for item in queries:
-                query_results, error = await self._search_query(client, item)
+                query_results, error, provider_name, failures = await self._search_query(client, item, disabled_providers)
                 results.extend(query_results)
+                provider_failures.extend(failures)
+                if provider_name and provider_name not in providers_used:
+                    providers_used.append(provider_name)
                 if error:
                     errors.append(error)
 
         deduped_results = self._dedupe_results(results)
         intel = self._extract_intel_from_results(deduped_results)
         ready_for_complex = self._should_trigger_complex_dorking(intel)
+        configured_provider_names = [provider.name for provider in self.providers]
+        fallback_used = bool(disabled_providers) or (bool(providers_used) and providers_used[0] != configured_provider_names[0]) or len(providers_used) > 1
+        failed_providers = sorted(
+            {
+                failure.get("provider", "unknown")
+                for failure in provider_failures
+                if failure.get("provider")
+            }
+        )
         return {
-            "provider": "serpapi",
+            "provider": providers_used[0] if providers_used else configured_provider_names[0],
             "status": "completed" if not errors else "partial",
             "phase": "simple_dorking",
             "queries_run": len(queries),
@@ -264,6 +322,14 @@ class GoogleDorkingService:
             "ready_for_complex": ready_for_complex,
             "complex_dorking": self._complex_phase_summary(ready_for_complex),
             "errors": errors,
+            "provider_metadata": {
+                "configured_providers": configured_provider_names,
+                "providers_used": providers_used,
+                "fallback_used": fallback_used,
+                "failed_providers": failed_providers,
+                "disabled_providers": sorted(disabled_providers),
+                "provider_failures": provider_failures,
+            },
             "searched_at": datetime.now(UTC).isoformat(),
         }
 
@@ -305,45 +371,130 @@ class GoogleDorkingService:
         self,
         client: httpx.AsyncClient,
         item: dict[str, str | None],
-    ) -> tuple[list[dict[str, Any]], dict[str, str] | None]:
+        disabled_providers: set[str],
+    ) -> tuple[list[dict[str, Any]], dict[str, str] | None, str | None, list[dict[str, str]]]:
         query = str(item["query"])
+        failures: list[dict[str, str]] = []
+        for provider in self.providers:
+            if provider.name in disabled_providers:
+                continue
+            payload, error = await self._request_provider(client, provider, query)
+            if error:
+                error_with_query = {"query": query, **error}
+                failures.append(error_with_query)
+                if self._is_quota_error(error):
+                    disabled_providers.add(provider.name)
+                    continue
+                continue
+            if payload is None:
+                continue
+            return self._extract_organic_results(payload, item, provider.name), None, provider.name, failures
+
+        final_error = failures[-1] if failures else {"query": query, "status": "not_configured", "message": "No SERP provider was available."}
+        return [], final_error, None, failures
+
+    async def _request_provider(
+        self,
+        client: httpx.AsyncClient,
+        provider: SearchProvider,
+        query: str,
+    ) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
         try:
-            response = await client.get(
-                self.base_url,
-                params={
-                    "engine": "google",
-                    "q": query,
-                    "api_key": self.api_key,
-                    "num": settings.serpapi_results_per_query,
-                },
-            )
-            if response.status_code != 200:
-                return [], {
-                    "query": query,
-                    "status": str(response.status_code),
-                    "message": response.text[:200],
+            if provider.kind == "serpapi":
+                response = await client.get(
+                    provider.base_url,
+                    params={
+                        "engine": "google",
+                        "q": query,
+                        "api_key": provider.api_key,
+                        "num": settings.serpapi_results_per_query,
+                    },
+                )
+            elif provider.kind == "brightdata":
+                target_url = settings.brightdata_serp_target_url.format(query=quote_plus(query))
+                response = await client.post(
+                    provider.base_url,
+                    headers={"Authorization": f"Bearer {provider.api_key}", "Content-Type": "application/json"},
+                    json={
+                        "zone": settings.brightdata_serp_zone,
+                        "url": target_url,
+                        "format": "json",
+                        "data_format": "parsed",
+                    },
+                )
+            else:
+                return None, {
+                    "provider": provider.name,
+                    "status": "unsupported_provider",
+                    "message": f"Unsupported SERP provider kind: {provider.kind}",
                 }
-            payload = response.json()
-            return self._extract_organic_results(payload, item), None
+
+            if response.status_code != 200:
+                return None, {
+                    "provider": provider.name,
+                    "status": str(response.status_code),
+                    "message": response.text[:300],
+                }
+
+            payload = self._normalize_provider_payload(response.json())
+            provider_error = self._extract_provider_error(payload)
+            if provider_error:
+                return None, {
+                    "provider": provider.name,
+                    "status": provider_error.get("status", "provider_error"),
+                    "message": provider_error["message"][:300],
+                }
+            return payload, None
+        except ValueError as exc:
+            return None, {"provider": provider.name, "status": "invalid_json", "message": str(exc)}
         except httpx.HTTPError as exc:
-            return [], {"query": query, "status": "http_error", "message": str(exc)}
+            return None, {"provider": provider.name, "status": "http_error", "message": str(exc)}
+
+    @staticmethod
+    def _extract_provider_error(payload: dict[str, Any]) -> dict[str, str] | None:
+        """Extract provider-level errors that can arrive with HTTP 200 responses."""
+        raw_error = payload.get("error") or payload.get("errors")
+        if raw_error:
+            return {"status": "provider_error", "message": str(raw_error)}
+
+        status = str(payload.get("status") or "").lower()
+        if status in {"error", "failed", "failure"}:
+            message = payload.get("message") or payload.get("reason") or payload.get("status")
+            return {"status": "provider_error", "message": str(message)}
+
+        search_metadata = payload.get("search_metadata")
+        if isinstance(search_metadata, dict):
+            metadata_status = str(search_metadata.get("status") or "").lower()
+            if metadata_status in {"error", "failed", "failure"}:
+                message = search_metadata.get("error") or search_metadata.get("message") or metadata_status
+                return {"status": "provider_error", "message": str(message)}
+
+        return None
+
+    @staticmethod
+    def _is_quota_error(error: dict[str, str]) -> bool:
+        status = error.get("status")
+        message = (error.get("message") or "").lower()
+        quota_markers = ("quota", "limit", "run out", "exhaust", "credits", "billing", "payment")
+        return status in {"402", "403", "429"} or any(marker in message for marker in quota_markers)
 
     def _extract_organic_results(
         self,
         payload: dict[str, Any],
         item: dict[str, str | None],
+        provider_name: str,
     ) -> list[dict[str, Any]]:
-        organic_results = payload.get("organic_results") or []
+        organic_results = self._get_organic_results(payload)
         normalized_results: list[dict[str, Any]] = []
         match_value = item.get("match_value")
-        for result in organic_results:
+        for index, result in enumerate(organic_results, 1):
             if not isinstance(result, dict):
                 continue
-            link = result.get("link")
+            link = result.get("link") or result.get("url") or result.get("href")
             if not link:
                 continue
             title = result.get("title") or ""
-            snippet = result.get("snippet") or ""
+            snippet = result.get("snippet") or result.get("description") or result.get("content") or result.get("text") or ""
             if not self._is_exact_match(str(match_value) if match_value else None, title, str(link), snippet):
                 continue
             normalized_results.append(
@@ -357,12 +508,77 @@ class GoogleDorkingService:
                     "url": link,
                     "domain": urlparse(str(link)).netloc,
                     "snippet": snippet,
-                    "position": result.get("position"),
-                    "source": "google_serpapi",
+                    "position": result.get("position") or result.get("rank") or index,
+                    "source": f"google_{provider_name}",
+                    "serp_provider": provider_name,
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
             )
         return normalized_results
+
+    @classmethod
+    def _normalize_provider_payload(cls, payload: Any) -> dict[str, Any]:
+        """Normalize wrapped SERP payloads, including Bright Data body strings."""
+        normalized = cls._decode_json_like(payload)
+        if not isinstance(normalized, dict):
+            return {"raw_payload": normalized}
+
+        body = cls._decode_json_like(normalized.get("body"))
+        if isinstance(body, dict):
+            return {**normalized, "body": body}
+        return normalized
+
+    @classmethod
+    def _decode_json_like(cls, value: Any) -> Any:
+        """Decode nested JSON strings returned by provider wrapper APIs."""
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        if not stripped or stripped[0] not in "[{":
+            return value
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            return value
+
+    @classmethod
+    def _get_organic_results(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return organic results from SerpAPI or Bright Data response shapes."""
+        return cls._find_organic_results(payload)
+
+    @classmethod
+    def _find_organic_results(cls, value: Any) -> list[dict[str, Any]]:
+        value = cls._decode_json_like(value)
+        if isinstance(value, dict):
+            for key in ("organic_results", "organic"):
+                candidate = value.get(key)
+                if cls._looks_like_result_list(candidate):
+                    return [item for item in candidate if isinstance(item, dict)]
+
+            for key in ("body", "response", "result", "results", "data", "parsed", "content"):
+                if key in value:
+                    nested_results = cls._find_organic_results(value[key])
+                    if nested_results:
+                        return nested_results
+
+            for nested_value in value.values():
+                nested_results = cls._find_organic_results(nested_value)
+                if nested_results:
+                    return nested_results
+
+        if cls._looks_like_result_list(value):
+            return [item for item in value if isinstance(item, dict)]
+
+        return []
+
+    @staticmethod
+    def _looks_like_result_list(value: Any) -> bool:
+        if not isinstance(value, list):
+            return False
+        result_items = [item for item in value if isinstance(item, dict)]
+        if not result_items:
+            return False
+        return any((item.get("link") or item.get("url") or item.get("href")) and item.get("title") for item in result_items)
 
     @staticmethod
     def _is_exact_match(value: str | None, *texts: str) -> bool:

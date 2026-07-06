@@ -36,7 +36,7 @@ backend/services/google_dorking.py
 
 It runs approved Indian-platform dork templates, calls the configured SERP provider chain, normalizes organic search results, filters close-but-not-exact username matches, deduplicates URLs, extracts lightweight intelligence, and groups results by category.
 
-When no SERP provider key is configured, the service returns `status: not_configured` with the prepared queries so local development still works. When fallback happens, response metadata includes `provider_metadata.configured_providers`, `provider_metadata.providers_used`, `provider_metadata.fallback_used`, and provider failure details.
+When no SERP provider key is configured, the service returns `status: not_configured` with the prepared queries so local development still works. When fallback happens, response metadata includes `provider_metadata.configured_providers`, `provider_metadata.providers_used`, `provider_metadata.fallback_used`, `provider_metadata.failed_providers`, and provider failure details.
 
 The service is adapted from the standalone dorking engine idea for this repo:
 
@@ -192,7 +192,8 @@ Return dorking_results in investigation response
   "provider_metadata": {
     "configured_providers": ["serpapi_primary", "brightdata"],
     "providers_used": ["brightdata"],
-    "fallback_used": true
+    "fallback_used": true,
+    "failed_providers": ["serpapi_primary"]
   }
 }
 ```

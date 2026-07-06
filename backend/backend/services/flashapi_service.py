@@ -42,10 +42,25 @@ class FlashAPIService:
         }
         params = {self.username_param: username, "nocors": str(settings.flashapi_nocors).lower()}
 
-        async with httpx.AsyncClient(timeout=settings.flashapi_timeout_seconds) as client:
-            response = await client.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            payload = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=settings.flashapi_timeout_seconds) as client:
+                response = await client.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            return self._provider_error(
+                username=username,
+                platform=platform,
+                status_code=exc.response.status_code,
+                message=exc.response.text[:300],
+            )
+        except httpx.HTTPError as exc:
+            return self._provider_error(
+                username=username,
+                platform=platform,
+                status_code=None,
+                message=str(exc),
+            )
 
         provider_status = "completed"
         provider_error = None
@@ -75,5 +90,24 @@ class FlashAPIService:
             "username": username,
             "platform": platform,
             "required_environment": ["RAPIDAPI_KEY", "FLASHAPI_ENDPOINT_PATH"],
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
+
+    def _provider_error(
+        self,
+        username: str,
+        platform: str | None,
+        status_code: int | None,
+        message: str,
+    ) -> dict[str, Any]:
+        return {
+            "provider": "flashapi1",
+            "status": "error",
+            "error": message,
+            "status_code": status_code,
+            "username": username,
+            "platform": platform,
+            "endpoint_path": self.endpoint_path,
+            "username_param": self.username_param,
             "fetched_at": datetime.now(UTC).isoformat(),
         }
