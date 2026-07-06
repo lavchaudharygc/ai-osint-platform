@@ -501,6 +501,12 @@ body::before {
     backdrop-filter: blur(10px);
     position: relative;
     overflow: hidden;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.glass-card:hover {
+    border-color: rgba(0, 188, 212, 0.25);
+    box-shadow: 0 8px 32px 0 rgba(0, 188, 212, 0.04), var(--glass-shadow);
 }
 
 .card-header-bar {
