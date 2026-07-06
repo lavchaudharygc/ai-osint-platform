@@ -154,7 +154,17 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
             "message": "Automated lookup is not configured for this platform.",
         }
     else:
-        platform_data = await service.get_profile(username)
+        try:
+            import asyncio as _asyncio
+            # Set a 10-second timeout so instaloader's internal 403 retry loop does not hang the API
+            platform_data = await _asyncio.wait_for(service.get_profile(username), timeout=10.0)
+        except Exception as exc:
+            platform_data = {
+                "success": False,
+                "platform": platform,
+                "username": username,
+                "error": f"Primary scraper timeout or error: {str(exc)}",
+            }
 
     flashapi_data = await FlashAPIService().lookup_username(username, platform)
     if platform == "instagram" and flashapi_data.get("status") == "completed":
