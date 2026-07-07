@@ -26,7 +26,7 @@ class HashtagAnalyzer:
             }
         return {
             "original_username": username,
-            "hashtags_analyzed": list(results.keys()),
+            "hashtags_analyzed": hashtags,
             "platforms_checked": ["twitter"],
             "findings": results,
             "potential_connections": self._extract_potential_connections(results),

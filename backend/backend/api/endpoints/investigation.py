@@ -23,6 +23,11 @@ from backend.services.twitter_service import TwitterDataService
 from backend.services.training_dataset_service import get_training_dataset_service
 from backend.services.hitek_service import HiTekConnectorService
 from backend.services.instagram_posts_service import InstagramPostsService
+from backend.services.intelligence.hashtag_analyzer import HashtagIntelligenceAnalyzer
+from backend.services.intelligence.content_intelligence import ContentIntelligenceExtractor
+from backend.services.intelligence.reverse_lookup import ReverseKeywordLookup
+from backend.services.report.enhanced_report_generator import EnhancedReportGenerator
+from backend.schemas.intelligence_models import ComprehensiveIntelligence
 
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
 
@@ -187,8 +192,13 @@ async def ai_correlate(platform_data: dict[str, Any], cross_matches: list[dict[s
     positive_matches = [match for match in cross_matches if match.get("exists")]
     confidence = min(0.95, 0.35 + (len(positive_matches) * 0.1))
     ai_analysis = await AIAnalyzer().analyze_correlation(platform_data, cross_matches)
+    model_used = ai_analysis.get("model_used", "rules_fallback")
+    if model_used == "rules_fallback":
+        summary = "AI correlation fallback rules applied (configure GROQ_API_KEY or DEEPSEEK_API_KEY for advanced analysis)."
+    else:
+        summary = f"AI correlation completed using active model: {model_used}."
     return {
-        "summary": "AI correlation completed with DeepSeek when configured; otherwise rules fallback is used.",
+        "summary": summary,
         "confidence": round(confidence, 2),
         "matching_platforms": [match["platform"] for match in positive_matches],
         "primary_platform": platform_data.get("platform"),
@@ -482,6 +492,63 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
 
     ai_result = await ai_correlate(platform_data, cross_matches)
     risk = await assess_risk(platform_data, ai_result)
+
+    posts_list = []
+    if instagram_posts and isinstance(instagram_posts, dict):
+        posts = instagram_posts.get("posts") or instagram_posts.get("reels") or []
+        posts_list = [post.get("caption") for post in posts if post.get("caption")]
+
+    dork_results_list = []
+    if dorking_results and isinstance(dorking_results, dict):
+        dork_results_list = dorking_results.get("results") or []
+
+    reverse_lookup_results = None
+    intelligence_report = None
+
+    try:
+        reverse_lookup_service = ReverseKeywordLookup()
+        reverse_lookup_results_model = await reverse_lookup_service.perform_reverse_lookup(
+            username=request.username,
+            hashtags=sorted(all_hashtags),
+            recent_posts=posts_list,
+            dorking_results=dork_results_list,
+            context={"platform_data": platform_data}
+        )
+        reverse_lookup_results = reverse_lookup_results_model.dict()
+
+        content_extractor = ContentIntelligenceExtractor()
+        content_intel = await content_extractor.extract_from_content(
+            content=' '.join(posts_list),
+            source='recent_posts',
+            context={'username': request.username}
+        )
+
+        hashtag_intel_analyzer = HashtagIntelligenceAnalyzer()
+        hashtag_intel = await hashtag_intel_analyzer.analyze_hashtags(
+            hashtags=sorted(all_hashtags),
+            source="instagram",
+            context={'username': request.username, 'hashtags': sorted(all_hashtags)}
+        )
+
+        comprehensive = ComprehensiveIntelligence(
+            investigation_id=investigation_id,
+            target_username=request.username,
+            platform_results=platform_data,
+            hashtag_intelligence=hashtag_intel,
+            content_intelligence=content_intel,
+            dorking_intelligence=dorking_results or {},
+            cti_intelligence={},
+            reverse_lookup=reverse_lookup_results_model,
+            ai_analysis=ai_result or {},
+            confidence_scores={"overall": 0.8}
+        )
+
+        report_generator = EnhancedReportGenerator()
+        intelligence_report = await report_generator.generate_comprehensive_report(comprehensive)
+    except Exception as exc:
+        import logging
+        logging.error(f"Intelligence Enrichment failed: {exc}")
+
     response = InvestigationResponse(
         investigation_id=investigation_id,
         status="completed",
@@ -493,6 +560,8 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         hashtag_analysis=hashtag_analysis,
         dorking_results=dorking_results,
         instagram_posts=instagram_posts,
+        intelligence_report=intelligence_report,
+        reverse_lookup_results=reverse_lookup_results,
         timestamp=datetime.now(UTC),
     )
     _INVESTIGATION_STORE[investigation_id] = response

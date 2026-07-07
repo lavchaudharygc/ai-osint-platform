@@ -27,6 +27,8 @@ class InvestigationResponse(BaseModel):
     hashtag_analysis: dict[str, Any] | None = None
     dorking_results: dict[str, Any] | None = None
     instagram_posts: dict[str, Any] | None = None
+    intelligence_report: dict[str, Any] | None = None
+    reverse_lookup_results: dict[str, Any] | None = None
     timestamp: datetime
 
 
