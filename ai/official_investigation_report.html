@@ -104,10 +104,34 @@
     <h4>3.2 Content Analysis</h4>
     <p>{{ profile.content_analysis }}</p>
     
-    <h4>3.3 Network Analysis</h4>
-    <p>{{ profile.network_analysis }}</p>
+    <h4>3.3 Internal Database Registry Matches</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Alternate Username</th>
+                <th>Phone Number</th>
+                <th>Email Address</th>
+                <th>Registry Source</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for match in internal_database_matches.by_username or internal_database_matches.by_phone or internal_database_matches.by_email %}
+            <tr>
+                <td>{{ match.username }}</td>
+                <td>{{ match.alt_username }}</td>
+                <td>{{ match.phone }}</td>
+                <td>{{ match.email }}</td>
+                <td>{{ match.data_source }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" style="text-align: center; color: #555;">No records matched in internal target databases.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
     
     <div class="section-title">4. CROSS-PLATFORM CORRELATION</div>
+    <h4>4.1 Social Network Presence Index</h4>
     <table>
         <tr>
             <th>Platform</th>
@@ -126,6 +150,83 @@
         </tr>
         {% endfor %}
     </table>
+
+    <h4>4.2 Hashtag Reverse Lookup Analysis</h4>
+    <p><strong>Extracted Hashtags from Primary Profile:</strong> {{ hashtag_analysis.hashtags_string }}</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Matched Twitter User</th>
+                <th>Overlapping Frequency</th>
+                <th>Overlapping Hashtags</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for conn in hashtag_analysis.potential_connections %}
+            <tr>
+                <td><strong>@id:{{ conn.user }}</strong></td>
+                <td>{{ conn.frequency }} Overlaps</td>
+                <td>{{ conn.hashtags }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" style="text-align: center; color: #555;">No multiple-hashtag connection links identified on Twitter/X network.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <h4>4.3 Google Dorking Discovery Results</h4>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 15%;">Category</th>
+                <th style="width: 25%;">Title / Source</th>
+                <th style="width: 40%;">Description Snippet</th>
+                <th style="width: 20%;">Query Used</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in dorking_results.results %}
+            <tr>
+                <td><strong>{{ r.category }}</strong></td>
+                <td><a href="{{ r.url }}">{{ r.title }}</a><br><small>{{ r.domain }}</small></td>
+                <td>{{ r.snippet }}</td>
+                <td><small>{{ r.query }}</small></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" style="text-align: center; color: #555;">No organic results resolved via Google Dorking.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <h4>4.4 Instagram Posts & Reels Intelligence</h4>
+    {% if instagram_posts and instagram_posts.configured %}
+    <p>Extracted <strong>{{ instagram_posts.total }}</strong> posts/reels. Extracted hashtags: {{ instagram_posts.all_hashtags }}</p>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 20%;">Timestamp</th>
+                <th style="width: 15%;">Media Type</th>
+                <th style="width: 45%;">Caption Snippet</th>
+                <th style="width: 20%;">Metrics / Location</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for post in instagram_posts.posts or instagram_posts.reels %}
+            <tr>
+                <td>{{ post.taken_at }}</td>
+                <td>{{ post.media_type }} ({{ post.product_type }})</td>
+                <td>{{ post.caption }}</td>
+                <td>
+                    Likes: {{ post.like_count }} | Comments: {{ post.comment_count }}
+                    {% if post.location %}<br>Location: {{ post.location.name }}{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No Instagram posts/reels intelligence retrieved or configured for this subject.</p>
+    {% endif %}
     
     <div class="section-title">5. AI CORRELATION ANALYSIS</div>
     <div class="evidence-box">
