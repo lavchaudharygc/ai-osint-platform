@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from backend.schemas.investigation import (
     InvestigationHistoryItem,
@@ -23,6 +23,7 @@ from backend.services.twitter_service import TwitterDataService
 from backend.services.training_dataset_service import get_training_dataset_service
 from backend.services.hitek_service import HiTekConnectorService
 from backend.services.instagram_posts_service import InstagramPostsService
+from backend.services.instagram_profile_service import InstagramProfileService
 from backend.services.intelligence.hashtag_analyzer import HashtagIntelligenceAnalyzer
 from backend.services.intelligence.content_intelligence import ContentIntelligenceExtractor
 from backend.services.intelligence.reverse_lookup import ReverseKeywordLookup
@@ -145,6 +146,45 @@ def apply_flashapi_instagram_fallback(
 
 
 async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
+    import asyncio as _asyncio
+
+    if platform == "instagram":
+        apify_profile_service = InstagramProfileService()
+        if apify_profile_service.is_configured():
+            try:
+                apify_data, flashapi_data = await _asyncio.gather(
+                    apify_profile_service.fetch_profile(username),
+                    FlashAPIService().lookup_username(username, platform),
+                    return_exceptions=True
+                )
+
+                platform_data = {
+                    "success": False,
+                    "platform": "instagram",
+                    "username": username
+                }
+
+                if isinstance(apify_data, dict) and apify_data.get("success"):
+                    platform_data.update(apify_data)
+
+                if isinstance(flashapi_data, dict) and flashapi_data.get("status") == "completed":
+                    platform_data = apply_flashapi_instagram_fallback(platform_data, flashapi_data)
+
+                if isinstance(apify_data, dict) and apify_data.get("success"):
+                    platform_data["source"] = "apify_profile_scraper"
+                    if apify_data.get("full_name"):
+                        platform_data["full_name"] = apify_data["full_name"]
+                    if apify_data.get("profile_pic_url"):
+                        platform_data["profile_pic_url"] = apify_data["profile_pic_url"]
+                    if apify_data.get("profile_pic_hd"):
+                        platform_data["profile_pic_hd"] = apify_data["profile_pic_hd"]
+
+                platform_data["flashapi_enrichment"] = flashapi_data if isinstance(flashapi_data, dict) else {}
+                return platform_data
+            except Exception as e:
+                # Fallback to standard flow on critical failure
+                pass
+
     service_map = {
         "instagram": InstagramDataService(),
         "twitter": TwitterDataService(),
@@ -160,8 +200,6 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
         }
     else:
         try:
-            import asyncio as _asyncio
-            # Set a 10-second timeout so instaloader's internal 403 retry loop does not hang the API
             platform_data = await _asyncio.wait_for(service.get_profile(username), timeout=10.0)
         except Exception as exc:
             platform_data = {
@@ -605,3 +643,21 @@ async def trigger_hitek_indexing() -> dict[str, Any]:
     """Trigger background indexing of all pending/modified Hi-Tek database CSV files."""
     started = HiTekConnectorService().start_indexing()
     return {"status": "started" if started else "already_indexing"}
+
+
+@router.get("/proxy-image")
+async def proxy_image(url: str = Query(...)):
+    """Proxy image requests to bypass referrer/CORS blocks on CDNs."""
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=10) as client:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+            }
+            response = await client.get(url, headers=headers)
+        if response.status_code == 200:
+            content_type = response.headers.get("content-type", "image/jpeg")
+            return Response(content=response.content, media_type=content_type)
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch proxy image")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

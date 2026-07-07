@@ -326,6 +326,10 @@ class HashtagIntelligenceAnalyzer:
                 unique_entities.append(entity)
         
         return unique_entities
+
+    async def _ai_extract_entities(self, hashtags: List[str], context: Dict) -> List[EntityMention]:
+        """AI-powered entity extraction helper."""
+        return []
     
     def _detect_entity_type(self, tag: str, patterns: Dict) -> Optional[str]:
         """
