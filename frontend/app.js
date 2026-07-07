@@ -1109,10 +1109,10 @@ function renderOfficialReportTemplate(data, caseId) {
             dResults.forEach(r => {
                 dorkingRows += `
                 <tr>
-                    <td><strong>\${r.category.toUpperCase().replace(/_/g, ' ')}</strong></td>
-                    <td><a href="\${r.url}" target="_blank" style="color: #004d80; text-decoration: underline;">\${r.title || "Link"}</a><br><span style="font-size: 0.75rem; color: #666;">\${r.domain}</span></td>
-                    <td style="font-size: 0.8rem; line-height: 1.3;">\${r.snippet || ""}</td>
-                    <td style="font-family: monospace; font-size: 0.75rem;">\${r.query}</td>
+                    <td><strong>${r.category.toUpperCase().replace(/_/g, ' ')}</strong></td>
+                    <td><a href="${r.url}" target="_blank" style="color: #004d80; text-decoration: underline;">${r.title || "Link"}</a><br><span style="font-size: 0.75rem; color: #666;">${r.domain}</span></td>
+                    <td style="font-size: 0.8rem; line-height: 1.3;">${r.snippet || ""}</td>
+                    <td style="font-family: monospace; font-size: 0.75rem;">${r.query}</td>
                 </tr>`;
             });
         } else {

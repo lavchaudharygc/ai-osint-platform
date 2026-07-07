@@ -456,8 +456,6 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     internal_matches["hitek_filter_name"] = fetched_name if hitek_filtered else None
     internal_matches["hitek_filter_locations"] = fetched_locations if hitek_filtered else []
 
-    hashtag_analysis = await HashtagAnalyzer().analyze_hashtags(extract_hashtags(platform_data), request.username)
-
     # Fetch Instagram posts/reels concurrently with dorking if not explicitly private
     import asyncio as _asyncio
     is_public_instagram = (
@@ -472,6 +470,16 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     else:
         dorking_results = await google_dork_username(request.username, platform_data)
         instagram_posts = None
+
+    # Merge primary profile hashtags and scraped post hashtags
+    all_hashtags = set(extract_hashtags(platform_data))
+    if instagram_posts and isinstance(instagram_posts, dict):
+        apify_tags = instagram_posts.get("all_hashtags") or []
+        for tag in apify_tags:
+            all_hashtags.add(str(tag).strip("#"))
+
+    hashtag_analysis = await HashtagAnalyzer().analyze_hashtags(sorted(all_hashtags), request.username)
+
     ai_result = await ai_correlate(platform_data, cross_matches)
     risk = await assess_risk(platform_data, ai_result)
     response = InvestigationResponse(
