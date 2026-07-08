@@ -23,4 +23,7 @@ DBs/hi-tek/*.csv
 DBs/hi-tek/*.db
 
 # Local Dev Scripts
-start_servers.py
+start_servers.py
+
+backend/.env
+frontend/node_modules/

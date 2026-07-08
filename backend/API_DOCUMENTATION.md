@@ -36,9 +36,9 @@ The response includes a generated investigation ID, primary platform data, cross
 
 ### Google Dorking Results
 
-The investigation response includes `dorking_results`. When `SERPAPI_KEY` is configured, the backend runs approved public Google dork queries through SerpAPI first. If SerpAPI returns quota exhaustion, HTTP `429`, `402`, `403`, or a provider-specific quota/limit/credits error, the service automatically retries the query through Bright Data when `BRIGHTDATA_SERP_API_KEY` is configured. Results include normalized public search metadata grouped by category, provider metadata (`configured_providers`, `providers_used`, `fallback_used`, `failed_providers`, and provider failures), exact-match filtering to reduce similar-username noise, lightweight intelligence extraction, and a complex-dorking readiness flag. When no SERP key is configured, the response returns `status: not_configured` plus the prepared query list so local development remains deterministic.
+The investigation response includes `dorking_results`. When `SERPAPI_KEY` is configured, the backend runs approved public Google dork queries through SerpAPI first. If SerpAPI is missing or fails, the service tries Bright Data when `BRIGHTDATA_SERP_API_KEY` is configured. If Bright Data is missing or fails, the service tries Apify when `APIFY_API_TOKEN` is configured. Results include normalized public search metadata grouped by category, provider metadata (`configured_providers`, `attempted_providers`, `providers_used`, `fallback_used`, `failed_providers`, and provider failures), exact-match filtering to reduce similar-username noise, lightweight intelligence extraction, and a complex-dorking readiness flag. When no search provider key is configured, the response returns `status: not_configured` plus the prepared query list so local development remains deterministic.
 
-Configure only the primary SerpAPI key and Bright Data fallback key; do not commit real values:
+Configure provider keys in fallback order; do not commit real values:
 
 ```env
 SERPAPI_KEY=your-primary-serpapi-key
@@ -49,6 +49,9 @@ BRIGHTDATA_SERP_API_KEY=your-brightdata-bearer-token
 BRIGHTDATA_SERP_BASE_URL=https://api.brightdata.com/request
 BRIGHTDATA_SERP_ZONE=serp_api1
 BRIGHTDATA_SERP_TARGET_URL=https://www.google.com/search?q={query}
+BRIGHTDATA_SERP_TIMEOUT_SECONDS=90
+APIFY_API_TOKEN=your-apify-token
+APIFY_SERP_TIMEOUT_SECONDS=120
 ```
 
 ## Investigation History

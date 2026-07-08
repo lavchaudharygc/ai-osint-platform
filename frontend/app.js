@@ -754,7 +754,7 @@ function renderInvestigationResults(data) {
         
         if (dorking.status === "not_configured") {
             if (dorkCountEl) {
-                dorkCountEl.innerText = "SerpAPI Not Configured";
+                dorkCountEl.innerText = "Search Providers Not Configured";
                 dorkCountEl.style.color = "var(--accent-crimson)";
             }
             
@@ -766,7 +766,7 @@ function renderInvestigationResults(data) {
                     <span>⚠️ Google Dorking Service Offline</span>
                 </div>
                 <div style="font-size:0.75rem; color:var(--text-secondary);">
-                    SerpAPI provider key is missing. You can configure <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">SERPAPI_KEY</code> in your environment, or manually run these prepared dork queries in Google:
+                    Configure <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">SERPAPI_KEY</code>, <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">BRIGHTDATA_SERP_API_KEY</code>, or <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">APIFY_API_TOKEN</code>, or manually run these prepared dork queries in Google:
                 </div>
             `;
             dorkContainerEl.appendChild(warningEl);
@@ -1102,7 +1102,7 @@ function renderOfficialReportTemplate(data, caseId) {
     const dorking = data.dorking_results || {};
     let dorkingRows = "";
     if (dorking.status === "not_configured") {
-        dorkingRows = `<tr><td colspan="4" style="text-align: center; color: #555;">Google Dorking Service (SerpAPI) not configured during run.</td></tr>`;
+        dorkingRows = `<tr><td colspan="4" style="text-align: center; color: #555;">Google Dorking search providers were not configured during run.</td></tr>`;
     } else {
         const dResults = dorking.results || [];
         if (dResults.length > 0) {

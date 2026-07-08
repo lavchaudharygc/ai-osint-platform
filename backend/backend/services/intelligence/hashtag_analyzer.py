@@ -6,6 +6,7 @@ Extracts deep intelligence from hashtags across platforms
 """
 
 import re
+import json
 from typing import Dict, List, Set, Tuple, Optional
 from dataclasses import dataclass, field
 from collections import Counter
@@ -327,8 +328,82 @@ class HashtagIntelligenceAnalyzer:
         
         return unique_entities
 
-    async def _ai_extract_entities(self, hashtags: List[str], context: Dict) -> List[EntityMention]:
-        """AI-powered entity extraction helper."""
+    async def _ai_extract_entities(
+        self,
+        hashtags: List[str],
+        context: Optional[Dict]
+    ) -> List[EntityMention]:
+        """
+        Extract entities with AI when a text-analysis backend is available.
+
+        This is intentionally optional: investigations should still complete
+        when AI keys are missing or the current AIAnalyzer only exposes the
+        correlation/risk methods.
+        """
+        if not context or not hasattr(self.ai_analyzer, "analyze_text"):
+            return []
+
+        prompt = f"""
+        Extract public entities mentioned or implied by these social media hashtags.
+
+        Username: {context.get('username', 'Unknown')}
+        Hashtags: {', '.join(hashtags[:50])}
+
+        Return JSON only as an array of objects:
+        [
+          {{"name": "entity name", "type": "company|organization|brand|person", "confidence": 0.0}}
+        ]
+
+        Only include entities that are reasonably supported by the hashtags.
+        """
+
+        try:
+            response = await self.ai_analyzer.analyze_text(prompt)  # type: ignore[attr-defined]
+            raw_entities = self._parse_ai_entities(response)
+        except Exception:
+            return []
+
+        entities: List[EntityMention] = []
+        for item in raw_entities:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            entity_type = str(item.get("type") or "unknown").strip().lower()
+            if not name:
+                continue
+            try:
+                confidence = float(item.get("confidence", 0.5))
+            except (TypeError, ValueError):
+                confidence = 0.5
+            entities.append(
+                EntityMention(
+                    name=name,
+                    type=entity_type,
+                    confidence=max(0.0, min(confidence, 1.0)),
+                    source="ai_hashtag_analysis",
+                    context=hashtags[:5],
+                )
+            )
+        return entities
+
+    @staticmethod
+    def _parse_ai_entities(ai_response: str) -> List[Dict]:
+        """Parse a JSON entity array from an AI response."""
+        try:
+            parsed = json.loads(ai_response)
+        except (TypeError, json.JSONDecodeError):
+            match = re.search(r"\[[\s\S]*\]", str(ai_response))
+            if not match:
+                return []
+            try:
+                parsed = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return []
+
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict) and isinstance(parsed.get("entities"), list):
+            return parsed["entities"]
         return []
     
     def _detect_entity_type(self, tag: str, patterns: Dict) -> Optional[str]:

@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     brightdata_serp_base_url: str = Field(default="https://api.brightdata.com/request", validation_alias="BRIGHTDATA_SERP_BASE_URL")
     brightdata_serp_zone: str = Field(default="serp_api1", validation_alias="BRIGHTDATA_SERP_ZONE")
     brightdata_serp_target_url: str = Field(default="https://www.google.com/search?q={query}", validation_alias="BRIGHTDATA_SERP_TARGET_URL")
+    brightdata_serp_timeout_seconds: float = Field(default=90.0, validation_alias="BRIGHTDATA_SERP_TIMEOUT_SECONDS")
+    apify_serp_timeout_seconds: float = Field(default=120.0, validation_alias="APIFY_SERP_TIMEOUT_SECONDS")
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:5500"]
 
 

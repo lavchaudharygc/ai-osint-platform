@@ -1,5 +1,6 @@
 """Investigation API endpoints."""
 
+from dataclasses import fields as dataclass_fields, is_dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -37,6 +38,17 @@ _INVESTIGATION_STORE: dict[str, InvestigationResponse] = {}
 
 def generate_investigation_id() -> str:
     return f"inv_{uuid4().hex}"
+
+
+def schema_compatible_payload(value: Any) -> Any:
+    """Convert service dataclasses to payloads accepted by Pydantic schemas."""
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if is_dataclass(value):
+        return {field.name: getattr(value, field.name) for field in dataclass_fields(value)}
+    return value
 
 
 def extract_flashapi_bio_links(user_data: dict[str, Any]) -> list[str]:
@@ -572,8 +584,8 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
             investigation_id=investigation_id,
             target_username=request.username,
             platform_results=platform_data,
-            hashtag_intelligence=hashtag_intel,
-            content_intelligence=content_intel,
+            hashtag_intelligence=schema_compatible_payload(hashtag_intel),
+            content_intelligence=schema_compatible_payload(content_intel),
             dorking_intelligence=dorking_results or {},
             cti_intelligence={},
             reverse_lookup=reverse_lookup_results_model,

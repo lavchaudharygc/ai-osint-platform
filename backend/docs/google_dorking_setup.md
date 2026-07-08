@@ -12,8 +12,9 @@ The backend tries configured providers in this order:
 
 1. `SERPAPI_KEY` (primary SerpAPI key)
 2. `BRIGHTDATA_SERP_API_KEY` (Bright Data SERP API fallback)
+3. `APIFY_API_TOKEN` (Apify Google Search Results Scraper fallback)
 
-If a provider returns quota exhaustion, HTTP `429`, `402`, `403`, or a provider-specific quota/limit/credits error, the service automatically retries the same query with the next configured provider. Do not commit real keys. Store them locally in `.env`:
+If a provider is missing, times out, returns a non-success HTTP status, returns invalid payloads, or returns provider-specific quota/limit/credits errors, the service automatically tries the next configured provider. A successful provider response with zero organic matches does not trigger fallback. Do not commit real keys. Store them locally in `.env`:
 
 ```env
 SERPAPI_KEY=your_primary_serpapi_key
@@ -24,6 +25,9 @@ BRIGHTDATA_SERP_API_KEY=your_brightdata_bearer_token
 BRIGHTDATA_SERP_BASE_URL=https://api.brightdata.com/request
 BRIGHTDATA_SERP_ZONE=serp_api1
 BRIGHTDATA_SERP_TARGET_URL=https://www.google.com/search?q={query}
+BRIGHTDATA_SERP_TIMEOUT_SECONDS=90
+APIFY_API_TOKEN=your_apify_token
+APIFY_SERP_TIMEOUT_SECONDS=120
 ```
 
 ## Backend Implementation
@@ -40,7 +44,7 @@ When no SERP provider key is configured, the service returns `status: not_config
 
 The service is adapted from the standalone dorking engine idea for this repo:
 
-- Search provider fallback now supports primary SerpAPI and Bright Data through environment variables.
+- Search provider fallback now supports primary SerpAPI, Bright Data, and Apify through environment variables.
 - Extra dependencies such as `duckduckgo_search`, `aiohttp`, and `BeautifulSoup` are intentionally not required.
 - Indian-specific categories are included for professional, social, developer, education, ecommerce, forums, matrimony, blogs, and risk mentions.
 - Exact-match filtering is applied so similar usernames do not appear as target matches.
@@ -156,7 +160,7 @@ Target username
 ↓
 Generate dork templates
 ↓
-Execute SerpAPI searches
+Execute ordered provider chain
 ↓
 Collect public organic results
 ↓
@@ -171,7 +175,7 @@ Return dorking_results in investigation response
 
 ```json
 {
-  "provider": "serpapi_primary",
+  "provider": "serpapi",
   "status": "completed",
   "queries_run": 50,
   "result_count": 12,
@@ -184,16 +188,17 @@ Return dorking_results in investigation response
       "domain": "github.com",
       "snippet": "Public search snippet",
       "position": 1,
-      "source": "google_serpapi_primary",
-      "serp_provider": "serpapi_primary"
+      "source": "google_serpapi",
+      "serp_provider": "serpapi"
     }
   ],
   "grouped_by_category": {},
   "provider_metadata": {
-    "configured_providers": ["serpapi_primary", "brightdata"],
+    "configured_providers": ["serpapi", "brightdata", "apify"],
+    "attempted_providers": ["serpapi", "brightdata"],
     "providers_used": ["brightdata"],
     "fallback_used": true,
-    "failed_providers": ["serpapi_primary"]
+    "failed_providers": ["serpapi"]
   }
 }
 ```
@@ -201,6 +206,6 @@ Return dorking_results in investigation response
 ## Limitations
 
 - SERP providers have limited monthly searches/credits; configure backup providers to avoid hard failures when a primary quota is exhausted.
-- Results depend on Google indexing and SerpAPI availability.
+- Results depend on Google indexing and provider availability.
 - Search snippets are not proof of identity; they need correlation and human review.
 - Private, login-only, or legally restricted data must not be collected.
