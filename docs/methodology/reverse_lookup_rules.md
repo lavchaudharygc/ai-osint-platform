@@ -3,16 +3,16 @@ Hashtag Connection classification
 SECTION 1: HASHTAG CONNECTION CLASSIFICATION:----
 
 Connection Types:----
-                      SAME PERSON	    90-100%	Exact unique hashtag match + same PFP + same bio keywords	Merge identities, create master profile
-                      SAME PERSON	    80-89%	5+ identical hashtags + username pattern match	Flag for manual verification
-                      CLOSE ASSOCIATE	70-79%	Tagged in 10+ posts + mutual follows + same events	Mark as inner circle, prioritize
-                      CLOSE ASSOCIATE	60-69%	Comment frequency high + similar content style	Note as strong connection
-                      ASSOCIATE	50-59%	3-5 common hashtags + occasional tags	Add to network map
-                      ASSOCIATE	40-49%	1-2 common hashtags + weak interaction	Keep in watchlist
+                      SAME PERSON	      90-100%	Exact unique hashtag match + same PFP + same bio keywords	Merge identities, create master profile
+                      SAME PERSON	      80-89%	5+ identical hashtags + username pattern match	Flag for manual verification
+                      CLOSE ASSOCIATE	  70-79%	Tagged in 10+ posts + mutual follows + same events	Mark as inner circle, prioritize
+                      CLOSE ASSOCIATE	  60-69%	Comment frequency high + similar content style	Note as strong connection
+                      ASSOCIATE	        50-59%	3-5 common hashtags + occasional tags	Add to network map
+                      ASSOCIATE	        40-49%	1-2 common hashtags + weak interaction	Keep in watchlist
                       ORGANIZATION	    80-95%	Official username + multiple employees tagged	Identify as corporate/brand account
                       ORGANIZATION	    70-79%	Bio mentions company + professional content	Flag for business mapping
-                      COMPETITOR	40-59%	Similar niche, different content style	Monitor for competitive intelligence
-                      UNRELATED	0-29%	Random overlap, no other connections	Ignore, don't waste time
+                      COMPETITOR	      40-59%	Similar niche, different content style	Monitor for competitive intelligence
+                      UNRELATED       	0-29% 	Random overlap, no other connections	Ignore, don't waste time
 
 Classification Rules:----
 
