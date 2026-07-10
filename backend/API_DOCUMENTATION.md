@@ -96,7 +96,7 @@ Username investigations now include additional backend sections when configured:
 
 - `ai_correlation_result.ai_analysis` uses DeepSeek when `DEEPSEEK_API_KEY` is set, otherwise returns a rules-based fallback.
 - `risk_assessment.ai_risk_analysis` uses DeepSeek for risk review when configured.
-- `internal_database_matches` searches the local SQLite `user_database` table by username, phone, and email.
+- `internal_database_matches` searches the local SQLite `user_database` table by username, phone, email, public profile name, and public location clues. Reverse-lookup hits are returned under `by_name` and `by_location`.
 - `hashtag_analysis` searches recent Twitter/X hashtag usage when Instagram hashtags and `TWITTER_BEARER_TOKEN` are available.
 
 The Instagram service uses `instaloader` to return profile metadata, recent posts, hashtags, tagged users, business fields, and privacy/rate-limit status when public data is available.

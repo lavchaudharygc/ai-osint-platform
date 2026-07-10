@@ -287,33 +287,60 @@ def extract_hashtags(platform_data: dict[str, Any]) -> list[str]:
     return sorted({str(hashtag).strip("#") for post in recent_posts for hashtag in post.get("hashtags", [])})
 
 
+def extract_database_lookup_terms(platform_data: dict[str, Any]) -> tuple[str | None, list[str]]:
+    """Extract public name and location clues for local reverse lookup."""
+    raw_name = (
+        platform_data.get("full_name")
+        or platform_data.get("display_name")
+        or platform_data.get("name")
+    )
+    name = str(raw_name).strip() if raw_name else None
+
+    raw_locations: list[Any] = []
+    for key in ("location", "contact_address", "address"):
+        value = platform_data.get(key)
+        if value:
+            raw_locations.append(value)
+
+    tagged_locations = platform_data.get("post_location_tags")
+    if isinstance(tagged_locations, list):
+        raw_locations.extend(tagged_locations)
+
+    locations: list[str] = []
+    seen: set[str] = set()
+    for value in raw_locations:
+        if isinstance(value, dict):
+            value = value.get("name") or value.get("location_name") or value.get("address")
+        location = str(value or "").strip()
+        normalized = location.casefold()
+        if location and normalized not in seen:
+            locations.append(location)
+            seen.add(normalized)
+
+    return name, locations
+
+
 @router.post("/username", response_model=InvestigationResponse)
 async def investigate_username(request: UsernameInvestigationRequest) -> InvestigationResponse:
     investigation_id = generate_investigation_id()
     platform_data = await scrape_platform(request.username, request.platform)
     cross_matches = await cross_platform_search(request.username, platform_data, request.correlation_depth)
-    internal_matches = DatabaseLookup().search_all(request.username)
+    fetched_name, fetched_locations = extract_database_lookup_terms(platform_data)
+    internal_matches = DatabaseLookup().search_all(
+        request.username,
+        name=fetched_name,
+        locations=fetched_locations,
+    )
     
     # Restored Hi-Tek index search & merge + added parameter filtering
     hitek_service = HiTekConnectorService()
     hitek_filtered = False
-    fetched_name = None
-    fetched_locations = []
     
     if hitek_service.get_status()["configured"]:
         try:
             hitek_matches = hitek_service.search_all(request.username)
             
             if request.filter_hitek:
-                fetched_name = platform_data.get("full_name") or platform_data.get("name")
-                
-                if isinstance(platform_data.get("post_location_tags"), list):
-                    fetched_locations.extend(platform_data.get("post_location_tags"))
-                if platform_data.get("location"):
-                    fetched_locations.append(platform_data.get("location"))
-                # Clean location list
-                fetched_locations = [loc.strip() for loc in fetched_locations if loc and str(loc).strip()]
-                
                 # Only apply filters if at least one parameter was successfully fetched
                 if fetched_name or fetched_locations:
                     import re

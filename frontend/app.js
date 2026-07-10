@@ -607,7 +607,19 @@ function renderInvestigationResults(data) {
     const byUsername = dbMatches.by_username || [];
     const byPhone = dbMatches.by_phone || [];
     const byEmail = dbMatches.by_email || [];
-    const totalDbCount = byUsername.length + byPhone.length + byEmail.length;
+    const byName = dbMatches.by_name || [];
+    const byLocation = dbMatches.by_location || [];
+    const allItems = [...byUsername, ...byPhone, ...byEmail, ...byName, ...byLocation];
+    const uniqueItems = [];
+    const seen = new Set();
+    for (const item of allItems) {
+        const signature = `${item.name || item.username}-${item.phone}-${item.email}-${item.location || item.address}`;
+        if (!seen.has(signature)) {
+            seen.add(signature);
+            uniqueItems.push(item);
+        }
+    }
+    const totalDbCount = uniqueItems.length;
 
     if (dbCountEl) {
         dbCountEl.innerText = `Matches Resolved: ${totalDbCount}`;
@@ -635,17 +647,6 @@ function renderInvestigationResults(data) {
         if (totalDbCount === 0) {
             dbResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No internal registry matches found.</span>`;
         } else {
-            const allItems = [...byUsername, ...byPhone, ...byEmail];
-            const uniqueItems = [];
-            const seen = new Set();
-            for (const item of allItems) {
-                const signature = `${item.username}-${item.phone}-${item.email}`;
-                if (!seen.has(signature)) {
-                    seen.add(signature);
-                    uniqueItems.push(item);
-                }
-            }
-
             const table = document.createElement("table");
             table.className = "compact-db-table";
             table.innerHTML = `
@@ -671,7 +672,7 @@ function renderInvestigationResults(data) {
                 const tr = document.createElement("tr");
                 tr.innerHTML = `
                     <td>
-                        <div style="font-weight:600; color:var(--accent-blue);">${item.username || "Unknown"}</div>
+                        <div style="font-weight:600; color:var(--accent-blue);">${item.name || item.username || "Unknown"}</div>
                         <div style="font-size:0.7rem; color:var(--text-secondary); margin-top:2px;">${item.alternate_username || "N/A"}</div>
                     </td>
                     <td>
@@ -682,8 +683,8 @@ function renderInvestigationResults(data) {
                         <div style="font-size:0.75rem;">🏛️ ${item.platform || "Local Registry"}</div>
                         <div style="font-size:0.65rem; color:var(--text-secondary); margin-top:2px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${item.data_source || 'Manual Entry'}">${item.data_source || "Manual Entry"}</div>
                     </td>
-                    <td class="addr-col" title="${item.address || 'N/A'}">
-                        📍 ${item.address || "N/A"}
+                    <td class="addr-col" title="${item.location || item.address || 'N/A'}">
+                        📍 ${item.location || item.address || "N/A"}
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -1040,12 +1041,14 @@ function renderOfficialReportTemplate(data, caseId) {
     const byUsername = dbMatches.by_username || [];
     const byPhone = dbMatches.by_phone || [];
     const byEmail = dbMatches.by_email || [];
-    const allDbMatches = [...byUsername, ...byPhone, ...byEmail];
+    const byName = dbMatches.by_name || [];
+    const byLocation = dbMatches.by_location || [];
+    const allDbMatches = [...byUsername, ...byPhone, ...byEmail, ...byName, ...byLocation];
     
     const uniqueDbMatches = [];
     const seenDb = new Set();
     allDbMatches.forEach(item => {
-        const sig = `${item.username}-${item.phone}-${item.email}`;
+        const sig = `${item.name || item.username}-${item.phone}-${item.email}-${item.location || item.address}`;
         if (!seenDb.has(sig)) {
             seenDb.add(sig);
             uniqueDbMatches.push(item);
@@ -1057,7 +1060,7 @@ function renderOfficialReportTemplate(data, caseId) {
         uniqueDbMatches.forEach(item => {
             dbMatchesRows += `
             <tr>
-                <td><strong>${item.username || "N/A"}</strong></td>
+                <td><strong>${item.name || item.username || "N/A"}</strong></td>
                 <td>${item.alternate_username || "N/A"}</td>
                 <td>${item.phone || "N/A"}</td>
                 <td>${item.email || "N/A"}</td>

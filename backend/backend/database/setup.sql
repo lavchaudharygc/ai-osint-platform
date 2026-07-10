@@ -1,8 +1,10 @@
 CREATE TABLE IF NOT EXISTS user_database (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(200),
     username VARCHAR(100),
     phone VARCHAR(20),
     email VARCHAR(100),
+    location TEXT,
     address TEXT,
     alternate_username VARCHAR(100),
     platform VARCHAR(50),
@@ -10,6 +12,8 @@ CREATE TABLE IF NOT EXISTS user_database (
     added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_name ON user_database(name);
 CREATE INDEX IF NOT EXISTS idx_username ON user_database(username);
 CREATE INDEX IF NOT EXISTS idx_phone ON user_database(phone);
 CREATE INDEX IF NOT EXISTS idx_email ON user_database(email);
+CREATE INDEX IF NOT EXISTS idx_location ON user_database(location);
