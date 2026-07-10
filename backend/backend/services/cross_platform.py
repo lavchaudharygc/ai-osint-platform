@@ -6,6 +6,8 @@ from typing import Any
 
 import httpx
 
+from backend.services.telegram_service import TelegramDataService
+
 
 class CrossPlatformSearchService:
     """Search for username across common public profile URL patterns."""
@@ -34,6 +36,9 @@ class CrossPlatformSearchService:
         if template is None:
             return None
         url = template.format(username=username)
+        if platform == "telegram":
+            return await self._check_telegram(username, url)
+
         probe_url = url
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -63,5 +68,38 @@ class CrossPlatformSearchService:
             "url": url,
             "exists": exists,
             "status_code": status_code,
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+
+    async def _check_telegram(self, username: str, url: str) -> dict[str, Any]:
+        try:
+            profile = await asyncio.wait_for(TelegramDataService().get_profile(username), timeout=8.0)
+        except Exception as exc:
+            return {
+                "platform": "telegram",
+                "url": url,
+                "exists": False,
+                "status": "error",
+                "error": str(exc),
+                "check_method": "t.me_public_metadata",
+                "checked_at": datetime.now(UTC).isoformat(),
+            }
+
+        evidence = {
+            "entity_type": profile.get("entity_type"),
+            "full_name": profile.get("full_name"),
+            "bio_present": bool(profile.get("bio")),
+            "profile_photo_present": bool(profile.get("profile_pic_url")),
+            "page_extra": profile.get("page_extra"),
+        }
+        return {
+            "platform": "telegram",
+            "url": url,
+            "exists": bool(profile.get("exists")),
+            "status": profile.get("status"),
+            "status_code": profile.get("http_status"),
+            "check_method": "t.me_public_metadata",
+            "source": profile.get("source"),
+            "public_evidence": evidence,
             "checked_at": datetime.now(UTC).isoformat(),
         }

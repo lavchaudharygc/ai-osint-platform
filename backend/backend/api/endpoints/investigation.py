@@ -221,7 +221,16 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
                 "error": f"Primary scraper timeout or error: {str(exc)}",
             }
 
-    flashapi_data = await FlashAPIService().lookup_username(username, platform)
+    if platform == "telegram":
+        flashapi_data = {
+            "provider": "flashapi1",
+            "status": "skipped",
+            "reason": "FlashAPI enrichment is not used for Telegram public t.me scraping.",
+            "username": username,
+            "platform": platform,
+        }
+    else:
+        flashapi_data = await FlashAPIService().lookup_username(username, platform)
     if platform == "instagram" and flashapi_data.get("status") == "completed":
         platform_data = apply_flashapi_instagram_fallback(platform_data, flashapi_data)
     platform_data["flashapi_enrichment"] = flashapi_data
