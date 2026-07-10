@@ -20,15 +20,15 @@ Classification Rules:----
 
                              Indicator	Points	Example:----
                                                               Unique hashtag (used by <5 accounts globally)	+30	              ex:---    #MySecretAlias2024
-                                                              Rare hashtag (used 5-100 times)	+20	                          ex:---    #JohnDoeNYC
+                                                              Rare hashtag (used 5-100 times)	+20	                            ex:---    #JohnDoeNYC
                                                               8+ identical hashtags across profiles	+25                       ex:---  	#travel #photography #nyc #coffee...
                                                               Same username pattern (e.g., @johndoe, @johndoe_off)	+20       ex:--- 	@realsmith vs @smith_real
-                                                              Same profile picture (exact match)	+25	                          ex:---    Same headshot in both
+                                                              Same profile picture (exact match)	+25	                        ex:---    Same headshot in both
                                                               Similar profile picture (same person, diff angle)	+15	          ex:---    Different photo, same face
-                                                              Same bio keywords (3+ exact matches)	+15	     ex:---   "Photographer	Traveler	Foodie"
-                                                              Same location hashtags (2+ matches)	+10    	 ex:---   #NYC #Manhattan
-                                                              Same link in bio (URL match)	+20	             ex:---   linktr.ee/johndoe
-                                                              Same email pattern	+15                          ex:---	  johndoe@ vs john.doe@
+                                                              Same bio keywords (3+ exact matches)	+15	                      ex:---   "Photographer	Traveler	Foodie"
+                                                              Same location hashtags (2+ matches)	+10    	                    ex:---   #NYC #Manhattan
+                                                              Same link in bio (URL match)	+20	                              ex:---   linktr.ee/johndoe
+                                                              Same email pattern	+15                                         ex:---	  johndoe@ vs john.doe@
 Threshold Calculation:----
 
                               >70 points - SAME PERSON (High Confidence)
@@ -40,34 +40,34 @@ Threshold Calculation:----
                 
                       Rule 2:  Close Associate Detection:----
                                                     Indicator:---	                             Points:---     	    Example:---
-                                                    Tagged together in 10+ posts	                 +25	                @john and @jane in 15 Instagram posts
+                                                    Tagged together in 10+ posts	               +25	                @john and @jane in 15 Instagram posts
                                                     Tagged together in 5-9 posts               	 +15	                -
-                                                    Tagged together in 2-4 posts               	 +5	                -
+                                                    Tagged together in 2-4 posts               	 +5	                  -
                                                     Mutual follows on 3+ platforms	             +20                	Instagram, Twitter, LinkedIn
-                                                    Mutual follows on 1-2 platforms	             +10             	-
+                                                    Mutual follows on 1-2 platforms	             +10             	    -
                                                     Same event hashtags (3+ events)	             +20	                #NYE2025 #BeachParty #Wedding
-                                                    Same event hashtags (1-2 events)              +10	            -
-                                                    Similar content posting time (±1 hour) 	      +10	            Both active 8-10 PM daily
-                                                    Comments on each other's posts (5+ last month)+15	            Regular interaction
-                                                    Mentions in stories (3+ times)	              +10	            Tagged in IG stories
-                                                    Same group (tagged in same 3+ group photos)	  +15	            Group photos with 5+ mutual friends
-                                                    Shared interests (3+ same subcategories)	      +10	            Both into #Fitness, #Tech, #Cooking
+                                                    Same event hashtags (1-2 events)             +10	                -
+                                                    Similar content posting time (±1 hour) 	     +10	               Both active 8-10 PM daily
+                                                    Comments on each other's posts (5+ last month)+15	               Regular interaction
+                                                    Mentions in stories (3+ times)	              +10	               Tagged in IG stories
+                                                    Same group (tagged in same 3+ group photos)	  +15	                Group photos with 5+ mutual friends
+                                                    Shared interests (3+ same subcategories)      +10	                Both into #Fitness, #Tech, #Cooking
                                                     
                                                     
                       Rule 3:   Organization Detection:----
                                                     Indicator:---                                   Points:---        Example:---
-                                                     Username contains: official, team, hq, org, corp, ltd, inc, co	+20	@apple, @google, @tesla_official
-                                                     Bio mentions company/brand name	                +20	             "We build AI solutions"
-                                                     Multiple employees tagged (5+ employees)	    +20	              CFO, CTO, HR tagged separately 
-                                                     Employees tagged (2-4 distinct)              	+10	              -
-                                                     Professional content only (no personal photos)	+15	              All posts are about work
-                                                     No personal content (vacation, family, etc.)	+15	              Strictly business
-                                                     Business hashtags (3+ like #startup #tech #innovation)	+15	      -
-                                                     Location is office/business address	            +10	              "123 Business St, SF"
-                                                     Link to official website	                     10	              Company domain in bio
+                                    Username contains: official, team, hq, org, corp, ltd, inc, co	  +20             	@apple, @google, @tesla_official
+                                                     Bio mentions company/brand name	                +20	              "We build AI solutions"
+                                                     Multiple employees tagged (5+ employees)	        +20	               CFO, CTO, HR tagged separately 
+                                                     Employees tagged (2-4 distinct)              	  +10	               -
+                                                     Professional content only (no personal photos)	  +15	               All posts are about work
+                                                     No personal content (vacation, family, etc.)	    +15	               Strictly business
+                                                     Business hashtags (3+ like #startup #tech #innovation)	+15	         -
+                                                     Location is office/business address	            +10	               "123 Business St, SF"
+                                                     Link to official website	                        +10	               Company domain in bio
                                                      
                                 
-
+ 
 Tagged User Relationship Detetmination:----
                          Relationship Types:----  
                                                     Realtionship:---                        Indicator:---                               Confidence:---
