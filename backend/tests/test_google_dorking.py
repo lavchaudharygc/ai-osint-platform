@@ -1,7 +1,27 @@
 import unittest
+from unittest.mock import patch
+
+import httpx
 
 from backend.core.config import settings
-from backend.services.google_dorking import GoogleDorkingService
+from backend.services.google_dorking import GoogleDorkingService, SearchProvider
+
+
+class FakeAsyncClient:
+    def __init__(self, responses: list[httpx.Response]) -> None:
+        self.responses = responses
+        self.calls = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+    async def post(self, *args, **kwargs) -> httpx.Response:
+        response = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return response
 
 
 class GoogleDorkingProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
@@ -146,6 +166,63 @@ class GoogleDorkingProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
             ["serpapi", "brightdata", "apify"],
         )
         self.assertEqual(result["provider_metadata"]["attempted_providers"], [])
+
+    async def test_brightdata_retries_502_then_uses_successful_response(self) -> None:
+        request = httpx.Request("POST", "https://api.brightdata.com/request")
+        client = FakeAsyncClient(
+            [
+                httpx.Response(502, json={"message": "temporary upstream failure"}, request=request),
+                httpx.Response(200, json={"organic": []}, request=request),
+            ]
+        )
+        service = GoogleDorkingService()
+        service.brightdata_max_retries = 2
+        service.brightdata_retry_backoff = 0
+        provider = SearchProvider(
+            name="brightdata",
+            kind="brightdata",
+            api_key="test-key",
+            base_url="https://api.brightdata.com/request",
+            priority=2,
+        )
+
+        with patch("backend.services.google_dorking.httpx.AsyncClient", return_value=client):
+            result = await service._search_brightdata(provider, service.build_queries("targetuser", limit=1))
+
+        self.assertFalse(result["failed"])
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(result["errors"], [])
+
+    async def test_brightdata_exhausted_502_reports_attempts_and_request_id(self) -> None:
+        request = httpx.Request("POST", "https://api.brightdata.com/request")
+        response = httpx.Response(
+            502,
+            json={"message": "upstream unavailable"},
+            headers={"x-request-id": "bright-request-123"},
+            request=request,
+        )
+        client = FakeAsyncClient([response, response, response])
+        service = GoogleDorkingService()
+        service.brightdata_max_retries = 2
+        service.brightdata_retry_backoff = 0
+        provider = SearchProvider(
+            name="brightdata",
+            kind="brightdata",
+            api_key="test-key",
+            base_url="https://api.brightdata.com/request",
+            priority=2,
+        )
+
+        with patch("backend.services.google_dorking.httpx.AsyncClient", return_value=client):
+            result = await service._search_brightdata(provider, service.build_queries("targetuser", limit=1))
+
+        self.assertTrue(result["failed"])
+        self.assertEqual(client.calls, 3)
+        self.assertEqual(result["errors"][0]["status"], "502")
+        self.assertEqual(result["errors"][0]["attempts"], "3")
+        self.assertEqual(result["errors"][0]["retryable"], "true")
+        self.assertEqual(result["errors"][0]["request_id"], "bright-request-123")
+        self.assertIn("upstream unavailable", result["errors"][0]["message"])
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Google dorking discovery service powered by SerpAPI."""
+"""Google dorking discovery service powered by fallback SERP providers."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote_plus, urlparse
+import asyncio
 import json
 import re
 
@@ -182,11 +183,14 @@ class GoogleDorkingService:
     """
 
     APIFY_SERP_URL = "https://api.apify.com/v2/acts/apify~google-search-scraper/run-sync-get-dataset-items"
+    TRANSIENT_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
     def __init__(self) -> None:
         self.config = DorkingConfig()
         self.serpapi_timeout = settings.serpapi_timeout_seconds
         self.brightdata_timeout = settings.brightdata_serp_timeout_seconds
+        self.brightdata_max_retries = settings.brightdata_serp_max_retries
+        self.brightdata_retry_backoff = settings.brightdata_serp_retry_backoff_seconds
         self.apify_timeout = settings.apify_serp_timeout_seconds
 
     def is_configured(self) -> bool:
@@ -512,22 +516,42 @@ class GoogleDorkingService:
                     "url": self._brightdata_target_url(query_text),
                     "format": "raw",
                 }
-                try:
-                    response = await client.post(provider.base_url, headers=headers, json=payload)
-                except httpx.TimeoutException:
-                    errors.append(self._provider_error(provider, query, "timeout", "Bright Data request timed out"))
+                response, request_error, attempts = await self._request_brightdata_with_retry(
+                    client=client,
+                    provider=provider,
+                    query=query,
+                    headers=headers,
+                    payload=payload,
+                )
+                if request_error:
+                    errors.append(request_error)
                     break
-                except httpx.HTTPError as exc:
-                    errors.append(self._provider_error(provider, query, "http_error", str(exc)))
+                if response is None:
+                    errors.append(
+                        self._provider_error(
+                            provider,
+                            query,
+                            "request_failed",
+                            "Bright Data request failed without a response.",
+                            attempts=attempts,
+                        )
+                    )
                     break
 
                 if response.status_code not in (200, 201):
+                    detail = self._response_error_detail(response)
+                    message = f"Bright Data returned status code {response.status_code}"
+                    if detail:
+                        message = f"{message}: {detail}"
                     errors.append(
                         self._provider_error(
                             provider,
                             query,
                             response.status_code,
-                            f"Bright Data returned status code {response.status_code}",
+                            message,
+                            attempts=attempts,
+                            retryable=response.status_code in self.TRANSIENT_HTTP_STATUSES,
+                            request_id=self._response_request_id(response),
                         )
                     )
                     break
@@ -559,6 +583,70 @@ class GoogleDorkingService:
                 )
 
         return {"provider": provider.name, "results": results, "errors": errors, "failed": bool(errors)}
+
+    async def _request_brightdata_with_retry(
+        self,
+        *,
+        client: httpx.AsyncClient,
+        provider: SearchProvider,
+        query: dict[str, Any],
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> tuple[httpx.Response | None, dict[str, str] | None, int]:
+        """Retry transient gateway and transport failures with bounded backoff."""
+        max_attempts = self.brightdata_max_retries + 1
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = await client.post(provider.base_url, headers=headers, json=payload)
+            except httpx.TimeoutException:
+                if attempt < max_attempts:
+                    await asyncio.sleep(self._brightdata_retry_delay(None, attempt))
+                    continue
+                return (
+                    None,
+                    self._provider_error(
+                        provider,
+                        query,
+                        "timeout",
+                        f"Bright Data request timed out after {attempt} attempts.",
+                        attempts=attempt,
+                        retryable=True,
+                    ),
+                    attempt,
+                )
+            except httpx.HTTPError as exc:
+                if attempt < max_attempts:
+                    await asyncio.sleep(self._brightdata_retry_delay(None, attempt))
+                    continue
+                return (
+                    None,
+                    self._provider_error(
+                        provider,
+                        query,
+                        "http_error",
+                        f"Bright Data transport error after {attempt} attempts: {exc}",
+                        attempts=attempt,
+                        retryable=True,
+                    ),
+                    attempt,
+                )
+
+            if response.status_code in self.TRANSIENT_HTTP_STATUSES and attempt < max_attempts:
+                await asyncio.sleep(self._brightdata_retry_delay(response, attempt))
+                continue
+            return response, None, attempt
+
+        return None, None, max_attempts
+
+    def _brightdata_retry_delay(self, response: httpx.Response | None, attempt: int) -> float:
+        if response is not None:
+            retry_after = response.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    return min(30.0, max(0.0, float(retry_after)))
+                except ValueError:
+                    pass
+        return min(30.0, self.brightdata_retry_backoff * (2 ** (attempt - 1)))
 
     async def _search_apify(
         self,
@@ -856,14 +944,44 @@ class GoogleDorkingService:
         query: dict[str, Any] | str,
         status: str | int,
         message: str,
+        **details: Any,
     ) -> dict[str, str]:
         query_text = str(query.get("query") if isinstance(query, dict) else query)
-        return {
+        error = {
             "provider": provider.name,
             "query": query_text,
             "status": str(status),
             "message": message,
         }
+        error.update(
+            {
+                str(key): str(value).lower() if isinstance(value, bool) else str(value)
+                for key, value in details.items()
+                if value is not None
+            }
+        )
+        return error
+
+    @classmethod
+    def _response_error_detail(cls, response: httpx.Response) -> str | None:
+        payload = cls._decode_response(response)
+        detail = cls._payload_error_message(payload)
+        if detail is None and isinstance(payload, dict):
+            candidate = payload.get("message") or payload.get("detail") or payload.get("status")
+            detail = cls._stringify_error(candidate) if candidate else None
+        if detail is None:
+            detail = response.text.strip() or None
+        if not detail:
+            return None
+        return re.sub(r"\s+", " ", detail).strip()[:300]
+
+    @staticmethod
+    def _response_request_id(response: httpx.Response) -> str | None:
+        for header in ("x-request-id", "x-brd-request-id", "x-correlation-id"):
+            value = response.headers.get(header)
+            if value:
+                return value
+        return None
 
     @staticmethod
     def _stringify_error(value: Any) -> str:

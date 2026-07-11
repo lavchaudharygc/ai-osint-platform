@@ -16,6 +16,8 @@ The backend tries configured providers in this order:
 
 If a provider is missing, times out, returns a non-success HTTP status, returns invalid payloads, or returns provider-specific quota/limit/credits errors, the service automatically tries the next configured provider. A successful provider response with zero organic matches does not trigger fallback. Do not commit real keys. Store them locally in `.env`:
 
+Bright Data transport failures and transient HTTP responses (`408`, `425`, `429`, `500`, `502`, `503`, and `504`) are retried with bounded exponential backoff before the service moves to Apify. Failure metadata includes the attempt count, whether the status was retryable, provider response detail, and a request ID when Bright Data supplies one.
+
 ```env
 SERPAPI_KEY=your_primary_serpapi_key
 SERPAPI_BASE_URL=https://serpapi.com/search.json
@@ -26,6 +28,8 @@ BRIGHTDATA_SERP_BASE_URL=https://api.brightdata.com/request
 BRIGHTDATA_SERP_ZONE=serp_api1
 BRIGHTDATA_SERP_TARGET_URL=https://www.google.com/search?q={query}
 BRIGHTDATA_SERP_TIMEOUT_SECONDS=90
+BRIGHTDATA_SERP_MAX_RETRIES=2
+BRIGHTDATA_SERP_RETRY_BACKOFF_SECONDS=1.0
 APIFY_API_TOKEN=your_apify_token
 APIFY_SERP_TIMEOUT_SECONDS=120
 ```
