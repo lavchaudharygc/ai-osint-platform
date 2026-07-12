@@ -5,11 +5,27 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-SupportedPlatform = Literal["instagram", "twitter", "telegram", "linkedin"]
+SupportedPlatform = Literal[
+    "instagram",
+    "twitter",
+    "telegram",
+    "linkedin",
+    "reddit",
+    "facebook",
+]
 
 
 class UsernameInvestigationRequest(BaseModel):
-    username: str = Field(..., min_length=1, max_length=30, examples=["example_user"])
+    username: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        examples=["example_user", "https://t.me/+inviteHash"],
+        description=(
+            "Public username/slug. When platform is telegram, a t.me invite link "
+            "is also accepted and handled as a private, no-fanout preview."
+        ),
+    )
     platform: SupportedPlatform = Field(..., examples=["instagram"])
     case_id: str | None = Field(default=None, max_length=50)
     correlation_depth: int = Field(default=2, ge=1, le=5)
@@ -27,6 +43,7 @@ class InvestigationResponse(BaseModel):
     hashtag_analysis: dict[str, Any] | None = None
     dorking_results: dict[str, Any] | None = None
     instagram_posts: dict[str, Any] | None = None
+    platform_content: dict[str, Any] | None = None
     intelligence_report: dict[str, Any] | None = None
     reverse_lookup_results: dict[str, Any] | None = None
     timestamp: datetime

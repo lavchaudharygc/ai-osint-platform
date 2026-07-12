@@ -20,11 +20,15 @@ from backend.services.database_lookup import DatabaseLookup
 from backend.services.hashtag_analyzer import HashtagAnalyzer
 from backend.services.google_dorking import GoogleDorkingService
 from backend.services.telegram_service import TelegramDataService
+from backend.services.telegram_mtproto_service import TelegramMTProtoService
 from backend.services.twitter_service import TwitterDataService
 from backend.services.training_dataset_service import get_training_dataset_service
 from backend.services.hitek_service import HiTekConnectorService
 from backend.services.instagram_posts_service import InstagramPostsService
 from backend.services.instagram_profile_service import InstagramProfileService
+from backend.services.facebook_apify_service import FacebookApifyService
+from backend.services.linkedin_apify_service import LinkedInApifyService
+from backend.services.reddit_apify_service import RedditApifyService
 from backend.services.intelligence.hashtag_analyzer import HashtagIntelligenceAnalyzer
 from backend.services.intelligence.content_intelligence import ContentIntelligenceExtractor
 from backend.services.intelligence.reverse_lookup import ReverseKeywordLookup
@@ -48,6 +52,29 @@ def schema_compatible_payload(value: Any) -> Any:
         return value.model_dump()
     if is_dataclass(value):
         return {field.name: getattr(value, field.name) for field in dataclass_fields(value)}
+    return value
+
+
+def redact_telegram_invite_payload(value: Any, target: str) -> Any:
+    """Remove an invite URL and hash from a Telegram response before storage."""
+    invite_hash = TelegramMTProtoService.extract_invite_hash(target)
+    sensitive_values = [str(target or "").strip(), invite_hash]
+    sensitive_values = [item for item in sensitive_values if item]
+
+    if isinstance(value, dict):
+        return {
+            key: redact_telegram_invite_payload(item, target)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_telegram_invite_payload(item, target) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_telegram_invite_payload(item, target) for item in value)
+    if isinstance(value, str):
+        redacted = value
+        for sensitive_value in sensitive_values:
+            redacted = redacted.replace(sensitive_value, "[REDACTED_TELEGRAM_INVITE]")
+        return redacted
     return value
 
 
@@ -201,6 +228,9 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
         "instagram": InstagramDataService(),
         "twitter": TwitterDataService(),
         "telegram": TelegramDataService(),
+        "linkedin": LinkedInApifyService(),
+        "reddit": RedditApifyService(),
+        "facebook": FacebookApifyService(),
     }
     service = service_map.get(platform)
     if service is None:
@@ -212,7 +242,17 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
         }
     else:
         try:
-            platform_data = await _asyncio.wait_for(service.get_profile(username), timeout=10.0)
+            if platform == "telegram":
+                timeout = 35.0
+            elif platform in {"twitter", "linkedin", "reddit", "facebook"}:
+                # The shared Apify client applies its own bounded run timeout and
+                # aborts a still-running Actor if this outer guard is reached.
+                from backend.core.config import settings as _settings
+
+                timeout = _settings.apify_run_timeout_seconds + 15.0
+            else:
+                timeout = 10.0
+            platform_data = await _asyncio.wait_for(service.get_profile(username), timeout=timeout)
         except Exception as exc:
             platform_data = {
                 "success": False,
@@ -221,25 +261,29 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
                 "error": f"Primary scraper timeout or error: {str(exc)}",
             }
 
-    if platform == "telegram":
+    if platform == "instagram":
+        flashapi_data = await FlashAPIService().lookup_username(username, platform)
+    else:
         flashapi_data = {
             "provider": "flashapi1",
             "status": "skipped",
-            "reason": "FlashAPI enrichment is not used for Telegram public t.me scraping.",
+            "reason": "The configured FlashAPI endpoint is Instagram-specific.",
             "username": username,
             "platform": platform,
         }
-    else:
-        flashapi_data = await FlashAPIService().lookup_username(username, platform)
     if platform == "instagram" and flashapi_data.get("status") == "completed":
         platform_data = apply_flashapi_instagram_fallback(platform_data, flashapi_data)
     platform_data["flashapi_enrichment"] = flashapi_data
+    if platform == "telegram":
+        platform_data["authorized_access_status"] = TelegramMTProtoService().status()
     return platform_data
 
 
 async def cross_platform_search(username: str, platform_data: dict[str, Any], depth: int) -> list[dict[str, Any]]:
     results = await CrossPlatformSearchService().search_all_platforms(username)
-    return results[: max(depth * 3, 1)]
+    # Always include the six supported primary social surfaces; higher depth
+    # progressively exposes the additional regional/developer platforms.
+    return results[: max(depth * 4, 6)]
 
 
 async def google_dork_username(username: str, platform_data: dict[str, Any]) -> dict[str, Any]:
@@ -280,11 +324,49 @@ async def assess_risk(platform_data: dict[str, Any], ai_result: dict[str, Any]) 
 
 
 def extract_hashtags(platform_data: dict[str, Any]) -> list[str]:
-    hashtags = platform_data.get("all_hashtags_used") or []
+    hashtags = platform_data.get("all_hashtags") or platform_data.get("all_hashtags_used") or []
     if hashtags:
         return [str(hashtag).strip("#") for hashtag in hashtags if hashtag]
     recent_posts = platform_data.get("recent_posts") or []
-    return sorted({str(hashtag).strip("#") for post in recent_posts for hashtag in post.get("hashtags", [])})
+    return sorted(
+        {
+            str(hashtag).strip("#")
+            for post in recent_posts
+            if isinstance(post, dict)
+            for hashtag in post.get("hashtags", [])
+        }
+    )
+
+
+def extract_platform_content(platform_data: dict[str, Any]) -> dict[str, Any] | None:
+    """Expose a stable content envelope for every supported social platform."""
+    posts = platform_data.get("recent_posts") or platform_data.get("posts") or platform_data.get("tweets") or []
+    replies = platform_data.get("replies") or []
+    comments = platform_data.get("comments") or []
+    if not any((posts, replies, comments)):
+        return None
+    return {
+        "platform": platform_data.get("platform"),
+        "source": platform_data.get("source"),
+        "posts": posts if isinstance(posts, list) else [],
+        "replies": replies if isinstance(replies, list) else [],
+        "comments": comments if isinstance(comments, list) else [],
+    }
+
+
+def extract_content_texts(platform_content: dict[str, Any] | None) -> list[str]:
+    """Return non-empty public post/reply/comment text for intelligence analysis."""
+    if not platform_content:
+        return []
+    texts: list[str] = []
+    for collection_name in ("posts", "replies", "comments"):
+        for item in platform_content.get(collection_name) or []:
+            if not isinstance(item, dict):
+                continue
+            value = item.get("caption") or item.get("text") or item.get("title") or item.get("body")
+            if value:
+                texts.append(str(value))
+    return texts
 
 
 def extract_database_lookup_terms(platform_data: dict[str, Any]) -> tuple[str | None, list[str]]:
@@ -310,7 +392,13 @@ def extract_database_lookup_terms(platform_data: dict[str, Any]) -> tuple[str | 
     seen: set[str] = set()
     for value in raw_locations:
         if isinstance(value, dict):
-            value = value.get("name") or value.get("location_name") or value.get("address")
+            value = (
+                value.get("name")
+                or value.get("location_name")
+                or value.get("address")
+                or value.get("city")
+                or value.get("geographicArea")
+            )
         location = str(value or "").strip()
         normalized = location.casefold()
         if location and normalized not in seen:
@@ -323,7 +411,73 @@ def extract_database_lookup_terms(platform_data: dict[str, Any]) -> tuple[str | 
 @router.post("/username", response_model=InvestigationResponse)
 async def investigate_username(request: UsernameInvestigationRequest) -> InvestigationResponse:
     investigation_id = generate_investigation_id()
+    is_telegram_invite = (
+        request.platform == "telegram"
+        and TelegramMTProtoService.extract_invite_hash(request.username) is not None
+    )
     platform_data = await scrape_platform(request.username, request.platform)
+
+    if is_telegram_invite:
+        # Invite hashes are effectively bearer secrets. Keep the preview inside
+        # the Telegram collector and never propagate the raw request to search,
+        # database, AI, reporting, or cross-platform providers.
+        platform_data = redact_telegram_invite_payload(platform_data, request.username)
+        skipped_reason = (
+            "Telegram invite previews are isolated to the read-only Telegram "
+            "collector; no external fan-out was performed."
+        )
+        platform_data["privacy_guard"] = {
+            "invite_hash_redacted": True,
+            "external_fanout_performed": False,
+            "skipped_stages": [
+                "cross_platform_search",
+                "internal_database_search",
+                "hitek_search",
+                "web_dorking",
+                "hashtag_analysis",
+                "ai_analysis",
+                "intelligence_report",
+                "reverse_lookup",
+            ],
+        }
+        response = InvestigationResponse(
+            investigation_id=investigation_id,
+            status="completed" if platform_data.get("success") else "completed_with_warnings",
+            platform_data=platform_data,
+            cross_platform_matches=[],
+            ai_correlation_result=None,
+            risk_assessment=None,
+            internal_database_matches={
+                "status": "skipped",
+                "reason": skipped_reason,
+                "by_username": [],
+                "by_phone": [],
+                "by_email": [],
+                "by_name": [],
+                "by_location": [],
+            },
+            hashtag_analysis={
+                "status": "skipped",
+                "reason": skipped_reason,
+                "hashtags": [],
+            },
+            dorking_results={
+                "status": "skipped",
+                "reason": skipped_reason,
+                "results": [],
+            },
+            instagram_posts=None,
+            platform_content=None,
+            intelligence_report=None,
+            reverse_lookup_results={
+                "status": "skipped",
+                "reason": skipped_reason,
+            },
+            timestamp=datetime.now(UTC),
+        )
+        _INVESTIGATION_STORE[investigation_id] = response
+        return response
+
     cross_matches = await cross_platform_search(request.username, platform_data, request.correlation_depth)
     fetched_name, fetched_locations = extract_database_lookup_terms(platform_data)
     internal_matches = DatabaseLookup().search_all(
@@ -567,6 +721,17 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         dorking_results = await google_dork_username(request.username, platform_data)
         instagram_posts = None
 
+    if instagram_posts and isinstance(instagram_posts, dict):
+        platform_content = {
+            "platform": "instagram",
+            "source": "apify_instagram_scraper",
+            "posts": instagram_posts.get("posts") or instagram_posts.get("reels") or [],
+            "replies": [],
+            "comments": [],
+        }
+    else:
+        platform_content = extract_platform_content(platform_data)
+
     # Merge primary profile hashtags and scraped post hashtags
     all_hashtags = set(extract_hashtags(platform_data))
     if instagram_posts and isinstance(instagram_posts, dict):
@@ -579,10 +744,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     ai_result = await ai_correlate(platform_data, cross_matches)
     risk = await assess_risk(platform_data, ai_result)
 
-    posts_list = []
-    if instagram_posts and isinstance(instagram_posts, dict):
-        posts = instagram_posts.get("posts") or instagram_posts.get("reels") or []
-        posts_list = [post.get("caption") for post in posts if post.get("caption")]
+    posts_list = extract_content_texts(platform_content)
 
     dork_results_list = []
     if dorking_results and isinstance(dorking_results, dict):
@@ -612,7 +774,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         hashtag_intel_analyzer = HashtagIntelligenceAnalyzer()
         hashtag_intel = await hashtag_intel_analyzer.analyze_hashtags(
             hashtags=sorted(all_hashtags),
-            source="instagram",
+            source=request.platform,
             context={'username': request.username, 'hashtags': sorted(all_hashtags)}
         )
 
@@ -646,6 +808,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         hashtag_analysis=hashtag_analysis,
         dorking_results=dorking_results,
         instagram_posts=instagram_posts,
+        platform_content=platform_content,
         intelligence_report=intelligence_report,
         reverse_lookup_results=reverse_lookup_results,
         timestamp=datetime.now(UTC),

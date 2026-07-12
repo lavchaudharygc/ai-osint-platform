@@ -17,8 +17,9 @@ class CrossPlatformSearchService:
         "twitter": "https://x.com/{username}",
         "telegram": "https://t.me/{username}",
         "linkedin": "https://www.linkedin.com/in/{username}/",
-        "github": "https://github.com/{username}",
         "reddit": "https://www.reddit.com/user/{username}",
+        "facebook": "https://www.facebook.com/{username}/",
+        "github": "https://github.com/{username}",
         "youtube": "https://www.youtube.com/@{username}",
         "pinterest": "https://www.pinterest.com/{username}/",
         "koo": "https://www.kooapp.com/profile/{username}",
@@ -73,7 +74,10 @@ class CrossPlatformSearchService:
 
     async def _check_telegram(self, username: str, url: str) -> dict[str, Any]:
         try:
-            profile = await asyncio.wait_for(TelegramDataService().get_profile(username), timeout=8.0)
+            profile = await asyncio.wait_for(
+                TelegramDataService(use_authorized_fallback=False).get_profile(username),
+                timeout=8.0,
+            )
         except Exception as exc:
             return {
                 "platform": "telegram",

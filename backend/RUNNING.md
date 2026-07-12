@@ -2,7 +2,7 @@
 
 ## Start the API
 
-From the repository root, create and activate a virtual environment, install dependencies, then start Uvicorn:
+From the repository's `backend` directory, create and activate a virtual environment, install dependencies, then start Uvicorn:
 
 ```powershell
 python -m venv .venv
@@ -10,6 +10,11 @@ python -m venv .venv
 pip install -r requirements.txt
 python -m backend.main
 ```
+
+Configuration always loads from `backend/.env`, even when another launcher uses
+a different working directory. `.env.example` is a copy-only template and is
+never loaded at runtime. Real process environment variables, when set, take
+precedence over values in `backend/.env`.
 
 The development server binds to `127.0.0.1:8000` by default. Open `http://127.0.0.1:8000/` for the API index, `http://127.0.0.1:8000/docs` for Swagger UI, or `http://127.0.0.1:8000/health` for a quick health check.
 

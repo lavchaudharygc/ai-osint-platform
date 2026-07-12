@@ -1,4 +1,4 @@
-"""Twitter/X API integration service."""
+"""Twitter/X service with Apify collection and official API fallback."""
 
 from datetime import UTC, datetime
 from typing import Any
@@ -6,18 +6,43 @@ from typing import Any
 import httpx
 
 from backend.core.config import settings
+from backend.services.twitter_apify_service import TwitterApifyService
 
 
 class TwitterDataService:
-    """Twitter/X data extraction using API v2 when configured."""
+    """Prefer Apify tweets/replies; fall back to Twitter API v2 metadata."""
 
-    def __init__(self) -> None:
+    def __init__(self, apify_service: TwitterApifyService | None = None) -> None:
         self.bearer_token = settings.twitter_bearer_token
+        self.apify_service = apify_service or TwitterApifyService()
 
     async def get_profile(self, username: str) -> dict[str, Any]:
-        if not self.bearer_token:
-            return self._placeholder_profile(username, "missing TWITTER_BEARER_TOKEN")
+        if self.apify_service.is_configured():
+            apify_result = await self.apify_service.get_profile(username)
+            if apify_result.get("success") or not self.bearer_token:
+                return apify_result
 
+            # The official API is a metadata-only resilience fallback. Preserve
+            # the Actor failure so callers know tweets/replies were not fetched.
+            try:
+                official_result = await self._get_official_profile(username)
+            except httpx.HTTPError:
+                return apify_result
+            official_result["source"] = "twitter_api_v2_apify_fallback"
+            official_result["apify_error"] = apify_result.get("error")
+            official_result["tweets"] = []
+            official_result["replies"] = []
+            return official_result
+
+        if not self.bearer_token:
+            return self._placeholder_profile(
+                username,
+                "missing APIFY_API_TOKEN and TWITTER_BEARER_TOKEN",
+            )
+
+        return await self._get_official_profile(username)
+
+    async def _get_official_profile(self, username: str) -> dict[str, Any]:
         url = f"https://api.twitter.com/2/users/by/username/{username}"
         params = {"user.fields": "created_at,description,location,public_metrics,verified,url"}
         headers = {"Authorization": f"Bearer {self.bearer_token}"}

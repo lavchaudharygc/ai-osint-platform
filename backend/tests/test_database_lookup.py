@@ -4,6 +4,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
+from backend.core.config import settings
 from backend.services.database_lookup import DatabaseLookup
 
 
@@ -141,6 +142,22 @@ class DatabaseLookupMigrationTests(unittest.TestCase):
                 [row["username"] for row in lookup.search_by_location("kochi")],
                 ["legacy_person"],
             )
+
+
+class DatabaseLookupConfigurationTests(unittest.TestCase):
+    def test_default_lookup_uses_centralized_local_database_setting(self) -> None:
+        original_url = settings.local_database_url
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                db_path = Path(temp_dir) / "configured.db"
+                settings.local_database_url = f"sqlite:///{db_path.as_posix()}"
+
+                lookup = DatabaseLookup()
+
+                self.assertEqual(Path(lookup.db_path), db_path)
+                self.assertTrue(db_path.is_file())
+        finally:
+            settings.local_database_url = original_url
 
 
 if __name__ == "__main__":

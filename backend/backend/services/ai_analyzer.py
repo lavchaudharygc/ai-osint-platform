@@ -136,14 +136,21 @@ Conflicting locations = reduce confidence
             f"{index}. Platform: {profile.get('platform')} | Username: {profile.get('username')} | URL: {profile.get('url')} | Exists: {profile.get('exists')}"
             for index, profile in enumerate(discovered_profiles, 1)
         )
+        platform_name = str(primary_profile.get("platform") or "social media").upper()
+        followers = primary_profile.get("followers")
+        if followers is None:
+            followers = primary_profile.get("follower_count", "N/A")
+        posts = primary_profile.get("posts_count")
+        if posts is None:
+            posts = primary_profile.get("post_count", "N/A")
         return f"""
-INSTAGRAM PROFILE:
+{platform_name} PROFILE:
 Username: {primary_profile.get('username')}
 Full Name: {primary_profile.get('full_name', 'N/A')}
 Bio: {str(primary_profile.get('bio', 'N/A'))[:200]}
-Followers: {primary_profile.get('followers') or primary_profile.get('follower_count', 'N/A')}
-Posts: {primary_profile.get('posts_count') or primary_profile.get('post_count', 'N/A')}
-Business Category: {primary_profile.get('business_category', 'N/A')}
+Followers: {followers}
+Posts: {posts}
+Category / Industry: {primary_profile.get('business_category') or primary_profile.get('industry', 'N/A')}
 
 DISCOVERED PROFILES:
 {discovered_summary}

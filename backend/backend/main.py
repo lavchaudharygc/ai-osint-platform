@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from backend.api.endpoints import investigation, reports, training
+from backend.api.endpoints import apify, investigation, reports, training
 from backend.core.config import settings
 
 app = FastAPI(
@@ -23,6 +23,7 @@ app.add_middleware(
 )
 
 app.include_router(investigation.router)
+app.include_router(apify.router)
 app.include_router(reports.router)
 app.include_router(training.router)
 
@@ -38,6 +39,7 @@ async def root() -> dict[str, object]:
         "endpoints": {
             "investigate_username": "/api/v1/investigation/username",
             "investigation_history": "/api/v1/investigation/history",
+            "apify_social_status": "/api/v1/apify/status",
             "generate_report": "/api/v1/reports/generate-report/{investigation_id}",
             "training_dataset": "/api/v1/training/dataset/summary",
         },

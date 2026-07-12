@@ -254,14 +254,11 @@ pip install -r requirements.txt
 ### Core Dependencies
 
 ```txt
-instaloader>=4.10
-requests>=2.28
-pandas>=1.5
-python-dotenv>=1.0
-apify-client>=1.5
-selenium>=4.15
-pillow>=10.0
-imagehash>=4.3
+fastapi>=0.111
+pydantic-settings>=2.2
+httpx>=0.27
+instaloader>=4.13
+telethon>=1.44,<2
 ```
 
 ### Environment Setup
@@ -302,23 +299,12 @@ report = correlator.generate_report(results)
 report.export_pdf("investigation_report.pdf")
 ```
 
-### Using Apify Actors
+### Using the Apify-backed API
 
-```python
-from apify_client import ApifyClient
-
-client = ApifyClient("your_apify_token")
-
-# Instagram Profile Scraper
-actor = client.actor("apify/instagram-profile-scraper")
-run = actor.call(run_input={
-    "usernames": ["target_user"],
-    "resultsLimit": 1
-})
-
-# Retrieve results
-dataset = client.dataset(run["defaultDatasetId"])
-items = dataset.list_items().items
+```bash
+curl -X POST http://127.0.0.1:8010/api/v1/apify/twitter/profile \
+  -H "Content-Type: application/json" \
+  -d '{"username":"target_user","max_items":50,"get_replies":true}'
 ```
 
 ### Rate Limiting
@@ -333,7 +319,7 @@ items = dataset.list_items().items
 
 | Service | Purpose | Documentation |
 |---------|---------|---------------|
-| **Apify** | Instagram/Twitter/LinkedIn scraping | [apify.com](https://apify.com) |
+| **Apify** | Instagram, Twitter, Reddit, LinkedIn, and Facebook public-data actors | [apify.com](https://apify.com) |
 | **SignalHire** | Contact enrichment (phone/email from LinkedIn) | [signalhire.com](https://signalhire.com) |
 | **RapidAPI** | Fallback Instagram scraper | [rapidapi.com](https://rapidapi.com) |
 | **Instaloader** | Primary Python library for IG extraction | [instaloader.github.io](https://instaloader.github.io) |
@@ -344,7 +330,13 @@ items = dataset.list_items().items
 |-------|----------|
 | `apify/instagram-profile-scraper` | Profile + posts extraction |
 | `apify/instagram-hashtag-scraper` | Hashtag-based post discovery |
-| `harvestapi/linkedin-profile-scraper` | LinkedIn profile enrichment |
+| `apidojo/twitter-profile-scraper` | Twitter profile tweets and their replies |
+| `apidojo/tweet-scraper` | Twitter/X post and advanced-query search |
+| `automation-lab/reddit-scraper` | Reddit posts, comments, user history, and search |
+| `bebity/linkedin-premium-actor` | LinkedIn profiles and companies in bulk |
+| `apimaestro/linkedin-posts-search-scraper-no-cookies` | LinkedIn public post search |
+| `apify/facebook-pages-scraper` | Facebook public Page metadata |
+| `apify/facebook-posts-scraper` | Facebook public Page posts |
 | `coderx/instagram-profile-scraper-bio-posts` | Bio + posts combined scrape |
 
 ---

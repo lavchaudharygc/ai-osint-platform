@@ -1,7 +1,7 @@
-"""Telegram public profile lookup service.
+"""Telegram public lookup with an optional authorized MTProto fallback.
 
-The service intentionally reads only metadata exposed by public t.me pages. It
-does not use Telegram bots, MTProto, private groups, contacts, or sessions.
+Public t.me metadata remains the default. Authorized lookup is read-only,
+disabled by default, and never joins chats or reads messages.
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 import re
 
 import httpx
+
+from backend.services.telegram_mtproto_service import TelegramMTProtoService
 
 
 class _TelegramPublicPageParser(HTMLParser):
@@ -115,7 +117,29 @@ class TelegramDataService:
     )
     USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{5,32}$")
 
+    def __init__(
+        self,
+        *,
+        use_authorized_fallback: bool = True,
+        authorized_service: TelegramMTProtoService | None = None,
+    ) -> None:
+        self.use_authorized_fallback = use_authorized_fallback
+        self.authorized_service = authorized_service or TelegramMTProtoService()
+
     async def get_profile(self, username: str) -> dict[str, Any]:
+        invite_hash = self.authorized_service.extract_invite_hash(username)
+        if invite_hash:
+            if self.use_authorized_fallback:
+                return await self.authorized_service.lookup(username)
+            return self._base_response(
+                username="invite_link",
+                scraped_at=datetime.now(UTC).isoformat(),
+                success=False,
+                exists=None,
+                status="authorized_lookup_required",
+                error="Invite links require the explicitly enabled read-only MTProto service.",
+            )
+
         normalized_username = self.normalize_username(username)
         scraped_at = datetime.now(UTC).isoformat()
 
@@ -137,7 +161,7 @@ class TelegramDataService:
             async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
                 response = await client.get(profile_url, headers={"User-Agent": self.USER_AGENT})
         except httpx.TimeoutException:
-            return self._base_response(
+            public_result = self._base_response(
                 username=normalized_username,
                 profile_url=profile_url,
                 scraped_at=scraped_at,
@@ -146,8 +170,9 @@ class TelegramDataService:
                 status="timeout",
                 error="Timed out while fetching the public Telegram page.",
             )
+            return await self._with_authorized_fallback(normalized_username, public_result)
         except httpx.HTTPError as exc:
-            return self._base_response(
+            public_result = self._base_response(
                 username=normalized_username,
                 profile_url=profile_url,
                 scraped_at=scraped_at,
@@ -156,11 +181,13 @@ class TelegramDataService:
                 status="fetch_failed",
                 error=str(exc),
             )
+            return await self._with_authorized_fallback(normalized_username, public_result)
 
         if response.status_code in {404, 410}:
-            return self._not_found_response(normalized_username, profile_url, scraped_at)
+            public_result = self._not_found_response(normalized_username, profile_url, scraped_at)
+            return await self._with_authorized_fallback(normalized_username, public_result)
         if response.status_code == 429:
-            return self._base_response(
+            public_result = self._base_response(
                 username=normalized_username,
                 profile_url=profile_url,
                 scraped_at=scraped_at,
@@ -169,8 +196,9 @@ class TelegramDataService:
                 status="rate_limited",
                 error="Telegram returned HTTP 429 for the public page request.",
             )
+            return await self._with_authorized_fallback(normalized_username, public_result)
         if response.status_code >= 400:
-            return self._base_response(
+            public_result = self._base_response(
                 username=normalized_username,
                 profile_url=profile_url,
                 scraped_at=scraped_at,
@@ -180,8 +208,9 @@ class TelegramDataService:
                 http_status=response.status_code,
                 error=f"Telegram returned HTTP {response.status_code}.",
             )
+            return await self._with_authorized_fallback(normalized_username, public_result)
 
-        return self._normalize_public_page(
+        public_result = self._normalize_public_page(
             username=normalized_username,
             profile_url=profile_url,
             html=response.text,
@@ -189,6 +218,39 @@ class TelegramDataService:
             final_url=str(response.url),
             http_status=response.status_code,
         )
+        return await self._with_authorized_fallback(normalized_username, public_result)
+
+    async def _with_authorized_fallback(
+        self,
+        username: str,
+        public_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        if public_result.get("exists") is True or not self.use_authorized_fallback:
+            return public_result
+
+        authorized_status = self.authorized_service.status()
+        if not authorized_status.get("enabled"):
+            public_result["authorized_lookup"] = {
+                "status": "disabled",
+                "available": False,
+            }
+            return public_result
+
+        authorized_result = await self.authorized_service.lookup(username)
+        if authorized_result.get("exists") is True:
+            authorized_result["public_lookup"] = {
+                "status": public_result.get("status"),
+                "exists": public_result.get("exists"),
+                "http_status": public_result.get("http_status"),
+            }
+            return authorized_result
+
+        public_result["authorized_lookup"] = {
+            "status": authorized_result.get("status"),
+            "exists": authorized_result.get("exists"),
+            "error": authorized_result.get("error"),
+        }
+        return public_result
 
     @classmethod
     def normalize_username(cls, value: str) -> str | None:

@@ -4,8 +4,9 @@ from collections.abc import Iterable
 from contextlib import closing
 from pathlib import Path
 from typing import Any
-import os
 import sqlite3
+
+from backend.core.config import settings
 
 
 class DatabaseLookup:
@@ -17,9 +18,7 @@ class DatabaseLookup:
     """
 
     def __init__(self, db_url: str | None = None) -> None:
-        configured_url = db_url or os.getenv("LOCAL_DATABASE_URL") or os.getenv(
-            "DATABASE_URL", "sqlite:///./osint.db"
-        )
+        configured_url = db_url or settings.local_database_url or settings.database_url
         self.db_path = self._extract_sqlite_path(configured_url)
         self.initialize()
 

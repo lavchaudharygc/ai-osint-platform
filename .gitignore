@@ -17,6 +17,8 @@ Thumbs.db
 *.key
 *.pem
 credentials.json
+*.session
+*.session-journal
 
 # DBs / Large Data Files
 DBs/hi-tek/*.csv

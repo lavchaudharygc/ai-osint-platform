@@ -1,14 +1,26 @@
 """Centralized application configuration."""
 
 from functools import lru_cache
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+BACKEND_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
     """Runtime settings loaded from environment variables."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # Resolve from this package instead of the process working directory. This
+    # makes every entry point use backend/.env and never treats .env.example as
+    # a runtime configuration file.
+    model_config = SettingsConfigDict(
+        env_file=BACKEND_ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_name: str = "AI-OSINT Platform"
     app_version: str = "0.1.0"
@@ -16,6 +28,10 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+psycopg://osint:osint@localhost:5432/osint",
         validation_alias="DATABASE_URL",
+    )
+    local_database_url: str | None = Field(
+        default=None,
+        validation_alias="LOCAL_DATABASE_URL",
     )
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
     host: str = Field(default="127.0.0.1", validation_alias="HOST")
@@ -29,6 +45,38 @@ class Settings(BaseSettings):
     groq_model: str = Field(default="llama-3.3-70b-versatile", validation_alias="GROQ_MODEL")
     rapidapi_key: str | None = Field(default=None, validation_alias="RAPIDAPI_KEY")
     apify_api_token: str | None = Field(default=None, validation_alias="APIFY_API_TOKEN")
+    apify_base_url: str = Field(default="https://api.apify.com/v2", validation_alias="APIFY_BASE_URL")
+    apify_http_timeout_seconds: float = Field(default=30.0, ge=5.0, le=120.0, validation_alias="APIFY_HTTP_TIMEOUT_SECONDS")
+    apify_run_timeout_seconds: float = Field(default=240.0, ge=10.0, le=900.0, validation_alias="APIFY_RUN_TIMEOUT_SECONDS")
+    apify_poll_wait_seconds: int = Field(default=20, ge=1, le=60, validation_alias="APIFY_POLL_WAIT_SECONDS")
+    apify_twitter_profile_actor_id: str = Field(
+        default="apidojo/twitter-profile-scraper",
+        validation_alias="APIFY_TWITTER_PROFILE_ACTOR_ID",
+    )
+    apify_twitter_tweet_actor_id: str = Field(
+        default="apidojo/tweet-scraper",
+        validation_alias="APIFY_TWITTER_TWEET_ACTOR_ID",
+    )
+    apify_reddit_actor_id: str = Field(
+        default="automation-lab/reddit-scraper",
+        validation_alias="APIFY_REDDIT_ACTOR_ID",
+    )
+    apify_linkedin_profile_actor_id: str = Field(
+        default="bebity/linkedin-premium-actor",
+        validation_alias="APIFY_LINKEDIN_PROFILE_ACTOR_ID",
+    )
+    apify_linkedin_posts_actor_id: str = Field(
+        default="apimaestro/linkedin-posts-search-scraper-no-cookies",
+        validation_alias="APIFY_LINKEDIN_POSTS_ACTOR_ID",
+    )
+    apify_facebook_pages_actor_id: str = Field(
+        default="apify/facebook-pages-scraper",
+        validation_alias="APIFY_FACEBOOK_PAGES_ACTOR_ID",
+    )
+    apify_facebook_posts_actor_id: str = Field(
+        default="apify/facebook-posts-scraper",
+        validation_alias="APIFY_FACEBOOK_POSTS_ACTOR_ID",
+    )
     flashapi_host: str = Field(default="flashapi1.p.rapidapi.com", validation_alias="FLASHAPI_HOST")
     flashapi_base_url: str = Field(default="https://flashapi1.p.rapidapi.com", validation_alias="FLASHAPI_BASE_URL")
     flashapi_endpoint_path: str = Field(default="ig/info_username/", validation_alias="FLASHAPI_ENDPOINT_PATH")
@@ -36,6 +84,11 @@ class Settings(BaseSettings):
     flashapi_nocors: bool = Field(default=False, validation_alias="FLASHAPI_NOCORS")
     flashapi_timeout_seconds: float = Field(default=15.0, validation_alias="FLASHAPI_TIMEOUT_SECONDS")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
+    telegram_mtproto_enabled: bool = Field(default=False, validation_alias="TELEGRAM_MTPROTO_ENABLED")
+    telegram_api_id: int | None = Field(default=None, validation_alias="TELEGRAM_API_ID")
+    telegram_api_hash: str | None = Field(default=None, validation_alias="TELEGRAM_API_HASH")
+    telegram_session_path: str = Field(default="./data/telegram_osint", validation_alias="TELEGRAM_SESSION_PATH")
+    telegram_mtproto_timeout_seconds: float = Field(default=20.0, ge=5.0, le=60.0, validation_alias="TELEGRAM_MTPROTO_TIMEOUT_SECONDS")
     serpapi_key: str | None = Field(default=None, validation_alias="SERPAPI_KEY")
     serpapi_base_url: str = Field(default="https://serpapi.com/search.json", validation_alias="SERPAPI_BASE_URL")
     serpapi_timeout_seconds: float = Field(default=20.0, validation_alias="SERPAPI_TIMEOUT_SECONDS")

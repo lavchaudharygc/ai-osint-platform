@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 from backend.core.config import Settings, get_settings
 from backend.database import get_db
 from backend.services.cross_platform import CrossPlatformSearchService
+from backend.services.facebook_apify_service import FacebookApifyService
 from backend.services.instagram_service import InstagramDataService
+from backend.services.linkedin_apify_service import LinkedInApifyService
+from backend.services.reddit_apify_service import RedditApifyService
 from backend.services.telegram_service import TelegramDataService
 from backend.services.twitter_service import TwitterDataService
 
@@ -29,5 +32,8 @@ def get_platform_service(platform: str):
         "instagram": InstagramDataService(),
         "twitter": TwitterDataService(),
         "telegram": TelegramDataService(),
+        "linkedin": LinkedInApifyService(),
+        "reddit": RedditApifyService(),
+        "facebook": FacebookApifyService(),
     }
     return services.get(platform)

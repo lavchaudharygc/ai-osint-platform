@@ -31,8 +31,8 @@ Request body:
 }
 ```
 
-Supported primary platforms are `instagram`, `twitter`, `telegram`, and `linkedin`.
-The response includes a generated investigation ID, primary platform data, cross-platform matches, Google dorking results, AI correlation summary, database matches, hashtag analysis, and a risk assessment.
+Supported primary platforms are `instagram`, `twitter`, `telegram`, `linkedin`, `reddit`, and `facebook`.
+The response includes a generated investigation ID, primary platform data, normalized `platform_content`, cross-platform matches, Google dorking results, AI correlation summary, database matches, hashtag analysis, and a risk assessment. `instagram_posts` remains as a backward-compatible Instagram-only field.
 
 ### Google Dorking Results
 
@@ -54,6 +54,43 @@ APIFY_API_TOKEN=your-apify-token
 APIFY_SERP_TIMEOUT_SECONDS=120
 ```
 
+## Apify Social Actors
+
+`GET /api/v1/apify/status` reports whether Apify is configured and lists the active actor IDs without exposing the token.
+
+The implementation uses bearer-header authentication, starts Actors asynchronously, waits for a bounded terminal state, aborts timed-out runs, then reads a bounded number of clean rows from the run's default dataset.
+
+Explicit actor endpoints:
+
+- `POST /api/v1/apify/twitter/profile` — `apidojo/twitter-profile-scraper`, including optional replies and profile-about data.
+- `POST /api/v1/apify/twitter/search` — `apidojo/tweet-scraper` (Tweet Scraper V2).
+- `POST /api/v1/apify/reddit/collect` — `automation-lab/reddit-scraper` for URLs or keyword search.
+- `POST /api/v1/apify/linkedin/bulk` — `bebity/linkedin-premium-actor` for profiles or companies.
+- `POST /api/v1/apify/linkedin/posts/search` — `apimaestro/linkedin-posts-search-scraper-no-cookies`.
+- `POST /api/v1/apify/facebook/pages` — `apify/facebook-pages-scraper`.
+- `POST /api/v1/apify/facebook/posts` — `apify/facebook-posts-scraper`.
+
+The Reddit default is intentionally `automation-lab/reddit-scraper`. The alternative `prodiger/reddit-scraper` is currently marked under maintenance and its published examples are inconsistent, so it is not used as an automatic fallback.
+
+All explicit endpoints enforce result limits because Actor calls can incur Apify charges. Facebook and Reddit outputs are normalized permissively and retained under `raw_data` because their published output shapes are heterogeneous. Reddit user pages, vote metrics, and deep comments are best-effort; Facebook personal-profile coverage is best-effort while Page data is the stable contract.
+
+Configuration:
+
+```env
+APIFY_API_TOKEN=your-apify-token
+APIFY_BASE_URL=https://api.apify.com/v2
+APIFY_HTTP_TIMEOUT_SECONDS=30
+APIFY_RUN_TIMEOUT_SECONDS=240
+APIFY_POLL_WAIT_SECONDS=20
+APIFY_TWITTER_PROFILE_ACTOR_ID=apidojo/twitter-profile-scraper
+APIFY_TWITTER_TWEET_ACTOR_ID=apidojo/tweet-scraper
+APIFY_REDDIT_ACTOR_ID=automation-lab/reddit-scraper
+APIFY_LINKEDIN_PROFILE_ACTOR_ID=bebity/linkedin-premium-actor
+APIFY_LINKEDIN_POSTS_ACTOR_ID=apimaestro/linkedin-posts-search-scraper-no-cookies
+APIFY_FACEBOOK_PAGES_ACTOR_ID=apify/facebook-pages-scraper
+APIFY_FACEBOOK_POSTS_ACTOR_ID=apify/facebook-posts-scraper
+```
+
 ## Investigation History
 
 - `GET /api/v1/investigation/history?limit=20&offset=0`
@@ -69,7 +106,7 @@ Supported formats are `pdf` and `html`. The endpoint validates the investigation
 
 ## RapidAPI FlashAPI Enrichment
 
-Username investigations call FlashAPI as an enrichment provider and include the result under `platform_data.flashapi_enrichment`.
+Instagram username investigations call FlashAPI as an enrichment provider and include the result under `platform_data.flashapi_enrichment`. Other platforms return a structured `skipped` object because the configured FlashAPI route is Instagram-specific.
 
 Required environment variables:
 
@@ -88,6 +125,15 @@ The backend can load the OSINT teammate training dataset from `final osint .json
 - `GET /api/v1/training/dataset/examples/{example_id}` returns one training example.
 
 Username investigations also include a lightweight `ai_correlation_result.training_context` object that references relevant dataset examples when the dataset file is present.
+
+## Authorized Telegram Lookup
+
+Public `t.me` scraping remains the default Telegram collection method. An optional read-only MTProto fallback can resolve usernames and preview invite links using an existing authorized user session, subject to that account's Telegram privacy and membership permissions. It never joins chats, reads messages, returns phone numbers, or enumerates contacts.
+
+- All Telegram lookups use `POST /api/v1/investigation/username` with `platform: "telegram"`; there is no separate Telegram lookup route.
+- `platform_data.authorized_access_status` reports dependency, credential, and session readiness without exposing credentials.
+- A public username follows the normal investigation workflow. An invite URL is handled as an isolated, read-only preview: its hash is redacted and is never sent to cross-platform search, dorking, database, AI, or reporting providers.
+- Setup instructions are in `docs/telegram_authorized_lookup.md`.
 
 
 ## Sprint 2 Integrations

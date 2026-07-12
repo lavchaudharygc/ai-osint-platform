@@ -1,6 +1,25 @@
 import unittest
 
+from backend.services.telegram_mtproto_service import TelegramMTProtoService
 from backend.services.telegram_service import TelegramDataService
+
+
+class FakeAuthorizedTelegramService:
+    def __init__(self, result: dict, *, enabled: bool = True) -> None:
+        self.result = result
+        self.enabled = enabled
+        self.lookups: list[str] = []
+
+    @staticmethod
+    def extract_invite_hash(value: str) -> str | None:
+        return TelegramMTProtoService.extract_invite_hash(value)
+
+    def status(self) -> dict:
+        return {"enabled": self.enabled}
+
+    async def lookup(self, target: str) -> dict:
+        self.lookups.append(target)
+        return dict(self.result)
 
 
 class TelegramDataServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -128,6 +147,53 @@ class TelegramDataServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["success"])
         self.assertFalse(result["exists"])
         self.assertEqual(result["status"], "invalid_username")
+
+    async def test_invite_link_routes_directly_to_authorized_preview(self) -> None:
+        authorized = FakeAuthorizedTelegramService(
+            {
+                "success": True,
+                "exists": True,
+                "status": "invite_preview",
+                "source": "telegram_mtproto_authorized",
+            }
+        )
+        service = TelegramDataService(authorized_service=authorized)
+
+        result = await service.get_profile("https://t.me/+AbC_123-x")
+
+        self.assertEqual(result["status"], "invite_preview")
+        self.assertEqual(authorized.lookups, ["https://t.me/+AbC_123-x"])
+
+    async def test_authorized_result_replaces_inconclusive_public_result(self) -> None:
+        authorized = FakeAuthorizedTelegramService(
+            {
+                "success": True,
+                "exists": True,
+                "status": "found_with_authorized_session",
+                "source": "telegram_mtproto_authorized",
+                "username": "private_user",
+            }
+        )
+        service = TelegramDataService(authorized_service=authorized)
+
+        result = await service._with_authorized_fallback(
+            "private_user",
+            {"success": False, "exists": False, "status": "not_found_or_not_public"},
+        )
+
+        self.assertTrue(result["exists"])
+        self.assertEqual(result["source"], "telegram_mtproto_authorized")
+        self.assertEqual(result["public_lookup"]["status"], "not_found_or_not_public")
+
+    async def test_confirmed_public_result_does_not_open_authorized_session(self) -> None:
+        authorized = FakeAuthorizedTelegramService({"success": True, "exists": True})
+        service = TelegramDataService(authorized_service=authorized)
+        public_result = {"success": True, "exists": True, "status": "found"}
+
+        result = await service._with_authorized_fallback("public_user", public_result)
+
+        self.assertIs(result, public_result)
+        self.assertEqual(authorized.lookups, [])
 
 
 if __name__ == "__main__":
