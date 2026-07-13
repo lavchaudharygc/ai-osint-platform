@@ -1,10 +1,134 @@
 {
-  "info": {"name": "AI-OSINT Platform", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "info": {
+    "name": "AI-OSINT Platform",
+    "description": "A normal username investigation automatically starts all nine Apify social Actors plus the safe Telegram lookup. Actor calls may be separately billable and can take multiple minutes.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
   "item": [
-    {"name": "Health", "request": {"method": "GET", "url": "{{base_url}}/health"}},
-    {"name": "Investigate Username", "request": {"method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "body": {"mode":"raw", "raw":"{\n  \"username\": \"example_user\",\n  \"platform\": \"instagram\",\n  \"case_id\": \"CASE-001\",\n  \"correlation_depth\": 2\n}"}, "url": "{{base_url}}/api/v1/investigation/username"}},
-    {"name": "List Investigations", "request": {"method": "GET", "url": "{{base_url}}/api/v1/investigation/history"}},
-    {"name": "Generate Report", "request": {"method": "POST", "url": "{{base_url}}/api/v1/reports/generate-report/{{investigation_id}}?format=pdf"}}
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/health"
+      }
+    },
+    {
+      "name": "Investigate Username - All Scrapers",
+      "request": {
+        "description": "The selected platform remains primary, but this request launches all nine Apify Actor collectors and Telegram concurrently for a normal username. Inspect apify_social_results for per-Actor outcomes and provenance. Same-username results are candidates only. Telegram invite URLs are isolated and do not fan out.",
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"example_user\",\n  \"platform\": \"instagram\",\n  \"case_id\": \"CASE-001\",\n  \"correlation_depth\": 2\n}"
+        },
+        "url": "{{base_url}}/api/v1/investigation/username"
+      }
+    },
+    {
+      "name": "Apify Social - Explicit Endpoints",
+      "description": "Optional targeted collectors. Each call is independent of the automatic all-scraper investigation and can create an additional billable Actor run.",
+      "item": [
+        {
+          "name": "Actor Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/apify/status"
+          }
+        },
+        {
+          "name": "Twitter Profile and Replies",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"username\": \"example_user\",\n  \"max_items\": 50,\n  \"get_replies\": true\n}"},
+            "url": "{{base_url}}/api/v1/apify/twitter/profile"
+          }
+        },
+        {
+          "name": "Twitter Search V2",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"twitter_handles\": [\"example_user\"],\n  \"max_items\": 50,\n  \"sort\": \"Latest\"\n}"},
+            "url": "{{base_url}}/api/v1/apify/twitter/search"
+          }
+        },
+        {
+          "name": "Reddit Collect",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"search_query\": \"example_user\",\n  \"max_posts_per_source\": 50\n}"},
+            "url": "{{base_url}}/api/v1/apify/reddit/collect"
+          }
+        },
+        {
+          "name": "LinkedIn Profiles Bulk",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"action\": \"get-profiles\",\n  \"keywords\": [\"example_user\"],\n  \"query_mode\": \"keyword\",\n  \"limit\": 5\n}"},
+            "url": "{{base_url}}/api/v1/apify/linkedin/bulk"
+          }
+        },
+        {
+          "name": "LinkedIn Posts Search",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"keyword\": \"example_user\",\n  \"sort_type\": \"relevance\",\n  \"limit\": 50\n}"},
+            "url": "{{base_url}}/api/v1/apify/linkedin/posts/search"
+          }
+        },
+        {
+          "name": "Facebook Pages",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"urls\": [\"https://www.facebook.com/example_user\"]\n}"},
+            "url": "{{base_url}}/api/v1/apify/facebook/pages"
+          }
+        },
+        {
+          "name": "Facebook Posts",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"urls\": [\"https://www.facebook.com/example_user\"],\n  \"results_limit\": 20\n}"},
+            "url": "{{base_url}}/api/v1/apify/facebook/posts"
+          }
+        }
+      ]
+    },
+    {
+      "name": "List Investigations",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/investigation/history"
+      }
+    },
+    {
+      "name": "Generate Report",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/reports/generate-report/{{investigation_id}}?format=pdf"
+      }
+    }
   ],
-  "variable": [{"key":"base_url", "value":"http://localhost:8000"}, {"key":"investigation_id", "value":"inv_replace_me"}]
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "investigation_id",
+      "value": "inv_replace_me"
+    }
+  ]
 }

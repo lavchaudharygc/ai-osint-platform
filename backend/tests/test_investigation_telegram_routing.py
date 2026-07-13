@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
+
 from backend.api.endpoints.investigation import (
     _INVESTIGATION_STORE,
     investigate_username,
@@ -72,6 +74,10 @@ class InvestigationTelegramRoutingTests(unittest.IsolatedAsyncioTestCase):
                 "backend.api.endpoints.investigation.cross_platform_search",
                 new=AsyncMock(),
             ) as cross_platform_mock,
+            patch(
+                "backend.api.endpoints.investigation.run_all_social_scrapers",
+                new=AsyncMock(),
+            ) as social_fanout_mock,
         ):
             response = await investigate_username(
                 UsernameInvestigationRequest(
@@ -81,6 +87,7 @@ class InvestigationTelegramRoutingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         cross_platform_mock.assert_not_awaited()
+        social_fanout_mock.assert_not_awaited()
         self.assertEqual(response.status, "completed")
         self.assertEqual(response.cross_platform_matches, [])
         self.assertEqual(response.dorking_results["status"], "skipped")
@@ -90,6 +97,34 @@ class InvestigationTelegramRoutingTests(unittest.IsolatedAsyncioTestCase):
             response.platform_data["nested_provider_metadata"]["requested_target"],
             "[REDACTED_TELEGRAM_INVITE]",
         )
+        self.assertEqual(response.apify_social_results["actors"], {})
+        self.assertEqual(response.apify_social_results["status"], "skipped")
+
+    async def test_non_telegram_invite_is_rejected_before_any_collector_runs(self) -> None:
+        invite_url = "https://t.me/+privateInviteHash"
+
+        with (
+            patch(
+                "backend.api.endpoints.investigation.scrape_platform",
+                new=AsyncMock(),
+            ) as scrape_mock,
+            patch(
+                "backend.api.endpoints.investigation.run_all_social_scrapers",
+                new=AsyncMock(),
+            ) as social_fanout_mock,
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                await investigate_username(
+                    UsernameInvestigationRequest(
+                        username=invite_url,
+                        platform="instagram",
+                    )
+                )
+
+        self.assertEqual(raised.exception.status_code, 422)
+        self.assertIn("Select the telegram platform", raised.exception.detail)
+        scrape_mock.assert_not_awaited()
+        social_fanout_mock.assert_not_awaited()
 
     def test_telegram_has_no_separate_lookup_routes(self) -> None:
         paths = app.openapi()["paths"]

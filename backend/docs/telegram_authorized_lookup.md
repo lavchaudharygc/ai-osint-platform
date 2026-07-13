@@ -4,6 +4,12 @@
 
 The application checks public `t.me` metadata first. When public evidence is unavailable, the optional MTProto integration can resolve data that is visible to your own authenticated Telegram account.
 
+For a normal username, `POST /api/v1/investigation/username` starts this Telegram
+lookup concurrently with all nine Apify social Actor runs, even when Instagram
+or another platform is selected as primary. The selected platform determines
+the primary normalized profile; Telegram remains a separate evidence source in
+`apify_social_results`.
+
 This integration is deliberately read-only:
 
 - It does not join groups or channels.
@@ -38,7 +44,9 @@ Telegram will ask for the account phone number, a one-time code, and the 2FA pas
 
 4. Change `TELEGRAM_MTPROTO_ENABLED=true` in `backend/.env` and restart the backend.
 
-5. Use the same username-investigation endpoint for a public username:
+5. Use the same username-investigation endpoint for a public username. Choosing
+   `telegram` makes Telegram the primary platform, although a normal username
+   always launches the complete social collection:
 
 ```text
 POST /api/v1/investigation/username
@@ -53,7 +61,8 @@ POST /api/v1/investigation/username
 ```
 
 The response includes safe readiness information at
-`platform_data.authorized_access_status`.
+`platform_data.authorized_access_status` when Telegram is primary and includes
+the concurrent Telegram collection result under `apify_social_results`.
 
 6. The same endpoint also accepts an invite link:
 
@@ -65,8 +74,10 @@ The response includes safe readiness information at
 ```
 
 Invite previews are isolated. The backend redacts the invite hash and skips
-cross-platform search, web dorking, databases, AI, reverse lookup, and report
-generation so the hash is never fanned out to another provider.
+all nine Apify Actor runs, cross-platform search, web dorking, databases, AI,
+reverse lookup, and report generation so the hash is never fanned out to another
+provider. The aggregate response identifies this path with
+`apify_social_results.mode: "privacy_guard"`.
 
 ## Session Security
 

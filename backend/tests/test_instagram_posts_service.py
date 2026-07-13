@@ -236,7 +236,7 @@ class InstagramPostsServiceTests(unittest.IsolatedAsyncioTestCase):
                         "https://api.apify.com/v2/acts/apify~instagram-scraper/"
                         "run-sync-get-dataset-items"
                     ),
-                    "params": {"token": "apify-test-token"},
+                    "headers": {"Authorization": "Bearer apify-test-token"},
                     "json": {
                         "directUrls": ["https://www.instagram.com/target_user/"],
                         "resultsType": "posts",

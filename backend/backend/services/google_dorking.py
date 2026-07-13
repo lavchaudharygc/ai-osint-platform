@@ -668,7 +668,11 @@ class GoogleDorkingService:
 
         try:
             async with httpx.AsyncClient(timeout=self.apify_timeout) as client:
-                response = await client.post(provider.base_url, params={"token": provider.api_key}, json=payload)
+                response = await client.post(
+                    provider.base_url,
+                    headers={"Authorization": f"Bearer {provider.api_key}"},
+                    json=payload,
+                )
         except httpx.TimeoutException:
             return {
                 "provider": provider.name,

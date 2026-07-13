@@ -18,6 +18,46 @@ precedence over values in `backend/.env`.
 
 The development server binds to `127.0.0.1:8000` by default. Open `http://127.0.0.1:8000/` for the API index, `http://127.0.0.1:8000/docs` for Swagger UI, or `http://127.0.0.1:8000/health` for a quick health check.
 
+## Running the one-click social collection
+
+Open Swagger UI, select `POST /api/v1/investigation/username`, and send one
+normal username such as:
+
+```json
+{
+  "username": "example_user",
+  "platform": "instagram",
+  "case_id": "CASE-001",
+  "correlation_depth": 2
+}
+```
+
+`platform` selects the primary profile; it does not limit which collectors run.
+This one click launches nine Apify Actor runs concurrently: Instagram profile
+and posts, Twitter profile and search, Reddit, LinkedIn profile and posts, and
+Facebook Pages and posts. The public/read-only authorized Telegram lookup also
+starts concurrently.
+
+Inspect `apify_social_results` in the response. For normal usernames its `mode`
+is `automatic_all_actors`; `summary` counts completed, empty, failed, and
+unconfigured Actors; `actors` contains the nine named results; and `telegram`
+contains the separate Telegram result. Each Actor reports available
+Actor/run/dataset provenance and any per-Actor error. A partial failure does not
+discard successful collectors. A same-username result on another platform is
+only a candidate and must be corroborated before identity attribution.
+
+Be aware that a single request can create nine separate Apify charges, some
+Actors require their own paid subscription, and the response can take multiple
+minutes. If Apify is also the Google-dorking fallback, that stage uses additional
+Apify capacity beyond the nine social runs. Keep the request open until the configured Actor timeouts finish. The
+explicit `/api/v1/apify/...` endpoints are still available for targeted tests,
+but each explicit call can create another paid run.
+
+If the Telegram input is an invite URL, use `platform: "telegram"`. Invite URLs
+are deliberately isolated: the backend returns `mode: "privacy_guard"`, runs
+only the read-only Telegram preview, and does not send the invite hash to Apify
+or any other fan-out provider.
+
 ## Windows socket error: WinError 10013
 
 If Windows prints `[WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions`, the selected host/port is blocked or reserved by Windows, Hyper-V, IIS, another service, or security software.

@@ -46,6 +46,14 @@ class InvestigationResponse(BaseModel):
     platform_content: dict[str, Any] | None = None
     intelligence_report: dict[str, Any] | None = None
     reverse_lookup_results: dict[str, Any] | None = None
+    apify_social_results: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Automatic one-click results from every configured Apify social Actor, "
+            "plus the concurrent Telegram username lookup. Same-handle results are "
+            "unverified identity candidates."
+        ),
+    )
     timestamp: datetime
 
 

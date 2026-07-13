@@ -20,6 +20,7 @@ class InstagramPostsService:
 
     def __init__(self) -> None:
         self.token = getattr(settings, "apify_api_token", None)
+        self.base_url = str(getattr(settings, "apify_base_url", self.BASE_URL)).rstrip("/")
 
     def is_configured(self) -> bool:
         return bool(self.token)
@@ -29,8 +30,8 @@ class InstagramPostsService:
         if not self.is_configured():
             return {"configured": False, "posts": [], "reels": [], "all_hashtags": [], "error": "APIFY_API_TOKEN not set"}
 
-        run_url = f"{self.BASE_URL}/acts/apify~instagram-scraper/run-sync-get-dataset-items"
-        params = {"token": self.token}
+        run_url = f"{self.base_url}/acts/{self.ACTOR_ID}/run-sync-get-dataset-items"
+        headers = {"Authorization": f"Bearer {self.token}"}
         payload = {
             "directUrls": [f"https://www.instagram.com/{username}/"],
             "resultsType": scrape_type,       # "posts" or "reels"
@@ -40,7 +41,7 @@ class InstagramPostsService:
 
         try:
             async with httpx.AsyncClient(timeout=120) as client:
-                response = await client.post(run_url, params=params, json=payload)
+                response = await client.post(run_url, headers=headers, json=payload)
 
             if response.status_code != 201 and response.status_code != 200:
                 return {

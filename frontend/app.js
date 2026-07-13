@@ -6,6 +6,19 @@ const DEMO_PASS = "testingaccount";
 let activeTab = "scan-console";
 let currentCaseId = "";
 let currentInvestigationData = null;
+let investigationRequestPending = false;
+
+const SOCIAL_ACTOR_DEFINITIONS = Object.freeze([
+    { key: "instagram_profile", label: "Instagram Profile" },
+    { key: "instagram_posts", label: "Instagram Posts & Reels" },
+    { key: "twitter_profile_and_replies", label: "Twitter/X Profile, Tweets & Replies" },
+    { key: "twitter_tweet_search_v2", label: "Twitter/X Tweet Search V2" },
+    { key: "reddit", label: "Reddit" },
+    { key: "linkedin_profiles", label: "LinkedIn Companies & Profiles" },
+    { key: "linkedin_posts_search", label: "LinkedIn Posts Search" },
+    { key: "facebook_pages", label: "Facebook Pages" },
+    { key: "facebook_posts", label: "Facebook Posts" }
+]);
 
 // Initialize app when DOM is fully loaded
 window.addEventListener("DOMContentLoaded", () => {
@@ -252,6 +265,11 @@ function resetConsoleWorkspace() {
 
 // Trigger Scan
 async function triggerInvestigation() {
+    if (investigationRequestPending) {
+        console.warn("[OSINT] Investigation request already running; duplicate all-Actor request ignored.");
+        return;
+    }
+
     const username = document.getElementById("target-username").value.trim();
     const platform = document.getElementById("target-platform").value;
     const depth = parseInt(document.getElementById("correlation-depth").value) || 2;
@@ -268,6 +286,17 @@ async function triggerInvestigation() {
 
     const loader = document.getElementById("console-loader");
     const stream = document.getElementById("console-stream");
+    const scanButton = document.getElementById("btn-run-investigation");
+
+    investigationRequestPending = true;
+    if (scanButton) {
+        scanButton.disabled = true;
+        scanButton.setAttribute("aria-busy", "true");
+        scanButton.textContent = "All Scrapers Running...";
+    }
+
+    const actorNames = SOCIAL_ACTOR_DEFINITIONS.map(actor => actor.label).join(", ");
+    console.info(`[OSINT] One-click fanout started for ${username}. All configured Apify Actors: ${actorNames}. Telegram lookup is included.`);
     
     if (stream) stream.innerHTML = "";
     if (loader) loader.style.display = "flex";
@@ -287,13 +316,16 @@ async function triggerInvestigation() {
         });
     }
 
-    // Simulated terminal logs
-    await logLine(`[SYS] OSINT ENGAGE FOR TARGET SUBJECT: ${username}`, 50);
-    await logLine(`[NET] ESTABLISHING INTERCEPT HOOK ON PLATFORM PORTAL: ${platform.toUpperCase()}`, 150);
-    await logLine(`[SYS] INTEGRATING PROFILE DEPTH ENVELOPE: ${depth}`, 100);
-    await logLine(`[NET] INITIATING DIRECTORIES SEARCH ENRICHMENTS...`, 150);
-
     try {
+        // The selected platform controls the primary profile view; the backend fans
+        // this single request out to every configured social Actor.
+        await logLine(`[SYS] OSINT ENGAGE FOR TARGET SUBJECT: ${username}`, 50);
+        await logLine(`[NET] PRIMARY REPORT VIEW: ${platform.toUpperCase()}`, 150);
+        await logLine(`[APIFY] LAUNCHING ALL CONFIGURED SOCIAL ACTORS...`, 100);
+        await logLine(`[TELEGRAM] QUEUING AUTHORIZED READ-ONLY LOOKUP...`, 100);
+        await logLine(`[SYS] INTEGRATING PROFILE DEPTH ENVELOPE: ${depth}`, 100);
+        await logLine(`[NET] INITIATING DIRECTORIES SEARCH ENRICHMENTS...`, 150);
+
         const response = await fetch(`${API_BASE}/api/v1/investigation/username`, {
             method: "POST",
             headers: {
@@ -320,17 +352,21 @@ async function triggerInvestigation() {
         await logLine(`[SYS] PARSING SOCIAL PLOTS CORRELATIONS...`, 100);
         await logLine(`[SYS] CONVERTING PAYLOADS TO VISUAL GRIDS...`, 50);
 
-        setTimeout(() => {
-            if (loader) loader.style.display = "none";
-            renderInvestigationResults(data);
-        }, 500);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        if (loader) loader.style.display = "none";
+        renderInvestigationResults(data);
 
     } catch (err) {
         await logLine(`[ERR] THREAD STOPPED PREMATURELY. CAUSE: ${err.message}`, 200);
-        setTimeout(() => {
-            alert("SCAN INTERRUPTED. VERIFY GATEWAY CONFIGURATION AND SERVER LOGS.");
-            if (loader) loader.style.display = "none";
-        }, 1000);
+        alert("SCAN INTERRUPTED. VERIFY GATEWAY CONFIGURATION AND SERVER LOGS.");
+        if (loader) loader.style.display = "none";
+    } finally {
+        investigationRequestPending = false;
+        if (scanButton) {
+            scanButton.disabled = false;
+            scanButton.removeAttribute("aria-busy");
+            scanButton.textContent = "Run All Social Scrapers";
+        }
     }
 }
 
@@ -853,8 +889,239 @@ function renderInvestigationResults(data) {
         }
     }
 
+    // Dedicated results from the mandatory one-click social Actor fanout.
+    renderApifySocialResults(data.apify_social_results);
+
     // Instagram Posts Intelligence Card
     renderInstagramPosts(data.instagram_posts);
+}
+
+function createSafeTextElement(tagName, className, value) {
+    const element = document.createElement(tagName);
+    if (className) element.className = className;
+    element.textContent = value == null ? "" : String(value);
+    return element;
+}
+
+function readableKey(value) {
+    return String(value || "")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function safeDisplayValue(value, fallback = "—") {
+    if (value === undefined || value === null || value === "") return fallback;
+    if (typeof value === "string") {
+        return value.length > 500 ? `${value.substring(0, 497)}...` : value;
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+    }
+
+    try {
+        const serialized = JSON.stringify(value);
+        return serialized.length > 500 ? `${serialized.substring(0, 497)}...` : serialized;
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function actorErrorText(error) {
+    if (!error) return "";
+    if (typeof error === "string") return safeDisplayValue(error, "");
+    if (typeof error === "object") {
+        return safeDisplayValue(error.message || error.detail || error.error || error);
+    }
+    return String(error);
+}
+
+function resolveActorStatus(result) {
+    if (!result || typeof result !== "object") return "not returned";
+    if (result.status !== undefined && result.status !== null && result.status !== "") {
+        return String(result.status);
+    }
+    const run = result.run && typeof result.run === "object" ? result.run : {};
+    if (run.run_status || run.status) return String(run.run_status || run.status);
+    if (result.success === true) return "succeeded";
+    if (result.configured === false) return "not configured";
+    if (result.error || result.success === false) return "failed";
+    return "unknown";
+}
+
+function actorStatusClass(status) {
+    const normalized = String(status || "").toLowerCase().replace(/[\s-]+/g, "_");
+    if (normalized.includes("partial") || normalized.includes("with_errors")) {
+        return "actor-status-warning";
+    }
+    if (["succeeded", "success", "completed", "complete", "found", "found_with_authorized_session"].includes(normalized)) {
+        return "actor-status-success";
+    }
+    if (["running", "ready", "queued", "pending", "in_progress"].includes(normalized)) {
+        return "actor-status-running";
+    }
+    if (normalized.includes("fail") || normalized.includes("error") || normalized.includes("abort") || normalized.includes("timeout") || normalized === "timed_out") {
+        return "actor-status-failed";
+    }
+    if (["partial", "not_configured", "not configured", "disabled", "skipped"].includes(normalized)) {
+        return "actor-status-warning";
+    }
+    return "actor-status-neutral";
+}
+
+function numericCount(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
+    return null;
+}
+
+function resolveActorTotal(result) {
+    if (!result || typeof result !== "object") return null;
+    const directKeys = ["total", "count", "total_results", "results_count", "item_count"];
+    for (const key of directKeys) {
+        const count = numericCount(result[key]);
+        if (count !== null) return count;
+    }
+
+    const arrayKeys = ["data", "results", "items", "posts", "profiles", "pages", "tweets"];
+    for (const key of arrayKeys) {
+        if (Array.isArray(result[key])) return result[key].length;
+    }
+
+    if (result.data && typeof result.data === "object") {
+        for (const key of directKeys) {
+            const count = numericCount(result.data[key]);
+            if (count !== null) return count;
+        }
+        for (const key of arrayKeys) {
+            if (Array.isArray(result.data[key])) return result.data[key].length;
+        }
+    }
+    return null;
+}
+
+function appendActorMetadata(list, label, value) {
+    const row = document.createElement("div");
+    row.className = "actor-meta-row";
+    row.appendChild(createSafeTextElement("dt", "actor-meta-label", label));
+    row.appendChild(createSafeTextElement("dd", "actor-meta-value mono", safeDisplayValue(value)));
+    list.appendChild(row);
+}
+
+function buildActorResultCard(definition, result) {
+    const actorResult = result && typeof result === "object" ? result : null;
+    const card = document.createElement("article");
+    card.className = "actor-result-card";
+
+    const header = document.createElement("div");
+    header.className = "actor-card-header";
+    const titleGroup = document.createElement("div");
+    titleGroup.className = "actor-title-group";
+    titleGroup.appendChild(createSafeTextElement("h4", "actor-card-title", definition.label));
+    titleGroup.appendChild(createSafeTextElement("span", "actor-card-key mono", definition.key));
+
+    const status = safeDisplayValue(resolveActorStatus(actorResult), "unknown");
+    const statusBadge = createSafeTextElement("span", `actor-status-badge ${actorStatusClass(status)}`, status);
+    header.appendChild(titleGroup);
+    header.appendChild(statusBadge);
+    card.appendChild(header);
+
+    const metadata = document.createElement("dl");
+    metadata.className = "actor-meta-list";
+    const run = actorResult && actorResult.run && typeof actorResult.run === "object" ? actorResult.run : {};
+    const total = resolveActorTotal(actorResult);
+    const configured = actorResult && typeof actorResult.configured === "boolean"
+        ? (actorResult.configured ? "Yes" : "No")
+        : "Unknown";
+    const succeeded = actorResult && typeof actorResult.success === "boolean"
+        ? (actorResult.success ? "Yes" : "No")
+        : "Unknown";
+
+    appendActorMetadata(metadata, definition.telegram ? "Source" : "Actor ID", actorResult && (actorResult.actor_id || (definition.telegram ? actorResult.source : null)));
+    appendActorMetadata(metadata, "Configured", configured);
+    appendActorMetadata(metadata, "Success", succeeded);
+    appendActorMetadata(metadata, "Items", total === null ? null : total.toLocaleString());
+    appendActorMetadata(metadata, "Run status", run.run_status || run.status || (actorResult && actorResult.run_status));
+    appendActorMetadata(metadata, "Run ID", run.run_id || run.id || (actorResult && actorResult.run_id));
+    appendActorMetadata(metadata, "Dataset ID", run.dataset_id || run.default_dataset_id || (actorResult && actorResult.dataset_id));
+
+    if (definition.telegram && actorResult) {
+        appendActorMetadata(metadata, "Collection", actorResult.collection_method);
+        appendActorMetadata(metadata, "History accessed", typeof actorResult.message_history_accessed === "boolean" ? (actorResult.message_history_accessed ? "Yes" : "No") : null);
+    }
+    card.appendChild(metadata);
+
+    const errorText = actorErrorText(actorResult && actorResult.error);
+    if (errorText) {
+        const errorBox = document.createElement("div");
+        errorBox.className = "actor-error-box";
+        errorBox.appendChild(createSafeTextElement("strong", "actor-error-label", "Error"));
+        errorBox.appendChild(createSafeTextElement("span", "actor-error-text", errorText));
+        card.appendChild(errorBox);
+    }
+
+    return card;
+}
+
+function appendSocialSummary(summaryContainer, label, value) {
+    const item = document.createElement("span");
+    item.className = "apify-summary-item";
+    item.appendChild(createSafeTextElement("strong", "", `${readableKey(label)}: `));
+    item.appendChild(createSafeTextElement("span", "", safeDisplayValue(value)));
+    summaryContainer.appendChild(item);
+}
+
+function renderApifySocialResults(envelope) {
+    const row = document.getElementById("apify-social-results-row");
+    const grid = document.getElementById("apify-social-actors-grid");
+    const overallStatus = document.getElementById("apify-social-overall-status");
+    const identityNotice = document.getElementById("apify-social-identity-notice");
+    const summaryContainer = document.getElementById("apify-social-summary");
+    if (!row || !grid || !overallStatus || !identityNotice || !summaryContainer) return;
+
+    grid.replaceChildren();
+    summaryContainer.replaceChildren();
+    identityNotice.textContent = "";
+
+    if (!envelope || typeof envelope !== "object") {
+        row.style.display = "none";
+        return;
+    }
+
+    row.style.display = "grid";
+    const status = safeDisplayValue(envelope.status, "unknown");
+    overallStatus.textContent = status;
+    overallStatus.className = `actor-status-badge ${actorStatusClass(status)}`;
+
+    const notice = safeDisplayValue(
+        envelope.identity_notice,
+        "Same-username results are investigative leads and do not by themselves confirm that every account belongs to the same person."
+    );
+    identityNotice.textContent = notice;
+
+    if (envelope.mode !== undefined && envelope.mode !== null) {
+        appendSocialSummary(summaryContainer, "mode", envelope.mode);
+    }
+
+    const summary = envelope.summary;
+    if (summary && typeof summary === "object" && !Array.isArray(summary)) {
+        Object.entries(summary).forEach(([key, value]) => appendSocialSummary(summaryContainer, key, value));
+    } else if (summary !== undefined && summary !== null && summary !== "") {
+        appendSocialSummary(summaryContainer, "summary", summary);
+    }
+
+    const actors = envelope.actors && typeof envelope.actors === "object" ? envelope.actors : {};
+    const returnedActorCount = SOCIAL_ACTOR_DEFINITIONS.filter(definition => actors[definition.key] && typeof actors[definition.key] === "object").length;
+    if (!summaryContainer.childElementCount) {
+        appendSocialSummary(summaryContainer, "actor envelopes", `${returnedActorCount}/${SOCIAL_ACTOR_DEFINITIONS.length}`);
+    }
+
+    SOCIAL_ACTOR_DEFINITIONS.forEach(definition => {
+        grid.appendChild(buildActorResultCard(definition, actors[definition.key]));
+    });
+    grid.appendChild(buildActorResultCard(
+        { key: "telegram", label: "Telegram Authorized Lookup", telegram: true },
+        envelope.telegram
+    ));
 }
 
 function renderInstagramPosts(igPosts) {

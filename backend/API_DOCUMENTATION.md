@@ -32,7 +32,37 @@ Request body:
 ```
 
 Supported primary platforms are `instagram`, `twitter`, `telegram`, `linkedin`, `reddit`, and `facebook`.
-The response includes a generated investigation ID, primary platform data, normalized `platform_content`, cross-platform matches, Google dorking results, AI correlation summary, database matches, hashtag analysis, and a risk assessment. `instagram_posts` remains as a backward-compatible Instagram-only field.
+The selected platform remains the primary profile used for `platform_data`, normalization, and correlation. It does not restrict collection to that platform.
+
+For every normal username, this single endpoint starts all nine Apify Actor runs concurrently:
+
+- Instagram profile and Instagram posts.
+- Twitter profile/tweets/replies and Twitter search.
+- Reddit collection.
+- LinkedIn profile/company lookup and LinkedIn posts search.
+- Facebook Pages and Facebook posts.
+
+The public/read-only authorized Telegram lookup also starts concurrently. Consequently, selecting `instagram` still runs the Twitter, Reddit, LinkedIn, Facebook, and Telegram collectors. The response includes a generated investigation ID, primary platform data, normalized `platform_content`, cross-platform matches, Google dorking results, AI correlation summary, database matches, hashtag analysis, a risk assessment, and `apify_social_results`. `instagram_posts` remains as a backward-compatible field containing the Instagram posts Actor output.
+
+`apify_social_results` reports every collector independently. Its envelope contains `status`, `mode`, `username`, `identity_notice`, `started_at`, `completed_at`, `summary`, `actors`, and `telegram`. For a normal username, `mode` is `automatic_all_actors`. The `summary` counts `total`, `completed`, `empty`, `failed`, and `not_configured` Actor outcomes.
+
+The `actors` object has these stable keys:
+
+- `instagram_profile`
+- `instagram_posts`
+- `twitter_profile_and_replies`
+- `twitter_tweet_search_v2`
+- `reddit`
+- `linkedin_profiles`
+- `linkedin_posts_search`
+- `facebook_pages`
+- `facebook_posts`
+
+Each Actor entry includes `configured`, `success`, `status`, `actor_id`, `total`, platform-specific normalized records such as `tweets`, `posts`, `profiles`, or `pages`, available Actor run/dataset provenance, and `error` when applicable. A failed, unavailable, unsubscribed, or timed-out Actor is returned as a per-Actor partial failure; it does not erase successful data from the other collectors or fail the whole investigation solely by itself. Telegram is a separate top-level entry because it is not an Apify Actor and returns its own safe collection/readiness result instead of Apify run metadata.
+
+This fan-out can launch nine separately billable social Actor runs per request, may require paid Actor subscriptions, and can take multiple minutes up to the configured run timeouts. When Apify is also the active Google-dorking provider, that search stage consumes additional Apify usage beyond these nine social runs. A result found under the same username on another platform is a candidate match only, not proof that it belongs to the same person. Corroborate identity with independent evidence such as cross-links, biographies, content, location, and known associates.
+
+A Telegram invite URL is the strict exception. When `platform` is `telegram` and `username` is an invite URL, the endpoint performs only the isolated, read-only Telegram preview. It does not launch the nine Actors or any other fan-out, it redacts the invite hash, and the aggregate uses `mode: "privacy_guard"`.
 
 ### Google Dorking Results
 
@@ -60,7 +90,7 @@ APIFY_SERP_TIMEOUT_SECONDS=120
 
 The implementation uses bearer-header authentication, starts Actors asynchronously, waits for a bounded terminal state, aborts timed-out runs, then reads a bounded number of clean rows from the run's default dataset.
 
-Explicit actor endpoints:
+Explicit Actor endpoints remain available for targeted, single-collector calls:
 
 - `POST /api/v1/apify/twitter/profile` — `apidojo/twitter-profile-scraper`, including optional replies and profile-about data.
 - `POST /api/v1/apify/twitter/search` — `apidojo/tweet-scraper` (Tweet Scraper V2).
@@ -72,7 +102,7 @@ Explicit actor endpoints:
 
 The Reddit default is intentionally `automation-lab/reddit-scraper`. The alternative `prodiger/reddit-scraper` is currently marked under maintenance and its published examples are inconsistent, so it is not used as an automatic fallback.
 
-All explicit endpoints enforce result limits because Actor calls can incur Apify charges. Facebook and Reddit outputs are normalized permissively and retained under `raw_data` because their published output shapes are heterogeneous. Reddit user pages, vote metrics, and deep comments are best-effort; Facebook personal-profile coverage is best-effort while Page data is the stable contract.
+Calling an explicit endpoint is independent of the automatic nine-Actor username investigation and can create an additional billable run. All explicit endpoints enforce result limits because Actor calls can incur Apify charges. Facebook and Reddit outputs are normalized permissively and retained under `raw_data` because their published output shapes are heterogeneous. Reddit user pages, vote metrics, and deep comments are best-effort; Facebook personal-profile coverage is best-effort while Page data is the stable contract.
 
 Configuration:
 
@@ -128,9 +158,9 @@ Username investigations also include a lightweight `ai_correlation_result.traini
 
 ## Authorized Telegram Lookup
 
-Public `t.me` scraping remains the default Telegram collection method. An optional read-only MTProto fallback can resolve usernames and preview invite links using an existing authorized user session, subject to that account's Telegram privacy and membership permissions. It never joins chats, reads messages, returns phone numbers, or enumerates contacts.
+Public `t.me` scraping remains the default Telegram collection method. An optional read-only MTProto fallback can resolve usernames and preview invite links using an existing authorized user session, subject to that account's Telegram privacy and membership permissions. It never joins chats, reads messages, returns phone numbers, or enumerates contacts. For a normal username, Telegram collection is launched concurrently with the nine Apify Actor runs even when another platform is selected as primary.
 
-- All Telegram lookups use `POST /api/v1/investigation/username` with `platform: "telegram"`; there is no separate Telegram lookup route.
+- Direct Telegram-primary lookups use `POST /api/v1/investigation/username` with `platform: "telegram"`; there is no separate Telegram lookup route. Normal usernames investigated with another primary platform also include the concurrent Telegram result under `apify_social_results.telegram`.
 - `platform_data.authorized_access_status` reports dependency, credential, and session readiness without exposing credentials.
 - A public username follows the normal investigation workflow. An invite URL is handled as an isolated, read-only preview: its hash is redacted and is never sent to cross-platform search, dorking, database, AI, or reporting providers.
 - Setup instructions are in `docs/telegram_authorized_lookup.md`.

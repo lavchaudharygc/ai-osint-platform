@@ -153,12 +153,12 @@
                             </div>
 
                             <div id="console-loader">
-                                <div class="card-title" style="color:var(--accent-blue); margin-bottom: 8px;">Intercept Engine Active</div>
+                                <div class="card-title" style="color:var(--accent-blue); margin-bottom: 8px;">All-Scraper Engine Active</div>
                                 <div class="console-stream" id="console-stream">
                                     <!-- Dynamic scanner log lines appear here -->
                                 </div>
                                 <div style="font-family:'Share Tech Mono', monospace; font-size: 0.75rem; text-align: center; color: var(--accent-gold);">
-                                    PROCESSING PROFILES...
+                                    RUNNING ALL SOCIAL ACTORS...
                                 </div>
                             </div>
 
@@ -168,7 +168,7 @@
                             </div>
 
                             <div class="form-row">
-                                <label>Primary Check Platform</label>
+                                <label>Primary Profile View (All Scrapers Run)</label>
                                 <select id="target-platform" class="form-control" style="background:var(--bg-input); border-color:var(--border-glow);">
                                     <option value="instagram">Instagram</option>
                                     <option value="twitter">Twitter (X)</option>
@@ -177,6 +177,9 @@
                                     <option value="reddit">Reddit</option>
                                     <option value="facebook">Facebook Page</option>
                                 </select>
+                                <p class="fanout-help">
+                                    The selected platform controls the lead profile shown in the report. One request also runs every configured Instagram, Twitter/X, Reddit, LinkedIn, and Facebook Apify Actor plus the Telegram lookup. Actor runs may use Apify credits and can take several minutes.
+                                </p>
                             </div>
 
                             <div class="form-row">
@@ -197,7 +200,7 @@
                                 <input type="text" id="case-reference" class="form-control" placeholder="Leave empty for auto-generate" style="background:var(--bg-input);">
                             </div>
 
-                            <button class="btn-scan" onclick="triggerInvestigation()">Execute OSINT Scan</button>
+                            <button class="btn-scan" id="btn-run-investigation" type="button" onclick="triggerInvestigation()">Run All Social Scrapers</button>
                         </div>
 
                         <!-- RIGHT RESULTS SECTION -->
@@ -208,7 +211,7 @@
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width: 55px; height: 55px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                                 </span>
                                 <p style="font-weight:600; color: var(--text-secondary);">System Standby</p>
-                                <p style="font-size:0.8rem; margin-top:5px; color: var(--text-secondary);">Input username and trigger execute to search social indices</p>
+                                <p style="font-size:0.8rem; margin-top:5px; color: var(--text-secondary);">Enter one username to run every configured social scraper in a single investigation</p>
                             </div>
 
                             <!-- RESULTS WORKSPACE CARD GRID -->
@@ -400,7 +403,23 @@
                                         </div>
                                     </div>
 
-                                    <!-- ROW 5: INSTAGRAM POSTS & REELS INTELLIGENCE -->
+                                    <!-- ROW 5: ONE-CLICK APIFY SOCIAL ACTOR RESULTS -->
+                                    <div class="results-grid-row" id="apify-social-results-row" style="display:none;">
+                                        <div class="glass-card" style="grid-column: 1 / -1;">
+                                            <div class="card-header-bar apify-social-header">
+                                                <div>
+                                                    <span class="card-title">One-Click Social Scraper Runs</span>
+                                                    <div class="apify-social-subtitle">All Actor results belong to this investigation request</div>
+                                                </div>
+                                                <span class="actor-status-badge actor-status-neutral" id="apify-social-overall-status">Awaiting results</span>
+                                            </div>
+                                            <div class="apify-identity-notice" id="apify-social-identity-notice"></div>
+                                            <div class="apify-social-summary" id="apify-social-summary"></div>
+                                            <div class="apify-actor-grid" id="apify-social-actors-grid"></div>
+                                        </div>
+                                    </div>
+
+                                    <!-- ROW 6: INSTAGRAM POSTS & REELS INTELLIGENCE -->
                                     <div class="results-grid-row" id="instagram-posts-row" style="display:none;">
                                         <div class="glass-card" style="grid-column: 1 / -1;">
                                             <div class="card-header-bar">

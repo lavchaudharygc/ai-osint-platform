@@ -299,7 +299,45 @@ report = correlator.generate_report(results)
 report.export_pdf("investigation_report.pdf")
 ```
 
-### Using the Apify-backed API
+### One-click cross-platform investigation
+
+One normal username request starts the complete collection workflow. The selected
+`platform` remains the primary profile used for normalization and correlation,
+but it does not limit collection to that platform.
+
+```bash
+curl -X POST http://127.0.0.1:8010/api/v1/investigation/username \
+  -H "Content-Type: application/json" \
+  -d '{"username":"target_user","platform":"instagram","case_id":"CASE-001","correlation_depth":2}'
+```
+
+For a normal username, the backend launches these nine Apify Actor runs
+concurrently: Instagram profile, Instagram posts, Twitter profile and replies,
+Twitter search, Reddit, LinkedIn profile/company, LinkedIn posts, Facebook Pages,
+and Facebook posts. The safe Telegram public/authorized lookup also starts in
+the same workflow. Results are returned under `apify_social_results`. Its
+`actors` object contains nine stable per-Actor entries, `summary` counts their
+outcomes, `telegram` contains the separate Telegram result, and `mode` is
+`automatic_all_actors` for normal usernames. Actor entries include available
+run/dataset provenance. One Actor failure is reported as a partial failure and
+does not discard successful results from the other collectors.
+
+Each Actor can create a separate Apify charge or require a paid Actor
+subscription, and the combined request can take multiple minutes. Apify-backed
+Google dorking uses additional capacity beyond these nine social Actor runs. A matching
+username on another platform is only an identity candidate; corroborate it with
+bios, links, content, location, and other evidence before treating it as the
+same person.
+
+Telegram invite links are the exception. They use `mode: "privacy_guard"`, are
+handled as isolated, read-only previews, and are never sent to Apify,
+cross-platform search, dorking, AI, databases, or reporting providers.
+
+### Using an explicit Apify Actor endpoint
+
+The explicit Actor endpoints remain available when only one targeted collector
+is needed. Calling one of these routes is separate from the one-click workflow
+and can incur an additional Actor run.
 
 ```bash
 curl -X POST http://127.0.0.1:8010/api/v1/apify/twitter/profile \
@@ -328,7 +366,8 @@ curl -X POST http://127.0.0.1:8010/api/v1/apify/twitter/profile \
 
 | Actor | Use Case |
 |-------|----------|
-| `apify/instagram-profile-scraper` | Profile + posts extraction |
+| `apify/instagram-profile-scraper` | Instagram profile metadata extraction |
+| `apify/instagram-scraper` | Instagram post and reel collection |
 | `apify/instagram-hashtag-scraper` | Hashtag-based post discovery |
 | `apidojo/twitter-profile-scraper` | Twitter profile tweets and their replies |
 | `apidojo/tweet-scraper` | Twitter/X post and advanced-query search |
