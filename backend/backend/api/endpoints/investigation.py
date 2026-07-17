@@ -1,6 +1,5 @@
 """Investigation API endpoints."""
 
-import asyncio
 from dataclasses import fields as dataclass_fields, is_dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -8,7 +7,6 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from backend.core.config import settings
 from backend.schemas.investigation import (
     InvestigationHistoryItem,
     InvestigationResponse,
@@ -37,6 +35,7 @@ from backend.services.intelligence.content_intelligence import ContentIntelligen
 from backend.services.intelligence.reverse_lookup import ReverseKeywordLookup
 from backend.services.report.enhanced_report_generator import EnhancedReportGenerator
 from backend.schemas.intelligence_models import ComprehensiveIntelligence
+from backend.core.config import settings
 
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
 
@@ -184,113 +183,6 @@ def apply_flashapi_instagram_fallback(
     platform_data.pop("error", None)
     platform_data.update({key: value for key, value in normalized.items() if value is not None})
     platform_data["source"] = "flashapi_fallback"
-    return platform_data
-
-
-def combine_instagram_profile_results(
-    username: str,
-    apify_data: Any,
-    flashapi_data: Any,
-) -> dict[str, Any]:
-    """Merge the two Instagram profile collectors without hiding Apify priority."""
-    platform_data: dict[str, Any] = {
-        "success": False,
-        "platform": "instagram",
-        "username": username,
-    }
-
-    if isinstance(apify_data, dict) and apify_data.get("success"):
-        platform_data.update(apify_data)
-
-    if isinstance(flashapi_data, dict) and flashapi_data.get("status") == "completed":
-        platform_data = apply_flashapi_instagram_fallback(platform_data, flashapi_data)
-
-    if isinstance(apify_data, dict) and apify_data.get("success"):
-        platform_data["source"] = "apify_profile_scraper"
-        for key in ("full_name", "profile_pic_url", "profile_pic_hd"):
-            if apify_data.get(key):
-                platform_data[key] = apify_data[key]
-
-    platform_data["flashapi_enrichment"] = (
-        flashapi_data if isinstance(flashapi_data, dict) else {}
-    )
-    return platform_data
-
-
-async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
-    import asyncio as _asyncio
-
-    if platform == "instagram":
-        apify_profile_service = InstagramProfileService()
-        if apify_profile_service.is_configured():
-            try:
-                apify_data, flashapi_data = await _asyncio.gather(
-                    apify_profile_service.fetch_profile(username),
-                    FlashAPIService().lookup_username(username, platform),
-                    return_exceptions=True
-                )
-
-                return combine_instagram_profile_results(
-                    username,
-                    apify_data,
-                    flashapi_data,
-                )
-            except Exception:
-                # Fallback to standard flow on critical failure
-                pass
-
-    service_map = {
-        "instagram": InstagramDataService(),
-        "twitter": TwitterDataService(),
-        "telegram": TelegramDataService(),
-        "linkedin": LinkedInApifyService(),
-        "reddit": RedditApifyService(),
-        "facebook": FacebookApifyService(),
-    }
-    service = service_map.get(platform)
-    if service is None:
-        platform_data = {
-            "platform": platform,
-            "username": username,
-            "status": "manual_review_required",
-            "message": "Automated lookup is not configured for this platform.",
-        }
-    else:
-        try:
-            if platform == "telegram":
-                timeout = 35.0
-            elif platform in {"twitter", "linkedin", "reddit", "facebook"}:
-                # The shared Apify client applies its own bounded run timeout and
-                # aborts a still-running Actor if this outer guard is reached.
-                from backend.core.config import settings as _settings
-
-                timeout = _settings.apify_run_timeout_seconds + 15.0
-            else:
-                timeout = 10.0
-            platform_data = await _asyncio.wait_for(service.get_profile(username), timeout=timeout)
-        except Exception as exc:
-            platform_data = {
-                "success": False,
-                "platform": platform,
-                "username": username,
-                "error": f"Primary scraper timeout or error: {str(exc)}",
-            }
-
-    if platform == "instagram":
-        flashapi_data = await FlashAPIService().lookup_username(username, platform)
-    else:
-        flashapi_data = {
-            "provider": "flashapi1",
-            "status": "skipped",
-            "reason": "The configured FlashAPI endpoint is Instagram-specific.",
-            "username": username,
-            "platform": platform,
-        }
-    if platform == "instagram" and flashapi_data.get("status") == "completed":
-        platform_data = apply_flashapi_instagram_fallback(platform_data, flashapi_data)
-    platform_data["flashapi_enrichment"] = flashapi_data
-    if platform == "telegram":
-        platform_data["authorized_access_status"] = TelegramMTProtoService().status()
     return platform_data
 
 
@@ -450,6 +342,36 @@ def _actor_outcome(result: dict[str, Any]) -> str:
     return "completed"
 
 
+def combine_instagram_profile_results(
+    username: str,
+    apify_data: Any,
+    flashapi_data: Any,
+) -> dict[str, Any]:
+    """Merge the two Instagram profile collectors without hiding Apify priority."""
+    platform_data: dict[str, Any] = {
+        "success": False,
+        "platform": "instagram",
+        "username": username,
+    }
+
+    if isinstance(apify_data, dict) and apify_data.get("success"):
+        platform_data.update(apify_data)
+
+    if isinstance(flashapi_data, dict) and flashapi_data.get("status") == "completed":
+        platform_data = apply_flashapi_instagram_fallback(platform_data, flashapi_data)
+
+    if isinstance(apify_data, dict) and apify_data.get("success"):
+        platform_data["source"] = "apify_profile_scraper"
+        for key in ("full_name", "profile_pic_url", "profile_pic_hd"):
+            if apify_data.get(key):
+                platform_data[key] = apify_data[key]
+
+    platform_data["flashapi_enrichment"] = (
+        flashapi_data if isinstance(flashapi_data, dict) else {}
+    )
+    return platform_data
+
+
 async def run_all_social_scrapers(
     username: str,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any], dict[str, Any]]:
@@ -460,6 +382,7 @@ async def run_all_social_scrapers(
     execution and provenance independent, so one provider failure cannot hide
     successful sibling runs.
     """
+    import asyncio
     started_at = datetime.now(UTC)
     instagram_profile_service = InstagramProfileService()
     instagram_posts_service = InstagramPostsService()
@@ -610,6 +533,101 @@ async def run_all_social_scrapers(
     return platform_profiles, instagram_posts, envelope
 
 
+async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
+    import asyncio as _asyncio
+
+    if platform == "instagram":
+        apify_profile_service = InstagramProfileService()
+        if apify_profile_service.is_configured():
+            try:
+                apify_data, flashapi_data = await _asyncio.gather(
+                    apify_profile_service.fetch_profile(username),
+                    FlashAPIService().lookup_username(username, platform),
+                    return_exceptions=True
+                )
+
+                platform_data = {
+                    "success": False,
+                    "platform": "instagram",
+                    "username": username
+                }
+
+                if isinstance(apify_data, dict) and apify_data.get("success"):
+                    platform_data.update(apify_data)
+
+                if isinstance(flashapi_data, dict) and flashapi_data.get("status") == "completed":
+                    platform_data = apply_flashapi_instagram_fallback(platform_data, flashapi_data)
+
+                if isinstance(apify_data, dict) and apify_data.get("success"):
+                    platform_data["source"] = "apify_profile_scraper"
+                    if apify_data.get("full_name"):
+                        platform_data["full_name"] = apify_data["full_name"]
+                    if apify_data.get("profile_pic_url"):
+                        platform_data["profile_pic_url"] = apify_data["profile_pic_url"]
+                    if apify_data.get("profile_pic_hd"):
+                        platform_data["profile_pic_hd"] = apify_data["profile_pic_hd"]
+
+                platform_data["flashapi_enrichment"] = flashapi_data if isinstance(flashapi_data, dict) else {}
+                return platform_data
+            except Exception as e:
+                # Fallback to standard flow on critical failure
+                pass
+
+    service_map = {
+        "instagram": InstagramDataService(),
+        "twitter": TwitterDataService(),
+        "telegram": TelegramDataService(),
+        "linkedin": LinkedInApifyService(),
+        "reddit": RedditApifyService(),
+        "facebook": FacebookApifyService(),
+    }
+    service = service_map.get(platform)
+    if service is None:
+        platform_data = {
+            "platform": platform,
+            "username": username,
+            "status": "manual_review_required",
+            "message": "Automated lookup is not configured for this platform.",
+        }
+    else:
+        try:
+            if platform == "telegram":
+                timeout = 35.0
+            elif platform in {"twitter", "linkedin", "reddit", "facebook"}:
+                # The shared Apify client applies its own bounded run timeout and
+                # aborts a still-running Actor if this outer guard is reached.
+                from backend.core.config import settings as _settings
+
+                timeout = _settings.apify_run_timeout_seconds + 15.0
+            else:
+                timeout = 10.0
+            platform_data = await _asyncio.wait_for(service.get_profile(username), timeout=timeout)
+        except Exception as exc:
+            platform_data = {
+                "success": False,
+                "platform": platform,
+                "username": username,
+                "error": f"Primary scraper timeout or error: {str(exc)}",
+            }
+
+    if platform == "instagram":
+        flashapi_data = await FlashAPIService().lookup_username(username, platform)
+    else:
+        flashapi_data = {
+            "provider": "flashapi1",
+            "status": "skipped",
+            "reason": "The configured FlashAPI endpoint is Instagram-specific.",
+            "username": username,
+            "platform": platform,
+        }
+    if platform == "instagram" and flashapi_data.get("status") == "completed":
+        platform_data = apply_flashapi_instagram_fallback(platform_data, flashapi_data)
+    platform_data["flashapi_enrichment"] = flashapi_data
+    if platform == "telegram":
+        platform_data["authorized_access_status"] = TelegramMTProtoService().status()
+    return platform_data
+
+
 async def cross_platform_search(username: str, platform_data: dict[str, Any], depth: int) -> list[dict[str, Any]]:
     results = await CrossPlatformSearchService().search_all_platforms(username)
     # Always include the six supported primary social surfaces; higher depth
@@ -739,6 +757,95 @@ def extract_database_lookup_terms(platform_data: dict[str, Any]) -> tuple[str | 
     return name, locations
 
 
+async def scrape_all_found_platforms(username: str, cross_matches: list[dict[str, Any]], primary_platform: str) -> dict[str, Any]:
+    import asyncio
+    from backend.services.twitter_apify_service import TwitterApifyService
+
+    scraped_data = {}
+    tasks = []
+    platforms = []
+
+    for match in cross_matches:
+        if not match.get("exists"):
+            continue
+        plat = match["platform"].lower()
+        if plat == primary_platform.lower():
+            continue
+        
+        if plat == "twitter":
+            tasks.append(TwitterApifyService().get_profile(username, max_items=5))
+            platforms.append("twitter")
+        elif plat == "reddit":
+            tasks.append(RedditApifyService().collect(urls=[f"https://www.reddit.com/user/{username}/"], max_posts_per_source=5))
+            platforms.append("reddit")
+        elif plat == "linkedin":
+            tasks.append(LinkedInApifyService().bulk_lookup(action="get-profiles", keywords=[f"https://www.linkedin.com/in/{username}"], query_mode="url", limit=1))
+            platforms.append("linkedin")
+        elif plat == "facebook":
+            tasks.append(FacebookApifyService().scrape_posts([f"https://www.facebook.com/{username}"], results_limit=5))
+            platforms.append("facebook")
+        elif plat == "telegram":
+            tasks.append(TelegramDataService().get_profile(username))
+            platforms.append("telegram")
+
+    if not tasks:
+        return scraped_data
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for plat, res in zip(platforms, results):
+        if isinstance(res, Exception):
+            scraped_data[plat] = {"success": False, "error": str(res)}
+        else:
+            scraped_data[plat] = res
+
+    return scraped_data
+
+
+def extract_combined_lookup_terms(scraped_data: dict[str, Any]) -> tuple[str | None, list[str]]:
+    names = []
+    locations = []
+    seen_locations = set()
+    
+    for plat, data in scraped_data.items():
+        if not isinstance(data, dict):
+            continue
+        # Extract name
+        raw_name = data.get("full_name") or data.get("display_name") or data.get("name")
+        if raw_name:
+            name_str = str(raw_name).strip()
+            if name_str and name_str not in names:
+                names.append(name_str)
+                
+        # Extract locations
+        raw_locs = []
+        for key in ("location", "contact_address", "address"):
+            val = data.get(key)
+            if val:
+                raw_locs.append(val)
+        tagged = data.get("post_location_tags")
+        if isinstance(tagged, list):
+            raw_locs.extend(tagged)
+            
+        for val in raw_locs:
+            if isinstance(val, dict):
+                val = (
+                    val.get("name")
+                    or val.get("location_name")
+                    or val.get("address")
+                    or val.get("city")
+                    or val.get("geographicArea")
+                )
+            loc = str(val or "").strip()
+            norm = loc.casefold()
+            if loc and norm not in seen_locations:
+                locations.append(loc)
+                seen_locations.add(norm)
+                
+    # Use the first non-empty name as the primary name
+    primary_name = names[0] if names else None
+    return primary_name, locations
+
+
 @router.post("/username", response_model=InvestigationResponse)
 async def investigate_username(request: UsernameInvestigationRequest) -> InvestigationResponse:
     investigation_id = generate_investigation_id()
@@ -755,10 +862,10 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         )
 
     if is_telegram_invite:
-        platform_data = await scrape_platform(request.username, "telegram")
         # Invite hashes are effectively bearer secrets. Keep the preview inside
         # the Telegram collector and never propagate the raw request to search,
         # database, AI, reporting, or cross-platform providers.
+        platform_data = await scrape_platform(request.username, "telegram")
         platform_data = redact_telegram_invite_payload(platform_data, request.username)
         skipped_reason = (
             "Telegram invite previews are isolated to the read-only Telegram "
@@ -769,7 +876,6 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
             "external_fanout_performed": False,
             "skipped_stages": [
                 "cross_platform_search",
-                "apify_social_fanout",
                 "internal_database_search",
                 "hitek_search",
                 "web_dorking",
@@ -812,6 +918,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
                 "status": "skipped",
                 "reason": skipped_reason,
             },
+            scraped_data=None,
             apify_social_results={
                 "status": "skipped",
                 "mode": "privacy_guard",
@@ -832,13 +939,43 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         _INVESTIGATION_STORE[investigation_id] = response
         return response
 
+    import asyncio as _asyncio
+
+    # 1. Run cross platform check to find where username exists
+    cross_matches = await CrossPlatformSearchService().search_all_platforms(request.username)
+    cross_matches = cross_matches[: max(request.correlation_depth * 4, 6)]
+    
+    # 2. Run all scrapers in parallel via the standard run_all_social_scrapers
     platform_profiles, instagram_posts, apify_social_results = (
         await run_all_social_scrapers(request.username)
     )
-    platform_data = platform_profiles[request.platform]
+    
+    scraped_data = platform_profiles
 
-    cross_matches = await cross_platform_search(request.username, platform_data, request.correlation_depth)
-    fetched_name, fetched_locations = extract_database_lookup_terms(platform_data)
+    # 3. Choose a primary platform_data
+    platform_data = None
+    if request.platform:
+        platform_data = platform_profiles.get(request.platform)
+    else:
+        for plat in ["instagram", "twitter", "telegram", "linkedin", "reddit", "facebook"]:
+            res = platform_profiles.get(plat)
+            if res and isinstance(res, dict) and res.get("success") is not False:
+                platform_data = res
+                break
+        if not platform_data:
+            platform_data = platform_profiles.get("instagram")
+            
+    if not platform_data:
+        platform_data = {
+            "success": False,
+            "platform": "instagram",
+            "username": request.username,
+            "error": "No platform profiles could be scraped successfully."
+        }
+
+    # 5. Extract combined name/location terms across all scraped data
+    fetched_name, fetched_locations = extract_combined_lookup_terms(scraped_data)
+    
     internal_matches = DatabaseLookup().search_all(
         request.username,
         name=fetched_name,
@@ -1033,7 +1170,6 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
                                     
                         return loc_matched
 
-                    # Filter the records
                     filtered_by_username = [
                         r for r in (hitek_matches.get("by_username") or [])
                         if name_matches(fetched_name, r.get("username")) and location_matches(fetched_locations, r.get("address"), r.get("data_source"))
@@ -1053,24 +1189,21 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
                         "by_email": filtered_by_email
                     }
             
-            # Merge
             internal_matches["by_username"].extend(hitek_matches.get("by_username") or [])
             internal_matches["by_phone"].extend(hitek_matches.get("by_phone") or [])
             internal_matches["by_email"].extend(hitek_matches.get("by_email") or [])
         except Exception:
             pass
 
-    # Add filter tracking metadata to the dict
     internal_matches["hitek_filtered"] = hitek_filtered
     internal_matches["hitek_filter_name"] = fetched_name if hitek_filtered else None
     internal_matches["hitek_filter_locations"] = fetched_locations if hitek_filtered else []
 
-    # All social Actors, including Instagram posts, have already been launched
-    # concurrently. Dorking remains downstream because it can use the primary
-    # profile's resolved full name.
+    # 6. Fetch Google Dorking results downstream using the resolved name
     dorking_results = await google_dork_username(request.username, platform_data)
 
-    if request.platform == "instagram" and isinstance(instagram_posts, dict):
+    is_instagram = (request.platform == "instagram") or (not request.platform and platform_data.get("platform") == "instagram")
+    if is_instagram and instagram_posts and isinstance(instagram_posts, dict):
         platform_content = {
             "platform": "instagram",
             "source": "apify_instagram_scraper",
@@ -1081,9 +1214,13 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     else:
         platform_content = extract_platform_content(platform_data)
 
-    # Merge primary profile hashtags and scraped post hashtags
-    all_hashtags = set(extract_hashtags(platform_data))
-    if request.platform == "instagram" and isinstance(instagram_posts, dict):
+    # 7. Merge hashtags across all scraped platforms
+    all_hashtags = set()
+    for p_data in scraped_data.values():
+        if isinstance(p_data, dict):
+            all_hashtags.update(extract_hashtags(p_data))
+            
+    if instagram_posts and isinstance(instagram_posts, dict):
         apify_tags = instagram_posts.get("all_hashtags") or []
         for tag in apify_tags:
             all_hashtags.add(str(tag).strip("#"))
@@ -1093,7 +1230,15 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     ai_result = await ai_correlate(platform_data, cross_matches)
     risk = await assess_risk(platform_data, ai_result)
 
-    posts_list = extract_content_texts(platform_content)
+    # 8. Merge posts list from all scraped platforms
+    posts_list = []
+    for p_data in scraped_data.values():
+        if isinstance(p_data, dict):
+            p_content = extract_platform_content(p_data)
+            if p_content:
+                posts_list.extend(extract_content_texts(p_content))
+    if not posts_list and platform_content:
+        posts_list = extract_content_texts(platform_content)
 
     dork_results_list = []
     if dorking_results and isinstance(dorking_results, dict):
@@ -1123,7 +1268,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         hashtag_intel_analyzer = HashtagIntelligenceAnalyzer()
         hashtag_intel = await hashtag_intel_analyzer.analyze_hashtags(
             hashtags=sorted(all_hashtags),
-            source=request.platform,
+            source=platform_data.get("platform", "instagram"),
             context={'username': request.username, 'hashtags': sorted(all_hashtags)}
         )
 
@@ -1148,7 +1293,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
 
     response = InvestigationResponse(
         investigation_id=investigation_id,
-        status=apify_social_results["status"],
+        status=apify_social_results.get("status", "completed") if isinstance(apify_social_results, dict) else "completed",
         platform_data=platform_data,
         cross_platform_matches=cross_matches,
         ai_correlation_result=ai_result,
@@ -1160,6 +1305,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
         platform_content=platform_content,
         intelligence_report=intelligence_report,
         reverse_lookup_results=reverse_lookup_results,
+        scraped_data=scraped_data,
         apify_social_results=apify_social_results,
         timestamp=datetime.now(UTC),
     )

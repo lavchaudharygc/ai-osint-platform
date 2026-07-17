@@ -26,7 +26,7 @@ class UsernameInvestigationRequest(BaseModel):
             "is also accepted and handled as a private, no-fanout preview."
         ),
     )
-    platform: SupportedPlatform = Field(..., examples=["instagram"])
+    platform: SupportedPlatform | None = Field(default=None, examples=["instagram"])
     case_id: str | None = Field(default=None, max_length=50)
     correlation_depth: int = Field(default=2, ge=1, le=5)
     filter_hitek: bool = Field(default=True)
@@ -46,6 +46,7 @@ class InvestigationResponse(BaseModel):
     platform_content: dict[str, Any] | None = None
     intelligence_report: dict[str, Any] | None = None
     reverse_lookup_results: dict[str, Any] | None = None
+    scraped_data: dict[str, Any] | None = None
     apify_social_results: dict[str, Any] | None = Field(
         default=None,
         description=(

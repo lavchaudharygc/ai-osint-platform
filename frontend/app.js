@@ -6,19 +6,6 @@ const DEMO_PASS = "testingaccount";
 let activeTab = "scan-console";
 let currentCaseId = "";
 let currentInvestigationData = null;
-let investigationRequestPending = false;
-
-const SOCIAL_ACTOR_DEFINITIONS = Object.freeze([
-    { key: "instagram_profile", label: "Instagram Profile" },
-    { key: "instagram_posts", label: "Instagram Posts & Reels" },
-    { key: "twitter_profile_and_replies", label: "Twitter/X Profile, Tweets & Replies" },
-    { key: "twitter_tweet_search_v2", label: "Twitter/X Tweet Search V2" },
-    { key: "reddit", label: "Reddit" },
-    { key: "linkedin_profiles", label: "LinkedIn Companies & Profiles" },
-    { key: "linkedin_posts_search", label: "LinkedIn Posts Search" },
-    { key: "facebook_pages", label: "Facebook Pages" },
-    { key: "facebook_posts", label: "Facebook Posts" }
-]);
 
 // Initialize app when DOM is fully loaded
 window.addEventListener("DOMContentLoaded", () => {
@@ -265,11 +252,6 @@ function resetConsoleWorkspace() {
 
 // Trigger Scan
 async function triggerInvestigation() {
-    if (investigationRequestPending) {
-        console.warn("[OSINT] Investigation request already running; duplicate all-Actor request ignored.");
-        return;
-    }
-
     const username = document.getElementById("target-username").value.trim();
     const platform = document.getElementById("target-platform").value;
     const depth = parseInt(document.getElementById("correlation-depth").value) || 2;
@@ -286,17 +268,6 @@ async function triggerInvestigation() {
 
     const loader = document.getElementById("console-loader");
     const stream = document.getElementById("console-stream");
-    const scanButton = document.getElementById("btn-run-investigation");
-
-    investigationRequestPending = true;
-    if (scanButton) {
-        scanButton.disabled = true;
-        scanButton.setAttribute("aria-busy", "true");
-        scanButton.textContent = "All Scrapers Running...";
-    }
-
-    const actorNames = SOCIAL_ACTOR_DEFINITIONS.map(actor => actor.label).join(", ");
-    console.info(`[OSINT] One-click fanout started for ${username}. All configured Apify Actors: ${actorNames}. Telegram lookup is included.`);
     
     if (stream) stream.innerHTML = "";
     if (loader) loader.style.display = "flex";
@@ -316,16 +287,38 @@ async function triggerInvestigation() {
         });
     }
 
-    try {
-        // The selected platform controls the primary profile view; the backend fans
-        // this single request out to every configured social Actor.
-        await logLine(`[SYS] OSINT ENGAGE FOR TARGET SUBJECT: ${username}`, 50);
-        await logLine(`[NET] PRIMARY REPORT VIEW: ${platform.toUpperCase()}`, 150);
-        await logLine(`[APIFY] LAUNCHING ALL CONFIGURED SOCIAL ACTORS...`, 100);
-        await logLine(`[TELEGRAM] QUEUING AUTHORIZED READ-ONLY LOOKUP...`, 100);
-        await logLine(`[SYS] INTEGRATING PROFILE DEPTH ENVELOPE: ${depth}`, 100);
-        await logLine(`[NET] INITIATING DIRECTORIES SEARCH ENRICHMENTS...`, 150);
+    // Simulated terminal logs
+    await logLine(`[SYS] OSINT ENGAGE FOR TARGET SUBJECT: ${username}`, 50);
+    await logLine(`[NET] ESTABLISHING INTERCEPT HOOK ON PLATFORM PORTAL: ${platform.toUpperCase()}`, 150);
+    await logLine(`[SYS] INTEGRATING PROFILE DEPTH ENVELOPE: ${depth}`, 100);
+    await logLine(`[NET] INITIATING DIRECTORIES SEARCH ENRICHMENTS...`, 150);
 
+    // Render placeholder pulsing skeleton cards in the results workspace
+    renderSkeletonDossier();
+
+    // Set up a dynamic log heartbeat during network wait
+    const progressMessages = [
+        "[SYS] Probing registry databases...",
+        "[NET] Performing DNS profile matching...",
+        "[SYS] Initiating Google Dorking pipelines...",
+        "[NET] Querying Apify social graph nodes...",
+        "[SYS] Aggregating MTProto metadata indices...",
+        "[NET] Running entity correlation models...",
+        "[SYS] Formatting secondary identity matrices...",
+        "[NET] Still negotiating backend resources...",
+        "[SYS] Extracting cross-link matches...",
+        "[NET] final stages of OSINT assembly..."
+    ];
+    let msgIdx = 0;
+    const heartbeatInterval = setInterval(() => {
+        if (msgIdx < progressMessages.length) {
+            logLine(progressMessages[msgIdx++], 0);
+        } else {
+            logLine("[SYS] Heavy processing, waiting for endpoint completion...", 0);
+        }
+    }, 4000);
+
+    try {
         const response = await fetch(`${API_BASE}/api/v1/investigation/username`, {
             method: "POST",
             headers: {
@@ -340,6 +333,8 @@ async function triggerInvestigation() {
             })
         });
 
+        clearInterval(heartbeatInterval);
+
         if (!response.ok) {
             throw new Error(`Endpoint error: ${response.status}`);
         }
@@ -352,21 +347,18 @@ async function triggerInvestigation() {
         await logLine(`[SYS] PARSING SOCIAL PLOTS CORRELATIONS...`, 100);
         await logLine(`[SYS] CONVERTING PAYLOADS TO VISUAL GRIDS...`, 50);
 
-        await new Promise(resolve => setTimeout(resolve, 500));
-        if (loader) loader.style.display = "none";
-        renderInvestigationResults(data);
+        setTimeout(() => {
+            if (loader) loader.style.display = "none";
+            renderInvestigationResults(data);
+        }, 500);
 
     } catch (err) {
+        clearInterval(heartbeatInterval);
         await logLine(`[ERR] THREAD STOPPED PREMATURELY. CAUSE: ${err.message}`, 200);
-        alert("SCAN INTERRUPTED. VERIFY GATEWAY CONFIGURATION AND SERVER LOGS.");
-        if (loader) loader.style.display = "none";
-    } finally {
-        investigationRequestPending = false;
-        if (scanButton) {
-            scanButton.disabled = false;
-            scanButton.removeAttribute("aria-busy");
-            scanButton.textContent = "Run All Social Scrapers";
-        }
+        setTimeout(() => {
+            alert("SCAN INTERRUPTED. VERIFY GATEWAY CONFIGURATION AND SERVER LOGS.");
+            if (loader) loader.style.display = "none";
+        }, 1000);
     }
 }
 
@@ -382,67 +374,7 @@ function renderInvestigationResults(data) {
     const titleCase = document.getElementById("title-case-id");
     if (titleCase) titleCase.innerText = currentCaseId;
 
-    // Target Info Card
-    const pData = data.platform_data || {};
-    const avatarContainer = document.getElementById("target-avatar-container");
-    const avatarChar = document.getElementById("target-avatar-char");
-    const profName = document.getElementById("target-profile-name");
-    const profPlatform = document.getElementById("target-profile-platform");
-    const profFullname = document.getElementById("target-profile-fullname");
-    const profBio = document.getElementById("target-profile-bio");
-    const profFollowers = document.getElementById("target-profile-followers");
-    const profFollowing = document.getElementById("target-profile-following");
-    const profPosts = document.getElementById("target-profile-posts");
-    const profVerified = document.getElementById("target-profile-verified");
-    const profSource = document.getElementById("target-profile-source");
-    const profStatus = document.getElementById("target-profile-status");
-    const profTime = document.getElementById("target-profile-time");
-
-    // Dynamic Avatar Picture rendering with character fallback on error
-    if (avatarContainer) {
-        let profilePic = pData.profile_pic_hd || pData.profile_pic_url;
-        if (profilePic && !profilePic.startsWith("data:")) {
-            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
-        }
-        if (profilePic) {
-            avatarContainer.innerHTML = `
-                <img src="${profilePic}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" 
-                     onerror="this.style.display='none'; document.getElementById('target-avatar-fallback').style.display='flex';">
-                <div id="target-avatar-fallback" style="display:none; width:100%; height:100%; align-items:center; justify-content:center; font-weight:700; color:var(--accent-blue); font-size:1.1rem;">
-                    ${(pData.username || "U").substring(0, 2).toUpperCase()}
-                </div>
-            `;
-        } else {
-            avatarContainer.innerHTML = `
-                <div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--accent-blue); font-size:1.1rem;">
-                    ${(pData.username || "U").substring(0, 2).toUpperCase()}
-                </div>
-            `;
-        }
-    } else if (avatarChar) {
-        avatarChar.innerText = (pData.username || "U").substring(0, 2).toUpperCase();
-    }
-
-    if (profName) profName.innerText = pData.username || "unknown";
-    if (profPlatform) profPlatform.innerText = pData.platform || "instagram";
-    if (profFullname) profFullname.innerText = pData.full_name || "N/A";
-    if (profBio) profBio.innerText = pData.bio || "No biography details cached.";
-    if (profFollowers) profFollowers.innerText = (pData.follower_count !== undefined ? pData.follower_count : (pData.followers || 0)).toLocaleString();
-    if (profFollowing) profFollowing.innerText = (pData.following_count !== undefined ? pData.following_count : (pData.following || 0)).toLocaleString();
-    if (profPosts) profPosts.innerText = (pData.post_count !== undefined ? pData.post_count : (pData.posts_count || 0)).toLocaleString();
-    if (profVerified) profVerified.innerText = pData.is_verified !== undefined ? pData.is_verified.toString().toUpperCase() : "FALSE";
-    if (profSource) {
-        profSource.innerText = (pData.source || "scraper").toUpperCase().replace(/_/g, ' ');
-        if (pData.source === "flashapi_fallback") {
-            profSource.className = "mono blue-text";
-        } else {
-            profSource.className = "mono gold-text";
-        }
-    }
-    if (profStatus) profStatus.innerText = data.status || "completed";
-    
-    const timeStr = pData.scraped_at || data.timestamp || new Date().toISOString();
-    if (profTime) profTime.innerText = timeStr.replace("T", " ").substring(0, 19);
+    // Legcay Subject Profile details elements have been removed from the HTML as they are now rendered dynamically inside platform dossier cards
 
     // Threat Gauge Circle Progress
     const risk = data.risk_assessment || { score: 0, level: "low" };
@@ -588,52 +520,48 @@ function renderInvestigationResults(data) {
         const plats = ai.matching_platforms || [];
         if (plats.length > 0) {
             plats.forEach(plat => {
-                const badge = document.createElement("span");
-                badge.className = "profile-platform-badge";
-                badge.style.marginTop = "0";
-                badge.innerText = plat;
-                aiPlatforms.appendChild(badge);
+                const platData = data.scraped_data ? data.scraped_data[plat.toLowerCase()] : null;
+                let profilePic = null;
+                if (platData) {
+                    profilePic = platData.profile_pic_hd || platData.profile_pic_url || (platData.profile && (platData.profile.profile_pic_hd || platData.profile.profile_pic_url));
+                }
+                
+                if (profilePic && !profilePic.startsWith("data:")) {
+                    profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+                }
+                
+                const capsule = document.createElement("a");
+                capsule.href = platData?.url || (data.cross_platform_matches?.find(m => m.platform.toLowerCase() === plat.toLowerCase())?.url) || "#";
+                capsule.target = "_blank";
+                capsule.className = "profile-capsule";
+                capsule.style.cssText = "display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-glow); border-radius: 20px; color: var(--text-primary); text-decoration: none; font-size: 0.75rem; transition: all 0.2s; cursor: pointer; margin-right: 6px; margin-bottom: 6px;";
+                
+                capsule.onmouseover = () => {
+                    capsule.style.borderColor = "var(--accent-blue)";
+                    capsule.style.background = "rgba(0, 188, 212, 0.05)";
+                };
+                capsule.onmouseout = () => {
+                    capsule.style.borderColor = "var(--border-glow)";
+                    capsule.style.background = "rgba(255, 255, 255, 0.03)";
+                };
+
+                const imgHtml = profilePic
+                    ? `<img src="${profilePic}" style="width: 18px; height: 18px; border-radius: 50%; object-fit: cover;" onerror="this.style.display='none'; this.parentNode.innerHTML='<span style=\'font-size:0.65rem; font-weight:bold; color:var(--accent-gold);\'>${plat.substring(0,2).toUpperCase()}</span>';">`
+                    : `<span style="font-size: 0.65rem; font-weight: bold; color: var(--accent-gold);">${plat.substring(0,2).toUpperCase()}</span>`;
+                
+                capsule.innerHTML = `
+                    ${imgHtml}
+                    <span style="font-weight: 600;">${plat}</span>
+                `;
+                aiPlatforms.appendChild(capsule);
             });
         } else {
             aiPlatforms.innerHTML = `<span style="font-size:0.75rem; font-style:italic; color:var(--text-secondary);">No indicators found</span>`;
         }
     }
 
-    // Cross Platform Grid
-    const crossGrid = document.getElementById("cross-platform-grid");
-    const crossCount = document.getElementById("cross-matches-count");
-    
-    if (crossGrid) {
-        crossGrid.innerHTML = "";
-        const matches = data.cross_platform_matches || [];
-        
-        if (crossCount) crossCount.innerText = `Matrices Evaluated: ${matches.length}`;
-
-        matches.forEach(match => {
-            const card = document.createElement("a");
-            card.className = "platform-match-card";
-            card.href = match.url || "#";
-            card.target = "_blank";
-
-            const svgIcon = getPlatformSVG(match.platform);
-            const exists = match.exists;
-            const badgeClass = exists ? "match-badge match-found" : "match-badge match-absent";
-            const badgeText = exists ? "FOUND" : "ABSENT";
-            const codeText = match.status_code ? `HTTP ${match.status_code}` : "TIMEOUT";
-
-            card.innerHTML = `
-                <div class="platform-match-header">
-                    <span class="platform-name">${match.platform}</span>
-                    <span class="platform-icon">${svgIcon}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">
-                    <span class="${badgeClass}">${badgeText}</span>
-                    <span class="platform-code">${codeText}</span>
-                </div>
-            `;
-            crossGrid.appendChild(card);
-        });
-    }
+    // Render rich platform intelligence dossier cards
+    renderPlatformDossier(data);
 
     // Internal Database Matches rendering
     const dbMatches = data.internal_database_matches || {};
@@ -844,18 +772,32 @@ function renderInvestigationResults(data) {
             }
         } else {
             const results = dorking.results || [];
+            
+            // Filter out social platform dorks from the general discovery card
+            const socialDomains = ["instagram.com", "twitter.com", "x.com", "t.me", "telegram.me", "linkedin.com", "reddit.com", "facebook.com", "github.com", "youtube.com", "pinterest.com"];
+            const generalResults = results.filter(r => {
+                const url = (r.url || "").toLowerCase();
+                return !socialDomains.some(d => url.includes(d));
+            });
+
             if (dorkCountEl) {
-                dorkCountEl.innerText = `Results: ${results.length} Found`;
+                dorkCountEl.innerText = `Results: ${generalResults.length} General Hits`;
                 dorkCountEl.style.color = "var(--accent-blue)";
             }
             
-            if (results.length === 0) {
-                dorkContainerEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:15px;">Google search indexing returned 0 matching organic items.</span>`;
+            if (generalResults.length === 0) {
+                dorkContainerEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:15px;">Google search indexing returned 0 matching general items.</span>`;
             } else {
-                const grouped = dorking.grouped_by_category || {};
+                // Group general results by category
+                const generalGrouped = {};
+                generalResults.forEach(r => {
+                    const cat = r.category || "general";
+                    if (!generalGrouped[cat]) generalGrouped[cat] = [];
+                    generalGrouped[cat].push(r);
+                });
                 
-                Object.keys(grouped).forEach(cat => {
-                    const catResults = grouped[cat] || [];
+                Object.keys(generalGrouped).forEach(cat => {
+                    const catResults = generalGrouped[cat] || [];
                     if (catResults.length === 0) return;
                     
                     const catHeader = document.createElement("div");
@@ -888,240 +830,6 @@ function renderInvestigationResults(data) {
             }
         }
     }
-
-    // Dedicated results from the mandatory one-click social Actor fanout.
-    renderApifySocialResults(data.apify_social_results);
-
-    // Instagram Posts Intelligence Card
-    renderInstagramPosts(data.instagram_posts);
-}
-
-function createSafeTextElement(tagName, className, value) {
-    const element = document.createElement(tagName);
-    if (className) element.className = className;
-    element.textContent = value == null ? "" : String(value);
-    return element;
-}
-
-function readableKey(value) {
-    return String(value || "")
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, char => char.toUpperCase());
-}
-
-function safeDisplayValue(value, fallback = "—") {
-    if (value === undefined || value === null || value === "") return fallback;
-    if (typeof value === "string") {
-        return value.length > 500 ? `${value.substring(0, 497)}...` : value;
-    }
-    if (typeof value === "number" || typeof value === "boolean") {
-        return String(value);
-    }
-
-    try {
-        const serialized = JSON.stringify(value);
-        return serialized.length > 500 ? `${serialized.substring(0, 497)}...` : serialized;
-    } catch (error) {
-        return fallback;
-    }
-}
-
-function actorErrorText(error) {
-    if (!error) return "";
-    if (typeof error === "string") return safeDisplayValue(error, "");
-    if (typeof error === "object") {
-        return safeDisplayValue(error.message || error.detail || error.error || error);
-    }
-    return String(error);
-}
-
-function resolveActorStatus(result) {
-    if (!result || typeof result !== "object") return "not returned";
-    if (result.status !== undefined && result.status !== null && result.status !== "") {
-        return String(result.status);
-    }
-    const run = result.run && typeof result.run === "object" ? result.run : {};
-    if (run.run_status || run.status) return String(run.run_status || run.status);
-    if (result.success === true) return "succeeded";
-    if (result.configured === false) return "not configured";
-    if (result.error || result.success === false) return "failed";
-    return "unknown";
-}
-
-function actorStatusClass(status) {
-    const normalized = String(status || "").toLowerCase().replace(/[\s-]+/g, "_");
-    if (normalized.includes("partial") || normalized.includes("with_errors")) {
-        return "actor-status-warning";
-    }
-    if (["succeeded", "success", "completed", "complete", "found", "found_with_authorized_session"].includes(normalized)) {
-        return "actor-status-success";
-    }
-    if (["running", "ready", "queued", "pending", "in_progress"].includes(normalized)) {
-        return "actor-status-running";
-    }
-    if (normalized.includes("fail") || normalized.includes("error") || normalized.includes("abort") || normalized.includes("timeout") || normalized === "timed_out") {
-        return "actor-status-failed";
-    }
-    if (["partial", "not_configured", "not configured", "disabled", "skipped"].includes(normalized)) {
-        return "actor-status-warning";
-    }
-    return "actor-status-neutral";
-}
-
-function numericCount(value) {
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
-    return null;
-}
-
-function resolveActorTotal(result) {
-    if (!result || typeof result !== "object") return null;
-    const directKeys = ["total", "count", "total_results", "results_count", "item_count"];
-    for (const key of directKeys) {
-        const count = numericCount(result[key]);
-        if (count !== null) return count;
-    }
-
-    const arrayKeys = ["data", "results", "items", "posts", "profiles", "pages", "tweets"];
-    for (const key of arrayKeys) {
-        if (Array.isArray(result[key])) return result[key].length;
-    }
-
-    if (result.data && typeof result.data === "object") {
-        for (const key of directKeys) {
-            const count = numericCount(result.data[key]);
-            if (count !== null) return count;
-        }
-        for (const key of arrayKeys) {
-            if (Array.isArray(result.data[key])) return result.data[key].length;
-        }
-    }
-    return null;
-}
-
-function appendActorMetadata(list, label, value) {
-    const row = document.createElement("div");
-    row.className = "actor-meta-row";
-    row.appendChild(createSafeTextElement("dt", "actor-meta-label", label));
-    row.appendChild(createSafeTextElement("dd", "actor-meta-value mono", safeDisplayValue(value)));
-    list.appendChild(row);
-}
-
-function buildActorResultCard(definition, result) {
-    const actorResult = result && typeof result === "object" ? result : null;
-    const card = document.createElement("article");
-    card.className = "actor-result-card";
-
-    const header = document.createElement("div");
-    header.className = "actor-card-header";
-    const titleGroup = document.createElement("div");
-    titleGroup.className = "actor-title-group";
-    titleGroup.appendChild(createSafeTextElement("h4", "actor-card-title", definition.label));
-    titleGroup.appendChild(createSafeTextElement("span", "actor-card-key mono", definition.key));
-
-    const status = safeDisplayValue(resolveActorStatus(actorResult), "unknown");
-    const statusBadge = createSafeTextElement("span", `actor-status-badge ${actorStatusClass(status)}`, status);
-    header.appendChild(titleGroup);
-    header.appendChild(statusBadge);
-    card.appendChild(header);
-
-    const metadata = document.createElement("dl");
-    metadata.className = "actor-meta-list";
-    const run = actorResult && actorResult.run && typeof actorResult.run === "object" ? actorResult.run : {};
-    const total = resolveActorTotal(actorResult);
-    const configured = actorResult && typeof actorResult.configured === "boolean"
-        ? (actorResult.configured ? "Yes" : "No")
-        : "Unknown";
-    const succeeded = actorResult && typeof actorResult.success === "boolean"
-        ? (actorResult.success ? "Yes" : "No")
-        : "Unknown";
-
-    appendActorMetadata(metadata, definition.telegram ? "Source" : "Actor ID", actorResult && (actorResult.actor_id || (definition.telegram ? actorResult.source : null)));
-    appendActorMetadata(metadata, "Configured", configured);
-    appendActorMetadata(metadata, "Success", succeeded);
-    appendActorMetadata(metadata, "Items", total === null ? null : total.toLocaleString());
-    appendActorMetadata(metadata, "Run status", run.run_status || run.status || (actorResult && actorResult.run_status));
-    appendActorMetadata(metadata, "Run ID", run.run_id || run.id || (actorResult && actorResult.run_id));
-    appendActorMetadata(metadata, "Dataset ID", run.dataset_id || run.default_dataset_id || (actorResult && actorResult.dataset_id));
-
-    if (definition.telegram && actorResult) {
-        appendActorMetadata(metadata, "Collection", actorResult.collection_method);
-        appendActorMetadata(metadata, "History accessed", typeof actorResult.message_history_accessed === "boolean" ? (actorResult.message_history_accessed ? "Yes" : "No") : null);
-    }
-    card.appendChild(metadata);
-
-    const errorText = actorErrorText(actorResult && actorResult.error);
-    if (errorText) {
-        const errorBox = document.createElement("div");
-        errorBox.className = "actor-error-box";
-        errorBox.appendChild(createSafeTextElement("strong", "actor-error-label", "Error"));
-        errorBox.appendChild(createSafeTextElement("span", "actor-error-text", errorText));
-        card.appendChild(errorBox);
-    }
-
-    return card;
-}
-
-function appendSocialSummary(summaryContainer, label, value) {
-    const item = document.createElement("span");
-    item.className = "apify-summary-item";
-    item.appendChild(createSafeTextElement("strong", "", `${readableKey(label)}: `));
-    item.appendChild(createSafeTextElement("span", "", safeDisplayValue(value)));
-    summaryContainer.appendChild(item);
-}
-
-function renderApifySocialResults(envelope) {
-    const row = document.getElementById("apify-social-results-row");
-    const grid = document.getElementById("apify-social-actors-grid");
-    const overallStatus = document.getElementById("apify-social-overall-status");
-    const identityNotice = document.getElementById("apify-social-identity-notice");
-    const summaryContainer = document.getElementById("apify-social-summary");
-    if (!row || !grid || !overallStatus || !identityNotice || !summaryContainer) return;
-
-    grid.replaceChildren();
-    summaryContainer.replaceChildren();
-    identityNotice.textContent = "";
-
-    if (!envelope || typeof envelope !== "object") {
-        row.style.display = "none";
-        return;
-    }
-
-    row.style.display = "grid";
-    const status = safeDisplayValue(envelope.status, "unknown");
-    overallStatus.textContent = status;
-    overallStatus.className = `actor-status-badge ${actorStatusClass(status)}`;
-
-    const notice = safeDisplayValue(
-        envelope.identity_notice,
-        "Same-username results are investigative leads and do not by themselves confirm that every account belongs to the same person."
-    );
-    identityNotice.textContent = notice;
-
-    if (envelope.mode !== undefined && envelope.mode !== null) {
-        appendSocialSummary(summaryContainer, "mode", envelope.mode);
-    }
-
-    const summary = envelope.summary;
-    if (summary && typeof summary === "object" && !Array.isArray(summary)) {
-        Object.entries(summary).forEach(([key, value]) => appendSocialSummary(summaryContainer, key, value));
-    } else if (summary !== undefined && summary !== null && summary !== "") {
-        appendSocialSummary(summaryContainer, "summary", summary);
-    }
-
-    const actors = envelope.actors && typeof envelope.actors === "object" ? envelope.actors : {};
-    const returnedActorCount = SOCIAL_ACTOR_DEFINITIONS.filter(definition => actors[definition.key] && typeof actors[definition.key] === "object").length;
-    if (!summaryContainer.childElementCount) {
-        appendSocialSummary(summaryContainer, "actor envelopes", `${returnedActorCount}/${SOCIAL_ACTOR_DEFINITIONS.length}`);
-    }
-
-    SOCIAL_ACTOR_DEFINITIONS.forEach(definition => {
-        grid.appendChild(buildActorResultCard(definition, actors[definition.key]));
-    });
-    grid.appendChild(buildActorResultCard(
-        { key: "telegram", label: "Telegram Authorized Lookup", telegram: true },
-        envelope.telegram
-    ));
 }
 
 function renderInstagramPosts(igPosts) {
@@ -1802,5 +1510,780 @@ async function updateHiTekDiagnostics() {
     } catch (e) {
         console.error("Failed to fetch Hi-Tek diagnostics:", e);
     }
+}
+
+
+
+// Render dynamic Platform Dossier Cards (IdCrawl-style)
+function renderPlatformDossier(data) {
+    const container = document.getElementById("platform-dossier-container");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const matches = data.cross_platform_matches || [];
+    const pData = data.platform_data || {};
+    const primaryPlatform = pData.platform;
+    const dorking = data.dorking_results || {};
+    const dorkResults = dorking.results || [];
+    const searchedUsername = pData.username || document.getElementById("target-username")?.value || "";
+
+    // Helper to check if a dorking result belongs to a platform
+    const getPlatformDorks = (platform) => {
+        const domainMap = {
+            instagram: ["instagram.com"],
+            twitter: ["twitter.com", "x.com"],
+            telegram: ["t.me", "telegram.me"],
+            linkedin: ["linkedin.com"],
+            reddit: ["reddit.com"],
+            facebook: ["facebook.com"],
+            github: ["github.com"],
+            youtube: ["youtube.com"],
+            pinterest: ["pinterest.com"]
+        };
+        const domains = domainMap[platform] || [];
+        return dorkResults.filter(r => {
+            const url = (r.url || "").toLowerCase();
+            return domains.some(d => url.includes(d));
+        });
+    };
+
+    matches.forEach(match => {
+        const isPrimary = match.platform === primaryPlatform;
+        const exists = match.exists;
+        const card = document.createElement("div");
+        card.className = `platform-intel-card ${isPrimary ? 'status-primary' : (exists ? 'status-found' : 'status-absent')}`;
+
+        const svgIcon = getPlatformSVG(match.platform);
+        const badgeText = exists ? "Profile found" : "Profile absent";
+        const badgeClass = exists ? "match-badge match-found" : "match-badge match-absent";
+        const codeText = match.status_code ? `HTTP ${match.status_code}` : (exists ? "RESOLVED" : "TIMEOUT");
+
+        // Filter dorks and posts
+        const platformDorks = getPlatformDorks(match.platform);
+        let hasExtraContent = false;
+        let collapsibleId = `collapse-${match.platform}`;
+        
+        const preScraped = data.scraped_data ? data.scraped_data[match.platform.toLowerCase()] : null;
+        const activeProfileData = isPrimary ? (pData && pData.success !== false ? pData : preScraped) : preScraped;
+        const isExpandedByDefault = exists && activeProfileData && activeProfileData.success !== false && activeProfileData.status !== "error" && !activeProfileData.error;
+        
+        const isInstagramWithPosts = match.platform === "instagram" && data.instagram_posts && data.instagram_posts.posts && data.instagram_posts.posts.length > 0;
+        const isScrapable = ["twitter", "reddit", "linkedin", "facebook", "telegram"].includes(match.platform.toLowerCase());
+        
+        if (exists && (isPrimary || platformDorks.length > 0 || isInstagramWithPosts || isScrapable)) {
+            hasExtraContent = true;
+        }
+
+        const btnRotation = isExpandedByDefault ? "transform: rotate(180deg);" : "";
+        let headerActionHTML = "";
+        if (hasExtraContent) {
+            headerActionHTML = `
+                <div class="platform-intel-toggle-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; transition: transform 0.2s; ${btnRotation}"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+            `;
+        }
+
+        // Header section HTML
+        let html = `
+            <div class="platform-intel-header" ${hasExtraContent ? `style="cursor: pointer;" onclick="togglePlatformCardCollapse('${collapsibleId}', this, '${match.platform}', '${searchedUsername}')"` : ""}>
+                <div class="platform-intel-title-group">
+                    <span style="display:flex; align-items:center;">${svgIcon}</span>
+                    <span class="platform-intel-name">${match.platform}</span>
+                </div>
+                <div class="platform-intel-badges">
+                    <span class="${badgeClass}">${badgeText}</span>
+                    <span class="platform-code" style="font-size:0.7rem; opacity:0.8;">${codeText}</span>
+                    ${headerActionHTML}
+                </div>
+            </div>
+        `;
+
+        if (exists) {
+            let profileHTML = "";
+            
+            // Build the card body matching the screenshot layout
+            if (activeProfileData && activeProfileData.success !== false) {
+                const name = activeProfileData.full_name || activeProfileData.name || searchedUsername;
+                const handle = activeProfileData.username || activeProfileData.screen_name || searchedUsername;
+                const bio = activeProfileData.bio || activeProfileData.description || "";
+                const followers = activeProfileData.follower_count !== undefined ? activeProfileData.follower_count : (activeProfileData.followers || 0);
+                const following = activeProfileData.following_count !== undefined ? activeProfileData.following_count : (activeProfileData.following || 0);
+                const postCount = activeProfileData.post_count !== undefined ? activeProfileData.post_count : (activeProfileData.posts_count || activeProfileData.statuses_count || 0);
+                const website = activeProfileData.website || activeProfileData.profile_url || match.url;
+
+                let profilePic = activeProfileData.profile_pic_hd || activeProfileData.profile_pic_url;
+                if (profilePic && !profilePic.startsWith("data:")) {
+                    profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+                }
+
+                const avatarHTML = profilePic
+                    ? `<img src="${profilePic}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" onerror="this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\'>${match.platform.substring(0,2).toUpperCase()}</span>';">`
+                    : `<span class="scraped-profile-avatar-placeholder">${match.platform.substring(0,2).toUpperCase()}</span>`;
+
+                let followersText = followers ? `${Number(followers).toLocaleString()} followers` : "";
+                if (following) followersText += ` · ${Number(following).toLocaleString()} following`;
+                if (postCount) followersText += ` · ${Number(postCount).toLocaleString()} posts`;
+
+                profileHTML = `
+                    <div class="scraped-profile-row" style="display: flex; gap: 15px; margin-top: 15px; align-items: start;">
+                        <div class="scraped-profile-avatar-container" style="width: 70px; height: 70px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); flex-shrink: 0;">
+                            ${avatarHTML}
+                        </div>
+                        <div class="scraped-profile-info" style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+                            <div class="scraped-profile-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 5px;">
+                                <span class="display-name">${name}</span>
+                                <span class="handle" style="color: var(--text-secondary); font-weight: normal; font-size: 0.85rem;">- @${handle}</span>
+                            </div>
+                            ${bio ? `<div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; white-space: pre-line;">${bio}</div>` : ""}
+                            ${website ? `<div class="scraped-profile-website" style="font-size: 0.78rem; display: flex; align-items: center; gap: 4px;"><span style="opacity: 0.6;">🔗</span> <a href="${website}" target="_blank" style="color: var(--accent-blue); text-decoration: none; word-break: break-all;">${website}</a></div>` : ""}
+                            ${followersText ? `<div class="scraped-profile-followers" style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 600; margin-top: 2px;">${followersText}</div>` : ""}
+                        </div>
+                    </div>
+                `;
+            } else if (match.platform === "telegram" && match.public_evidence) {
+                const ev = match.public_evidence;
+                const members = ev.page_extra && ev.page_extra.participants_count ? ev.page_extra.participants_count : 0;
+                profileHTML = `
+                    <div class="scraped-profile-row" style="display: flex; gap: 15px; margin-top: 15px; align-items: start;">
+                        <div class="scraped-profile-avatar-container" style="width: 70px; height: 70px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); flex-shrink: 0;">
+                            <span class="scraped-profile-avatar-placeholder">TG</span>
+                        </div>
+                        <div class="scraped-profile-info" style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+                            <div class="scraped-profile-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 5px;">
+                                <span class="display-name">${ev.full_name || "Private/Group"}</span>
+                                <span class="handle" style="color: var(--text-secondary); font-weight: normal; font-size: 0.85rem;">- Entity Type: ${(ev.entity_type || "invite_link").toUpperCase()}</span>
+                            </div>
+                            <div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary);">Bio Present: ${ev.bio_present.toString().toUpperCase()}</div>
+                            ${members ? `<div class="scraped-profile-followers" style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 600;">${Number(members).toLocaleString()} members</div>` : ""}
+                            <div style="font-size: 0.78rem; margin-top: 2px;">
+                                <a href="${match.url}" target="_blank" style="color: var(--accent-blue); text-decoration: none; font-weight: 600;">Open Public Channel/Invite Link ↗</a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Secondary found profile with URL (not scraped yet)
+                profileHTML = `
+                    <div class="scraped-profile-row placeholder-row" style="display: flex; gap: 15px; margin-top: 15px; align-items: center;">
+                        <div class="scraped-profile-avatar-container" style="width: 70px; height: 70px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.15); flex-shrink: 0;">
+                            <span style="font-size: 1.2rem; color: var(--text-secondary); font-weight: 600;">?</span>
+                        </div>
+                        <div class="scraped-profile-info" style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+                            <div class="scraped-profile-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 5px;">
+                                <span class="display-name">@${searchedUsername}</span>
+                            </div>
+                            <div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary);">Public profile found. Scrape details to load bio, stats, and timeline.</div>
+                            <div style="font-size: 0.78rem; display: flex; gap: 10px; align-items: center; margin-top: 2px;">
+                                <a href="${match.url}" target="_blank" style="color: var(--accent-blue); text-decoration: none; font-weight: 600;">Open Profile ↗</a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            html += profileHTML;
+
+            // Collapsible details section (posts and dorks)
+            if (hasExtraContent) {
+                let postsHTML = "";
+                let dorksHTML = "";
+
+                if (isInstagramWithPosts) {
+                    const igPosts = data.instagram_posts;
+                    const posts = igPosts.posts || [];
+                    postsHTML = `
+                        <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.05); padding-top:15px;">
+                            <div class="platform-intel-section-title">Recent Instagram Feed (${posts.length} posts)</div>
+                            <div style="display:flex; flex-direction:column; gap:10px; max-height:300px; overflow-y:auto; padding-right:5px;">
+                    `;
+                    posts.forEach(post => {
+                        const dateStr = post.taken_at ? new Date(post.taken_at * 1000).toLocaleString() : "Unknown date";
+                        const mediaIcon = post.product_type === "clips" ? "🎬" : (post.media_type === "carousel" ? "Carousel 🎠" : "Photo 🖼️");
+                        const caption = (post.caption || "").trim().substring(0, 150);
+                        postsHTML += `
+                            <div style="background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.04); border-radius:6px; padding:10px; font-size:0.8rem; display:flex; flex-direction:column; gap:4px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="font-size:0.7rem; color:var(--text-secondary);">${mediaIcon} · ${dateStr}</span>
+                                    <span style="font-size:0.7rem; color:var(--accent-blue);">❤️ ${post.like_count || 0} 💬 ${post.comment_count || 0}</span>
+                                </div>
+                                ${caption ? `<div style="color:var(--text-primary); line-height:1.4;">${caption}${post.caption.length > 150 ? '...' : ''}</div>` : ""}
+                            </div>
+                        `;
+                    });
+                    postsHTML += `</div></div>`;
+                }
+
+                if (platformDorks.length > 0) {
+                    dorksHTML = `
+                        <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.05); padding-top:15px;">
+                            <div class="platform-intel-section-title">Correlated Web Discovery Mentions (${platformDorks.length})</div>
+                            <div style="display:flex; flex-direction:column; gap:8px; max-height:200px; overflow-y:auto; padding-right:5px;">
+                    `;
+                    platformDorks.forEach(dork => {
+                        dorksHTML += `
+                            <div style="background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.04); border-radius:6px; padding:8px 10px; font-size:0.8rem; display:flex; flex-direction:column; gap:2px;">
+                                <a href="${dork.url}" target="_blank" style="color:var(--accent-blue); text-decoration:none; font-weight:600; line-height:1.3;">${dork.title || "Web Match"}</a>
+                                <div style="color:var(--text-secondary); font-size:0.75rem; line-height:1.4;">${dork.snippet || ""}</div>
+                            </div>
+                        `;
+                    });
+                    dorksHTML += `</div></div>`;
+                }
+
+                let scrapedDetailsHTML = "";
+                if (preScraped) {
+                    const tempDiv = document.createElement("div");
+                    renderScrapedDetails(match.platform, preScraped, tempDiv, searchedUsername, true);
+                    scrapedDetailsHTML = tempDiv.innerHTML;
+                }
+
+                const initialStatus = preScraped ? "scraped" : (isPrimary ? "scraped" : "not_scraped");
+                const expandedClass = isExpandedByDefault ? "expanded" : "";
+                html += `
+                    <div id="${collapsibleId}" class="platform-intel-collapsible ${expandedClass}" data-scraped-status="${initialStatus}">
+                        ${scrapedDetailsHTML}
+                        ${postsHTML}
+                        ${dorksHTML}
+                    </div>
+                `;
+            }
+        } else {
+            // Absent profile state
+            html += `
+                <div style="font-size:0.8rem; color:var(--text-secondary); font-style:italic; margin-top:10px;">
+                    No public footprint detected on ${match.platform} for username "${searchedUsername}".
+                </div>
+            `;
+        }
+
+        card.innerHTML = html;
+        container.appendChild(card);
+    });
+}
+
+// Collapsible Toggle Helper
+function togglePlatformCardCollapse(id, btn, platform, username) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isExpanded = el.classList.contains("expanded");
+    
+    // Close or open
+    if (isExpanded) {
+        el.classList.remove("expanded");
+        btn.querySelector("span").innerText = "Show Details";
+        btn.querySelector("svg").style.transform = "rotate(0deg)";
+    } else {
+        el.classList.add("expanded");
+        btn.querySelector("span").innerText = "Hide Details";
+        btn.querySelector("svg").style.transform = "rotate(180deg)";
+        
+        // Auto-scrape on expand if not yet scraped
+        const status = el.getAttribute("data-scraped-status");
+        if (status === "not_scraped" && platform && username) {
+            scrapePlatformOnDemand(platform, username, id, btn);
+        }
+    }
+}
+
+// Static Collapsible Toggle Helper
+function toggleStaticCardCollapse(id, btn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const collapsible = el.querySelector(".platform-intel-collapsible");
+    if (!collapsible) return;
+    
+    const isExpanded = collapsible.classList.contains("expanded");
+    const span = btn.querySelector("span");
+    const svg = btn.querySelector("svg");
+    
+    if (isExpanded) {
+        collapsible.classList.remove("expanded");
+        if (span) span.innerText = "Show Details";
+        if (svg) svg.style.transform = "rotate(0deg)";
+    } else {
+        collapsible.classList.add("expanded");
+        if (span) span.innerText = "Hide Details";
+        if (svg) svg.style.transform = "rotate(180deg)";
+    }
+}
+
+// Deep Scan Trigger Helper
+function triggerDeepScanFor(platform, username) {
+    const platEl = document.getElementById("target-platform");
+    const userEl = document.getElementById("target-username");
+    if (platEl) platEl.value = platform;
+    if (userEl) userEl.value = username;
+    triggerInvestigation();
+}
+
+// Render pulsing skeleton cards in results workspace
+function renderSkeletonDossier() {
+    const container = document.getElementById("platform-dossier-container");
+    if (!container) return;
+    container.innerHTML = "";
+    
+    const platforms = ["instagram", "twitter", "reddit", "telegram", "linkedin", "github"];
+    platforms.forEach(plat => {
+        const card = document.createElement("div");
+        card.className = "platform-intel-card skeleton-card skeleton-pulse";
+        
+        card.innerHTML = `
+            <div class="platform-intel-header">
+                <div class="platform-intel-title-group" style="width: 100%; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display:flex; align-items:center; gap:10px; width:45%;">
+                        <div class="skeleton-circle" style="width:20px; height:20px; background:rgba(255,255,255,0.06);"></div>
+                        <div class="skeleton-block" style="width:70%; height:12px; background:rgba(255,255,255,0.06);"></div>
+                    </div>
+                    <div class="skeleton-block" style="width:65px; height:18px; background:rgba(255,255,255,0.06); border-radius:12px;"></div>
+                </div>
+            </div>
+            <div class="platform-intel-profile" style="grid-template-columns: 80px 1fr;">
+                <div class="skeleton-circle" style="width:80px; height:80px; background:rgba(255,255,255,0.06);"></div>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    <div style="display:flex; gap:15px;">
+                        <div class="skeleton-block" style="width:120px; height:10px; background:rgba(255,255,255,0.06);"></div>
+                        <div class="skeleton-block" style="width:140px; height:10px; background:rgba(255,255,255,0.06);"></div>
+                    </div>
+                    <div class="skeleton-block" style="width:100%; height:32px; background:rgba(255,255,255,0.06);"></div>
+                </div>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+// On-demand scraper trigger to fetch platform details
+async function scrapePlatformOnDemand(platform, username, collapsibleId, btn) {
+    const el = document.getElementById(collapsibleId);
+    if (!el) return;
+    
+    el.setAttribute("data-scraped-status", "loading");
+    
+    // Render inline pulsing skeletons
+    el.innerHTML = `
+        <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.05); padding-top:15px;">
+            <div class="platform-intel-section-title">Querying Apify Portal Scraper...</div>
+            <div class="skeleton-pulse" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                <div class="skeleton-block" style="width:50%; height:12px; background:rgba(255,255,255,0.05);"></div>
+                <div class="skeleton-block" style="width:100%; height:10px; background:rgba(255,255,255,0.05);"></div>
+                <div class="skeleton-block" style="width:90%; height:10px; background:rgba(255,255,255,0.05);"></div>
+                <div class="skeleton-block" style="width:40%; height:10px; background:rgba(255,255,255,0.05);"></div>
+            </div>
+        </div>
+    `;
+
+    try {
+        let endpoint = "";
+        let body = {};
+        
+        const plat = platform.toLowerCase();
+        if (plat === "twitter") {
+            endpoint = `${API_BASE}/api/v1/apify/twitter/profile`;
+            body = { username: username, max_items: 5 };
+        } else if (plat === "reddit") {
+            endpoint = `${API_BASE}/api/v1/apify/reddit/collect`;
+            body = { urls: [`https://www.reddit.com/user/${username}/`] };
+        } else if (plat === "linkedin") {
+            endpoint = `${API_BASE}/api/v1/apify/linkedin/bulk`;
+            body = { action: "get-profiles", keywords: [`https://www.linkedin.com/in/${username}`], query_mode: "url", limit: 1 };
+        } else if (plat === "facebook") {
+            endpoint = `${API_BASE}/api/v1/apify/facebook/posts`;
+            body = { urls: [`https://www.facebook.com/${username}`], results_limit: 5 };
+        } else if (plat === "telegram") {
+            endpoint = `${API_BASE}/api/v1/investigation/username`;
+            body = { username: username, platform: "telegram", case_id: currentCaseId, correlation_depth: 1, filter_hitek: false };
+        } else {
+            throw new Error("No targeted Apify scraper configured for " + platform);
+        }
+
+        const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Scraper returned status code: ${response.status}`);
+        }
+
+        const resData = await response.json();
+        el.setAttribute("data-scraped-status", "success");
+        renderScrapedDetails(platform, resData, el, username);
+
+    } catch (err) {
+        el.setAttribute("data-scraped-status", "error");
+        el.innerHTML = `
+            <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.05); padding-top:15px; color:var(--accent-crimson); font-size:0.8rem;">
+                ⚠️ Scraper Engine Offline or Limit Exceeded: ${err.message}
+            </div>
+        `;
+    }
+}
+
+// Render dynamic details received from target platform scraper
+function renderScrapedDetails(platform, data, container, username, excludeProfileCard) {
+    container.innerHTML = "";
+    const plat = platform.toLowerCase();
+
+    // Helpers
+    const esc = s => (s || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // Handle failed scraper execution, empty dataset, or API errors
+    if (data && (data.success === false || data.status === "empty_dataset" || data.status === "error" || data.error)) {
+        let errorMsg = "";
+        if (data.error) {
+            errorMsg = typeof data.error === "object" ? (data.error.message || JSON.stringify(data.error)) : String(data.error);
+        }
+        const msg = errorMsg || (data.run && data.run.status_message) || data.status_message || "Empty dataset returned (Apify quota limit exceeded or profile private/absent).";
+        container.innerHTML = `
+            <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.05); padding-top:15px; color:var(--accent-crimson); font-size:0.8rem; line-height:1.4;">
+                <div style="font-weight:600; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+                    <span>⚠️ Scraper Execution Notice</span>
+                </div>
+                <div style="opacity:0.9; background:rgba(255,51,102,0.05); border:1px solid rgba(255,51,102,0.15); padding:8px 10px; border-radius:4px;">
+                    ${esc(msg)}
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const fmtNum = n => Number(n || 0).toLocaleString();
+    const fmtDate = (v, unix) => {
+        if (!v) return "";
+        const d = unix ? new Date(v * 1000) : new Date(v);
+        return isNaN(d) ? String(v) : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) + " · " + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const truncate = (s, n) => { s = (s || "").trim(); return s.length > n ? s.substring(0, n) + "…" : s; };
+
+    const sectionHeader = (icon, title, count) => `
+        <div class="scraped-section-header">
+            <span class="scraped-section-icon">${icon}</span>
+            <span class="scraped-section-label">${title}</span>
+            ${count !== undefined ? `<span class="scraped-section-count">${count}</span>` : ""}
+        </div>`;
+
+    const statTile = (label, value, accent) => `
+        <div class="scraped-stat-tile${accent ? ' accent-' + accent : ''}">
+            <span class="scraped-stat-value">${value}</span>
+            <span class="scraped-stat-label">${label}</span>
+        </div>`;
+
+    const feedCard = (meta, body, footer) => `
+        <div class="scraped-feed-item">
+            ${meta ? `<div class="scraped-feed-meta">${meta}</div>` : ""}
+            ${body ? `<div class="scraped-feed-body">${body}</div>` : ""}
+            ${footer ? `<div class="scraped-feed-footer">${footer}</div>` : ""}
+        </div>`;
+
+    let html = `<div class="scraped-details-wrapper">`;
+
+    if (plat === "twitter") {
+        const profile = Array.isArray(data) ? data[0] : (data.profile || data || {});
+        const tweets = data.tweets || (Array.isArray(data) ? data : []);
+        const bio = profile.description || profile.bio || "";
+        const followers = profile.followers_count || profile.followers || 0;
+        const following = profile.friends_count || profile.following || 0;
+        const tweetCount = profile.statuses_count || 0;
+        const joined = profile.created_at ? fmtDate(profile.created_at) : "";
+
+        let profilePic = profile.profile_pic_hd || profile.profile_pic_url;
+        if (profilePic && !profilePic.startsWith("data:")) {
+            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+        }
+
+        if (!excludeProfileCard) {
+            html += sectionHeader("👤", "Profile Intelligence");
+            html += `<div class="scraped-profile-card">`;
+            html += `  <div class="scraped-profile-header">`;
+            html += `    <div class="scraped-profile-avatar-container">`;
+            if (profilePic) {
+                html += `      <img src="${profilePic}" class="scraped-profile-avatar" onerror="this.style.display='none'; this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\'>TW</span>';">`;
+            } else {
+                html += `      <span class="scraped-profile-avatar-placeholder">TW</span>`;
+            }
+            html += `    </div>`;
+            html += `    <div class="scraped-profile-identity">`;
+            if (profile.name) {
+                html += `      <span class="scraped-profile-name">${esc(profile.name)}</span>`;
+            }
+            html += `      <span class="scraped-profile-handle">@${esc(profile.screen_name || username)}</span>`;
+            if (profile.verified) {
+                html += `      <span class="scraped-verified-badge" style="width:fit-content; margin-top:2px;">✓ Verified</span>`;
+            }
+            html += `    </div>`;
+            html += `  </div>`;
+            if (bio) html += `<div class="scraped-profile-bio">${esc(bio)}</div>`;
+            html += `<div class="scraped-stats-grid">`;
+            html += statTile("Followers", fmtNum(followers), "blue");
+            html += statTile("Following", fmtNum(following));
+            if (tweetCount) html += statTile("Tweets", fmtNum(tweetCount));
+            html += `</div>`;
+            if (joined) html += `<div class="scraped-profile-meta-line">Joined ${joined}</div>`;
+            html += `</div>`;
+        }
+
+        const validTweets = tweets.filter(t => t.full_text || t.text);
+        if (validTweets.length > 0) {
+            html += sectionHeader("💬", "Recent Tweets", validTweets.length);
+            html += `<div class="scraped-feed-list">`;
+            validTweets.slice(0, 5).forEach(tweet => {
+                const dateStr = fmtDate(tweet.created_at);
+                const likes = tweet.favorite_count || 0;
+                const rts = tweet.retweet_count || 0;
+                html += feedCard(
+                    dateStr ? `<span class="scraped-feed-date">${dateStr}</span>` : "",
+                    esc(truncate(tweet.full_text || tweet.text, 280)),
+                    `<span class="scraped-engagement">❤️ ${fmtNum(likes)}</span><span class="scraped-engagement">🔁 ${fmtNum(rts)}</span>`
+                );
+            });
+            html += `</div>`;
+        }
+    } else if (plat === "reddit") {
+        const comments = data.comments || (Array.isArray(data) ? data.filter(i => i.dataType === "comment") : []);
+        const posts = data.posts || (Array.isArray(data) ? data.filter(i => i.dataType === "post") : []);
+        const user = data.user || {};
+        const linkKarma = user.link_karma || 0;
+        const commentKarma = user.comment_karma || 0;
+        const cakeDay = user.created_utc ? fmtDate(user.created_utc, true) : "";
+
+        if (!excludeProfileCard) {
+            html += sectionHeader("👤", "Redditor Profile");
+            html += `<div class="scraped-profile-card">`;
+            html += `  <div class="scraped-profile-header">`;
+            html += `    <div class="scraped-profile-avatar-container" style="border-color:#ff4500; background:rgba(255,69,0,0.05);">`;
+            html += `      <span class="scraped-profile-avatar-placeholder" style="color:#ff4500;">RD</span>`;
+            html += `    </div>`;
+            html += `    <div class="scraped-profile-identity">`;
+            html += `      <span class="scraped-profile-name">u/${esc(user.name || username)}</span>`;
+            html += `      <span class="scraped-profile-handle" style="color:#ff4500;">Reddit Account</span>`;
+            html += `    </div>`;
+            html += `  </div>`;
+            html += `<div class="scraped-stats-grid">`;
+            html += statTile("Post Karma", fmtNum(linkKarma), "blue");
+            html += statTile("Comment Karma", fmtNum(commentKarma));
+            html += statTile("Total", fmtNum(linkKarma + commentKarma), "gold");
+            html += `</div>`;
+            if (cakeDay) html += `<div class="scraped-profile-meta-line">Cake Day: ${cakeDay}</div>`;
+            html += `</div>`;
+        }
+
+        if (posts.length > 0) {
+            html += sectionHeader("📝", "Submissions", posts.length);
+            html += `<div class="scraped-feed-list">`;
+            posts.slice(0, 5).forEach(p => {
+                const dateStr = fmtDate(p.created_utc, true);
+                html += feedCard(
+                    `<span class="scraped-feed-tag">r/${esc(p.subreddit || "?")}</span>${dateStr ? `<span class="scraped-feed-date">${dateStr}</span>` : ""}`,
+                    `<strong>${esc(p.title || "Untitled")}</strong>${p.selftext ? `<div class="scraped-feed-excerpt">${esc(truncate(p.selftext, 200))}</div>` : ""}`,
+                    `<span class="scraped-engagement">⬆ ${fmtNum(p.score || 0)}</span><span class="scraped-engagement">💬 ${fmtNum(p.num_comments || 0)}</span>`
+                );
+            });
+            html += `</div>`;
+        }
+
+        if (comments.length > 0) {
+            html += sectionHeader("💬", "Comment Activity", comments.length);
+            html += `<div class="scraped-feed-list">`;
+            comments.slice(0, 5).forEach(c => {
+                const dateStr = fmtDate(c.created_utc, true);
+                html += feedCard(
+                    `<span class="scraped-feed-tag">r/${esc(c.subreddit || "?")}</span>${dateStr ? `<span class="scraped-feed-date">${dateStr}</span>` : ""}`,
+                    esc(truncate(c.body || "", 200)),
+                    c.score !== undefined ? `<span class="scraped-engagement">⬆ ${fmtNum(c.score)}</span>` : ""
+                );
+            });
+            html += `</div>`;
+        }
+    } else if (plat === "linkedin") {
+        const profile = Array.isArray(data) ? data[0] : (data.profile || data);
+        if (profile) {
+            const headline = profile.headline || profile.title || "";
+            const summary = profile.summary || "";
+            const location = profile.location || profile.geoLocationName || "";
+            const connections = profile.connectionsCount || profile.connections || 0;
+
+            let profilePic = profile.profile_pic_hd || profile.profile_pic_url;
+            if (profilePic && !profilePic.startsWith("data:")) {
+                profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+            }
+
+            if (!excludeProfileCard) {
+                html += sectionHeader("👤", "Professional Profile");
+                html += `<div class="scraped-profile-card">`;
+                html += `  <div class="scraped-profile-header">`;
+                html += `    <div class="scraped-profile-avatar-container" style="border-color:#0077b5;">`;
+                if (profilePic) {
+                    html += `      <img src="${profilePic}" class="scraped-profile-avatar" onerror="this.style.display='none'; this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\' style=\'color:#0077b5;\'>LN</span>';">`;
+                } else {
+                    html += `      <span class="scraped-profile-avatar-placeholder" style="color:#0077b5;">LN</span>`;
+                }
+                html += `    </div>`;
+                html += `    <div class="scraped-profile-identity">`;
+                html += `      <span class="scraped-profile-name">${esc(profile.fullName || profile.name || username)}</span>`;
+                if (headline) {
+                    html += `      <span class="scraped-profile-handle" style="color:#0077b5; font-family:inherit; font-size:0.75rem; font-weight:normal;">${esc(headline)}</span>`;
+                }
+                html += `    </div>`;
+                html += `  </div>`;
+                if (summary) html += `<div class="scraped-profile-bio">${esc(truncate(summary, 300))}</div>`;
+                html += `<div class="scraped-stats-grid">`;
+                if (connections) html += statTile("Connections", fmtNum(connections), "blue");
+                if (location) html += statTile("Location", esc(location));
+                html += `</div>`;
+                html += `</div>`;
+            }
+
+            const positions = profile.positions || profile.experience || [];
+            if (positions.length > 0) {
+                html += sectionHeader("💼", "Experience", positions.length);
+                html += `<div class="scraped-feed-list">`;
+                positions.slice(0, 4).forEach(pos => {
+                    html += feedCard(
+                        `<span class="scraped-feed-tag">${esc(pos.companyName || pos.company || "Company")}</span>${pos.dateRange || pos.timePeriod ? `<span class="scraped-feed-date">${esc(pos.dateRange || pos.timePeriod || "")}</span>` : ""}`,
+                        `<strong>${esc(pos.title || "Role")}</strong>${pos.description ? `<div class="scraped-feed-excerpt">${esc(truncate(pos.description, 200))}</div>` : ""}`,
+                        ""
+                    );
+                });
+                html += `</div>`;
+            }
+        } else {
+            html += `<div class="scraped-empty-state">No rich LinkedIn profile payload returned.</div>`;
+        }
+    } else if (plat === "facebook") {
+        const posts = Array.isArray(data) ? data : (data.posts || []);
+        let profilePic = data.profile_pic_hd || data.profile_pic_url;
+        if (profilePic && !profilePic.startsWith("data:")) {
+            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+        }
+
+        if (!excludeProfileCard) {
+            html += sectionHeader("👤", "Facebook Page Profile");
+            html += `<div class="scraped-profile-card">`;
+            html += `  <div class="scraped-profile-header">`;
+            html += `    <div class="scraped-profile-avatar-container" style="border-color:#1877f2;">`;
+            if (profilePic) {
+                html += `      <img src="${profilePic}" class="scraped-profile-avatar" onerror="this.style.display='none'; this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\' style=\'color:#1877f2;\'>FB</span>';">`;
+            } else {
+                html += `      <span class="scraped-profile-avatar-placeholder" style="color:#1877f2;">FB</span>`;
+            }
+            html += `    </div>`;
+            html += `    <div class="scraped-profile-identity">`;
+            html += `      <span class="scraped-profile-name">${esc(username)}</span>`;
+            html += `      <span class="scraped-profile-handle" style="color:#1877f2;">Facebook Entity</span>`;
+            html += `    </div>`;
+            html += `  </div>`;
+            html += `</div>`;
+        }
+
+        if (posts.length > 0) {
+            html += sectionHeader("📰", "Public Posts", posts.length);
+            html += `<div class="scraped-feed-list">`;
+            posts.slice(0, 5).forEach(post => {
+                const dateStr = post.time || post.date || "";
+                const likes = post.likes || post.reactions || 0;
+                html += feedCard(
+                    dateStr ? `<span class="scraped-feed-date">${esc(dateStr)}</span>` : "",
+                    esc(truncate(post.text || post.message || "", 300)),
+                    likes ? `<span class="scraped-engagement">👍 ${fmtNum(likes)}</span>` : ""
+                );
+            });
+            html += `</div>`;
+        } else {
+            html += `<div class="scraped-empty-state">No public Facebook posts returned.</div>`;
+        }
+    } else if (plat === "telegram") {
+        const td = data.platform_data || data;
+        let profilePic = td.profile_pic_hd || td.profile_pic_url;
+        if (profilePic && !profilePic.startsWith("data:")) {
+            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+        }
+
+        if (!excludeProfileCard) {
+            html += sectionHeader("👤", "Telegram Channel Details");
+            html += `<div class="scraped-profile-card">`;
+            html += `  <div class="scraped-profile-header">`;
+            html += `    <div class="scraped-profile-avatar-container" style="border-color:#24a1de;">`;
+            if (profilePic) {
+                html += `      <img src="${profilePic}" class="scraped-profile-avatar" onerror="this.style.display='none'; this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\' style=\'color:#24a1de;\'>TG</span>';">`;
+            } else {
+                html += `      <span class="scraped-profile-avatar-placeholder" style="color:#24a1de;">TG</span>`;
+            }
+            html += `    </div>`;
+            html += `    <div class="scraped-profile-identity">`;
+            if (td.full_name) {
+                html += `      <span class="scraped-profile-name">${esc(td.full_name)}</span>`;
+            }
+            html += `      <span class="scraped-profile-handle">@${esc(td.username || username)}</span>`;
+            html += `    </div>`;
+            html += `  </div>`;
+            if (td.bio) html += `<div class="scraped-profile-bio">${esc(td.bio)}</div>`;
+            html += `</div>`;
+        }
+    } else if (plat === "instagram") {
+        const profile = data;
+        const bio = profile.bio || profile.biography || "";
+        const followers = profile.follower_count !== undefined ? profile.follower_count : (profile.followers || 0);
+        const following = profile.following_count !== undefined ? profile.following_count : (profile.following || 0);
+        const postCount = profile.post_count !== undefined ? profile.post_count : (profile.posts_count || 0);
+
+        let profilePic = profile.profile_pic_hd || profile.profile_pic_url;
+        if (profilePic && !profilePic.startsWith("data:")) {
+            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+        }
+
+        if (!excludeProfileCard) {
+            html += sectionHeader("👤", "Instagram Profile Details");
+            html += `<div class="scraped-profile-card">`;
+            html += `  <div class="scraped-profile-header">`;
+            html += `    <div class="scraped-profile-avatar-container" style="border-color:#e1306c; background:rgba(225,48,108,0.05);">`;
+            if (profilePic) {
+                html += `      <img src="${profilePic}" class="scraped-profile-avatar" onerror="this.style.display='none'; this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\' style=\'color:#e1306c;\'>IG</span>';">`;
+            } else {
+                html += `      <span class="scraped-profile-avatar-placeholder" style="color:#e1306c;">IG</span>`;
+            }
+            html += `    </div>`;
+            html += `    <div class="scraped-profile-identity">`;
+            if (profile.full_name) {
+                html += `      <span class="scraped-profile-name">${esc(profile.full_name)}</span>`;
+            }
+            html += `      <span class="scraped-profile-handle" style="color:#e1306c;">@${esc(profile.username || username)}</span>`;
+            if (profile.is_verified) {
+                html += `      <span class="scraped-verified-badge" style="width:fit-content; margin-top:2px;">✓ Verified</span>`;
+            }
+            html += `    </div>`;
+            html += `  </div>`;
+            if (bio) html += `<div class="scraped-profile-bio">${esc(bio)}</div>`;
+            html += `<div class="scraped-stats-grid">`;
+            html += statTile("Followers", fmtNum(followers), "blue");
+            html += statTile("Following", fmtNum(following));
+            html += statTile("Posts", fmtNum(postCount), "gold");
+            html += `</div>`;
+            html += `</div>`;
+        }
+
+        // Render hashtags if present in the global response
+        const igPosts = currentInvestigationData && currentInvestigationData.instagram_posts;
+        if (igPosts && !igPosts.error) {
+            const hashtags = igPosts.all_hashtags || [];
+
+            if (hashtags.length > 0) {
+                html += sectionHeader("🏷️", "Post Hashtags", hashtags.length);
+                html += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin: 10px 0 15px 0;">`;
+                hashtags.forEach(tag => {
+                    html += `<span class="tag-pill" style="cursor:default; font-size:0.72rem; padding:3px 8px; background:rgba(0,188,212,0.05); border:1px solid rgba(0,188,212,0.15); border-radius:4px; color:var(--accent-blue);">#${tag}</span>`;
+                });
+                html += `</div>`;
+            }
+        }
+    } else {
+        html += sectionHeader("📦", "Raw Data Payload");
+        html += `<pre class="scraped-raw-payload">${esc(JSON.stringify(data, null, 2))}</pre>`;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
 }
 

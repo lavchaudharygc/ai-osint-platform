@@ -161,6 +161,28 @@ class TwitterApifyService:
                 author = candidate
                 if candidate.get("about"):
                     break
+            else:
+                # Check for flattened keys
+                if "author.userName" in item or "author.username" in item:
+                    author = {
+                        "userName": item.get("author.userName") or item.get("author.username"),
+                        "name": item.get("author.name") or item.get("author.fullName") or item.get("author.full_name"),
+                        "description": item.get("author.description") or item.get("author.bio"),
+                        "profilePicture": item.get("author.profilePicture") or item.get("author.profile_pic_url"),
+                        "followers": item.get("author.followers") or item.get("author.followersCount"),
+                        "following": item.get("author.following") or item.get("author.followingCount"),
+                        "isVerified": item.get("author.isVerified"),
+                        "isBlueVerified": item.get("author.isBlueVerified"),
+                        "id": item.get("author.id"),
+                    }
+                    # Also try to extract nested "about" values if they are flattened
+                    about = {}
+                    for k, v in item.items():
+                        if k.startswith("author.about."):
+                            about[k[len("author.about."):]] = v
+                    if about:
+                        author["about"] = about
+                    break
         about = author.get("about") if isinstance(author.get("about"), dict) else {}
         normalized_tweets = [self._normalize_tweet(item) for item in tweets]
         normalized_replies = [self._normalize_tweet(item) for item in replies]
@@ -219,18 +241,74 @@ class TwitterApifyService:
     @staticmethod
     def _normalize_tweet(item: dict[str, Any]) -> dict[str, Any]:
         author = item.get("author") if isinstance(item.get("author"), dict) else {}
+        
+        # If author is empty, see if we have flattened author keys
+        author_username = author.get("userName") or author.get("username")
+        if not author_username:
+            author_username = item.get("author.userName") or item.get("author.username") or item.get("author.user_name")
+            
+        author_name = author.get("name") or author.get("fullName")
+        if not author_name:
+            author_name = item.get("author.name") or item.get("author.fullName") or item.get("author.full_name")
+            
+        author_desc = author.get("description") or author.get("bio")
+        if not author_desc:
+            author_desc = item.get("author.description") or item.get("author.bio")
+            
+        author_pic = author.get("profilePicture") or author.get("profile_pic_url")
+        if not author_pic:
+            author_pic = item.get("author.profilePicture") or item.get("author.profile_pic_url") or item.get("author.profilePictureUrl")
+            
+        author_followers = author.get("followers") or author.get("followersCount")
+        if not author_followers:
+            author_followers = item.get("author.followers") or item.get("author.followersCount")
+            
+        author_following = author.get("following") or author.get("followingCount")
+        if not author_following:
+            author_following = item.get("author.following") or item.get("author.followingCount")
+            
+        author_verified = author.get("isVerified") or author.get("isBlueVerified")
+        if author_verified is None:
+            author_verified = item.get("author.isVerified") or item.get("author.isBlueVerified")
+
         entities = item.get("entities") if isinstance(item.get("entities"), dict) else {}
+        
         hashtags = TwitterApifyService._entity_values(entities.get("hashtags"), "text")
+        if not hashtags and isinstance(item.get("entities.hashtags"), list):
+            hashtags = TwitterApifyService._entity_values(item.get("entities.hashtags"), "text")
+        if not hashtags:
+            raw_tags = item.get("hashtags") or item.get("entities.hashtags")
+            if isinstance(raw_tags, list):
+                hashtags = [str(t).lstrip("#") for t in raw_tags if t]
+
         mentions = TwitterApifyService._entity_values(
             entities.get("user_mentions") or entities.get("mentions"),
             "screen_name",
             fallback_keys=("userName", "username", "name"),
         )
+        if not mentions:
+            raw_mentions = item.get("mentions") or item.get("entities.user_mentions")
+            if isinstance(raw_mentions, list):
+                mentions = TwitterApifyService._entity_values(
+                    raw_mentions,
+                    "screen_name",
+                    fallback_keys=("userName", "username", "name"),
+                )
+
         urls = TwitterApifyService._entity_values(
             entities.get("urls"),
             "expanded_url",
             fallback_keys=("url", "display_url"),
         )
+        if not urls:
+            raw_urls = item.get("urls") or item.get("entities.urls")
+            if isinstance(raw_urls, list):
+                urls = TwitterApifyService._entity_values(
+                    raw_urls,
+                    "expanded_url",
+                    fallback_keys=("url", "display_url"),
+                )
+
         return {
             "type": item.get("type") or ("reply" if item.get("isReply") else "tweet"),
             "id": item.get("id"),
@@ -240,12 +318,12 @@ class TwitterApifyService:
             "created_at": item.get("createdAt"),
             "language": item.get("lang"),
             "source_app": item.get("source"),
-            "like_count": item.get("likeCount"),
-            "retweet_count": item.get("retweetCount"),
-            "reply_count": item.get("replyCount"),
-            "quote_count": item.get("quoteCount"),
-            "view_count": item.get("viewCount"),
-            "bookmark_count": item.get("bookmarkCount"),
+            "like_count": item.get("likeCount") or item.get("like_count") or item.get("favorite_count"),
+            "retweet_count": item.get("retweetCount") or item.get("retweet_count"),
+            "reply_count": item.get("replyCount") or item.get("reply_count"),
+            "quote_count": item.get("quoteCount") or item.get("quote_count"),
+            "view_count": item.get("viewCount") or item.get("view_count"),
+            "bookmark_count": item.get("bookmarkCount") or item.get("bookmark_count"),
             "conversation_id": item.get("conversationId"),
             "in_reply_to_status_id": item.get("inReplyToStatusId"),
             "is_reply": bool(item.get("isReply") or str(item.get("type", "")).lower() == "reply"),
@@ -254,15 +332,15 @@ class TwitterApifyService:
             "mentions": mentions,
             "external_urls": urls,
             "author": {
-                "id": author.get("id"),
-                "username": author.get("userName") or author.get("username"),
-                "full_name": author.get("name"),
-                "bio": author.get("description"),
-                "profile_pic_url": author.get("profilePicture"),
-                "followers": author.get("followers"),
-                "following": author.get("following"),
-                "is_verified": author.get("isVerified"),
-                "is_blue_verified": author.get("isBlueVerified"),
+                "id": author.get("id") or item.get("author.id"),
+                "username": author_username,
+                "full_name": author_name,
+                "bio": author_desc,
+                "profile_pic_url": author_pic,
+                "followers": author_followers,
+                "following": author_following,
+                "is_verified": author_verified,
+                "is_blue_verified": author.get("isBlueVerified") or item.get("author.isBlueVerified"),
             },
         }
 
@@ -292,9 +370,15 @@ class TwitterApifyService:
     @staticmethod
     def _author_handle(item: dict[str, Any]) -> str:
         author = item.get("author")
-        if not isinstance(author, dict):
-            return ""
-        return str(author.get("userName") or author.get("username") or "")
+        if isinstance(author, dict):
+            val = author.get("userName") or author.get("username")
+            if val:
+                return str(val)
+        # Check flattened keys
+        for key in ("author.userName", "author.username", "author.user_name"):
+            if key in item:
+                return str(item[key])
+        return ""
 
     @staticmethod
     def _is_reply(item: dict[str, Any]) -> bool:
