@@ -175,6 +175,28 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(result["replies"][0]["is_reply"])
 
+    async def test_profile_actor_flattened_normalization(self) -> None:
+        tweet = {
+            "text": "Success is uncertain, but entertainment is guaranteed! ✨",
+            "author.name": "Elon Musk",
+            "author.userName": "elonmusk",
+            "likeCount": 1238034,
+            "retweetCount": 118985,
+            "replyCount": 33850,
+            "viewCount": 114596489,
+            "createdAt": "Thu Jan 16 23:53:03 +0000 2025",
+            "url": "https://x.com/elonmusk/status/1880040599761596689",
+            "id": "1880040599761596689"
+        }
+        client = RecordingActorClient([[tweet]])
+        service = twitter_service(client)
+
+        result = await service.get_profile("elonmusk")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["username"], "elonmusk")
+        self.assertEqual(result["full_name"], "Elon Musk")
+        self.assertEqual(result["tweets"][0]["like_count"], 1238034)
+
     async def test_tweet_v2_search_actor_input_and_normalization(self) -> None:
         client = RecordingActorClient(
             [[{"id": "tweet-2", "text": "Hello", "author": {"username": "alice"}}]]
