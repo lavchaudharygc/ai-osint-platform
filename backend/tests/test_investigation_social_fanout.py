@@ -349,7 +349,8 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        fanout_mock.assert_awaited_once_with("target_user")
+        fanout_mock.assert_awaited_once()
+        self.assertEqual(fanout_mock.call_args[0][0], "target_user")
         scrape_mock.assert_not_awaited()
         self.assertEqual(response.platform_data, primary)
         self.assertEqual(response.apify_social_results, envelope)

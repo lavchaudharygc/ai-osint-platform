@@ -131,7 +131,7 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
             "id": "unrelated",
             "author": {"userName": "OtherUser"},
         }
-        client = RecordingActorClient([[tweet, reply, unrelated]])
+        client = RecordingActorClient([[], [tweet, reply, unrelated]])
         service = twitter_service(client)
 
         result = await service.get_profile(
@@ -146,6 +146,11 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
             client.calls,
             [
                 {
+                    "actor_id": "clappi/x-twitter-profile-scraper",
+                    "run_input": {"profileUrls": ["https://x.com/TargetUser"]},
+                    "dataset_limit": 25,
+                },
+                {
                     "actor_id": TWITTER_PROFILE_ACTOR,
                     "run_input": {
                         "twitterHandles": ["TargetUser"],
@@ -157,7 +162,7 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
                         "onlyImages": False,
                     },
                     "dataset_limit": 25,
-                }
+                },
             ],
         )
         self.assertTrue(result["success"])
@@ -188,7 +193,8 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
             "url": "https://x.com/elonmusk/status/1880040599761596689",
             "id": "1880040599761596689"
         }
-        client = RecordingActorClient([[tweet]])
+        # Prepend empty clappi response so the loop falls through to the primary actor
+        client = RecordingActorClient([[], [tweet]])
         service = twitter_service(client)
 
         result = await service.get_profile("elonmusk")

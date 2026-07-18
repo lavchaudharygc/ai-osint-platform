@@ -58,6 +58,17 @@ class CrossPlatformSearchService:
                 exists = (status_code == 200)
             elif platform == "reddit":
                 exists = (status_code == 200)
+            elif platform == "linkedin" and status_code == 999:
+                # LinkedIn returns 999 as an anti-bot block — inconclusive, not absent
+                return {
+                    "platform": platform,
+                    "url": url,
+                    "exists": None,
+                    "status_code": status_code,
+                    "status": "blocked_by_platform",
+                    "note": "LinkedIn blocks direct HTTP checks (HTTP 999). Use the scraper for accurate results.",
+                    "checked_at": datetime.now(UTC).isoformat(),
+                }
             else:
                 exists = status_code < 400
         except httpx.HTTPError as exc:

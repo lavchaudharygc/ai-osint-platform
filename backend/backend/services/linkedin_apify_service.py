@@ -28,33 +28,107 @@ class LinkedInApifyService:
     async def get_profile(self, username: str) -> dict[str, Any]:
         slug = self._profile_slug(username)
         profile_url = f"https://www.linkedin.com/in/{slug}/"
-        result = await self.bulk_lookup(
-            action="get-profiles",
-            keywords=[profile_url],
-            query_mode="url",
-            limit=1,
-        )
-        profiles = result.get("profiles") or []
-        profile = profiles[0] if profiles else None
-        if not isinstance(profile, dict):
+        
+        # Try primary bulk_lookup (bebity/linkedin-premium-actor)
+        try:
+            result = await self.bulk_lookup(
+                action="get-profiles",
+                keywords=[profile_url],
+                query_mode="url",
+                limit=1,
+            )
+            profiles = result.get("profiles") or []
+            profile = profiles[0] if profiles else None
+            if isinstance(profile, dict) and profile.get("provider_status") != "NOT_FOUND":
+                return {
+                    **result,
+                    **profile,
+                    "success": True,
+                    "exists": True,
+                    "username": profile.get("username") or slug,
+                    "profile_url": profile.get("profile_url") or profile_url,
+                    "recent_posts": [],
+                    "post_count": None,
+                }
+        except Exception:
+            pass
+
+        # If primary fails, fall back to official/community LinkedIn scraper actors
+        if not self.is_configured():
             return {
-                **result,
+                "success": False,
+                "configured": False,
+                "exists": None,
+                "platform": "linkedin",
                 "username": slug,
                 "profile_url": profile_url,
-                "exists": None,
-                "full_name": None,
-                "bio": None,
+                "status": "not_configured",
+                "reason": "missing APIFY_API_TOKEN",
                 "recent_posts": [],
             }
+
+        fallbacks = [
+            # NOTE: dev_fusion requires one-time permission approval at:
+            # https://console.apify.com/actors/2SyF0bVxmgGr8IVCZ?approvePermissions=true
+            ("dev_fusion/linkedin-profile-scraper", {"urls": [profile_url]}),
+        ]
+
+        last_exc = None
+        for actor_id, run_input in fallbacks:
+            try:
+                run = await self.client.run_actor(
+                    actor_id,
+                    run_input,
+                    dataset_limit=1,
+                )
+                if run.items:
+                    normalized = self._normalize_profile(run.items[0])
+                    return {
+                        "success": True,
+                        "configured": True,
+                        "exists": True,
+                        "platform": "linkedin",
+                        "status": "completed",
+                        "source": f"apify_linkedin_fallback_{actor_id.replace('/', '_')}",
+                        "actor_id": actor_id,
+                        **normalized,
+                        "recent_posts": [],
+                        "post_count": None,
+                        "run": run.as_dict(include_items=False),
+                        "raw_data": run.items,
+                        "scraped_at": datetime.now(UTC).isoformat(),
+                    }
+            except ApifyClientError as exc:
+                last_exc = exc
+                continue
+
+        if last_exc:
+            return {
+                "success": False,
+                "configured": True,
+                "exists": None,
+                "platform": "linkedin",
+                "username": slug,
+                "profile_url": profile_url,
+                "status": "provider_error",
+                "source": "apify",
+                "actor_id": self.profile_actor_id,
+                "error": last_exc.as_dict(),
+                "recent_posts": [],
+            }
+
+        # Otherwise not found
         return {
-            **result,
-            **profile,
-            "success": profile.get("provider_status") != "NOT_FOUND",
-            "exists": profile.get("provider_status") != "NOT_FOUND",
-            "username": profile.get("username") or slug,
-            "profile_url": profile.get("profile_url") or profile_url,
+            "success": False,
+            "configured": True,
+            "exists": None,
+            "platform": "linkedin",
+            "username": slug,
+            "profile_url": profile_url,
+            "status": "empty_dataset",
+            "source": "apify",
+            "actor_id": self.profile_actor_id,
             "recent_posts": [],
-            "post_count": None,
         }
 
     async def bulk_lookup(
@@ -208,29 +282,29 @@ class LinkedInApifyService:
         current = experience[0] if experience and isinstance(experience[0], dict) else {}
         provider_status = item.get("status")
         return {
-            "username": item.get("vanityName") or LinkedInApifyService._slug_from_url(item.get("linkedinUrl")),
-            "profile_url": item.get("linkedinUrl"),
+            "username": item.get("vanityName") or LinkedInApifyService._slug_from_url(item.get("linkedinUrl") or item.get("url")),
+            "profile_url": item.get("linkedinUrl") or item.get("url"),
             "full_name": full_name or None,
             "first_name": first_name,
             "last_name": last_name,
-            "headline": item.get("headline"),
-            "bio": item.get("summary"),
-            "location": item.get("location"),
-            "industry": item.get("industry"),
-            "user_id": item.get("urn"),
-            "profile_pic_url": item.get("profilePictureUrl"),
-            "profile_pic_hd": item.get("profilePictureUrl"),
-            "cover_image_url": item.get("coverImageUrl"),
-            "follower_count": item.get("followersCount"),
-            "connections_count": item.get("connectionsCount"),
-            "current_role": current.get("title"),
-            "current_company": current.get("companyName"),
+            "headline": item.get("headline") or item.get("subTitle") or item.get("subtitle"),
+            "bio": item.get("summary") or item.get("about"),
+            "location": item.get("location") or item.get("locationName"),
+            "industry": item.get("industry") or item.get("industryName"),
+            "user_id": item.get("urn") or item.get("id"),
+            "profile_pic_url": item.get("profilePictureUrl") or item.get("profilePicUrl") or item.get("profilePicture"),
+            "profile_pic_hd": item.get("profilePictureUrl") or item.get("profilePicUrl") or item.get("profilePicture"),
+            "cover_image_url": item.get("coverImageUrl") or item.get("backgroundPictureUrl"),
+            "follower_count": item.get("followersCount") or item.get("followersCountValue") or item.get("followerCount"),
+            "connections_count": item.get("connectionsCount") or item.get("connectionsCountValue") or item.get("connectionCount"),
+            "current_role": current.get("title") or current.get("role"),
+            "current_company": current.get("companyName") or current.get("company"),
             "experience": experience,
-            "education": item.get("education") or [],
+            "education": item.get("education") or item.get("educations") or [],
             "certifications": item.get("certifications") or [],
             "skills": item.get("skills") or [],
             "languages": item.get("languages") or [],
-            "volunteer": item.get("volunteer") or [],
+            "volunteer": item.get("volunteer") or item.get("volunteering") or [],
             "honors": item.get("honors") or [],
             "organizations": item.get("organizations") or [],
             "projects": item.get("projects") or [],

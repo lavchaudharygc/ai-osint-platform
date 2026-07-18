@@ -962,6 +962,7 @@ body::before {
 
 .match-found { background: rgba(0, 255, 102, 0.1); border: 1px solid rgba(0, 255, 102, 0.3); color: #00ff66; }
 .match-absent { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-secondary); }
+.match-inconclusive { background: rgba(255, 165, 0, 0.1); border: 1px solid rgba(255, 165, 0, 0.3); color: #ffa500; }
 
 .platform-code {
     font-family: 'Share Tech Mono', monospace;
@@ -1655,6 +1656,18 @@ body::before {
     border-color: rgba(255, 255, 255, 0.05);
 }
 
+.platform-intel-card.status-inconclusive {
+    border-left: 4px solid #ffa500;
+    background: rgba(255, 165, 0, 0.015);
+    opacity: 0.8;
+}
+
+.platform-intel-card.status-inconclusive:hover {
+    box-shadow: 0 0 20px rgba(255, 165, 0, 0.15);
+    background: rgba(255, 165, 0, 0.03);
+    opacity: 1;
+}
+
 .platform-intel-header {
     display: flex;
     justify-content: space-between;
@@ -2088,6 +2101,40 @@ body::before {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--accent-blue);
+}
+
+/* Show Details Button Styling */
+.platform-intel-toggle-btn {
+    background: rgba(0, 188, 212, 0.05);
+    border: 1px solid rgba(0, 188, 212, 0.25);
+    color: var(--accent-blue);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(0, 188, 212, 0.05);
+}
+
+.platform-intel-toggle-btn:hover {
+    background: rgba(0, 188, 212, 0.12);
+    border-color: rgba(0, 188, 212, 0.5);
+    color: #fff;
+    box-shadow: 0 0 15px rgba(0, 188, 212, 0.2);
+    transform: translateY(-1px);
+}
+
+.platform-intel-toggle-btn:active {
+    transform: translateY(0);
+}
+
+.toggle-caret {
+    transition: transform 0.25s ease;
 }
 
 

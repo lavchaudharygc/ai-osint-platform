@@ -33,28 +33,92 @@ class TwitterApifyService:
         get_about_data: bool = True,
     ) -> dict[str, Any]:
         handle = self._clean_handle(username)
-        run_input = {
-            "twitterHandles": [handle],
-            "maxItems": max_items,
-            "getReplies": get_replies,
-            "minReplyCount": min_reply_count,
-            "getAboutData": get_about_data,
-            "includeNativeRetweets": False,
-            "onlyImages": False,
-        }
         if not self.is_configured():
             return self._not_configured(handle, self.profile_actor_id)
 
-        try:
-            run = await self.client.run_actor(
-                self.profile_actor_id,
-                run_input,
-                dataset_limit=max_items,
-            )
-        except ApifyClientError as exc:
-            return self._error(handle, exc)
+        # Per-actor input schemas (some actors use different key names)
+        def _build_input(actor_id: str) -> dict:
+            if actor_id == "clappi/x-twitter-profile-scraper":
+                return {"profileUrls": [f"https://x.com/{handle}"]}
+            return {
+                "twitterHandles": [handle],
+                "maxItems": max_items,
+                "getReplies": get_replies,
+                "minReplyCount": min_reply_count,
+                "getAboutData": get_about_data,
+                "includeNativeRetweets": False,
+                "onlyImages": False,
+            }
 
-        return self._normalize_profile(handle, run.items, run.as_dict(include_items=False))
+        actors_to_try = [
+            "clappi/x-twitter-profile-scraper",
+            self.profile_actor_id,
+            "apidojo/twitter-scraper-lite",
+            "apidojo/tweet-scraper",
+        ]
+        # Deduplicate preserving order
+        seen: set[str] = set()
+        actors_to_try = [a for a in actors_to_try if not (a in seen or seen.add(a))]
+
+        last_exc = None
+        for actor_id in actors_to_try:
+            try:
+                run = await self.client.run_actor(
+                    actor_id,
+                    _build_input(actor_id),
+                    dataset_limit=max_items,
+                )
+                if actor_id == "clappi/x-twitter-profile-scraper":
+                    res = self._normalize_clappi_profile(handle, run.items)
+                else:
+                    res = self._normalize_profile(handle, run.items, run.as_dict(include_items=False))
+                if res.get("success"):
+                    res["actor_id"] = actor_id
+                    # Clappi returns profile data only (no tweets). Fetch tweets separately.
+                    if actor_id == "clappi/x-twitter-profile-scraper" and not res.get("tweets"):
+                        try:
+                            tweet_run = await self.client.run_actor(
+                                self.tweet_actor_id,
+                                {
+                                    "twitterHandles": [handle],
+                                    "maxItems": max_items,
+                                    "sort": "Latest",
+                                    "includeSearchTerms": False,
+                                },
+                                dataset_limit=max_items,
+                            )
+                            tweets = [self._normalize_tweet(t) for t in tweet_run.items if not self._is_reply(t)]
+                            replies = [self._normalize_tweet(t) for t in tweet_run.items if self._is_reply(t)]
+                            res["tweets"] = tweets
+                            res["replies"] = replies
+                            res["recent_posts"] = tweets
+                            res["total_tweets_fetched"] = len(tweets)
+                            res["total_replies_fetched"] = len(replies)
+                            res["all_hashtags"] = sorted({
+                                h for t in tweets + replies for h in t.get("hashtags", []) if h
+                            })
+                        except ApifyClientError:
+                            pass  # Tweets are bonus; profile data is already good
+                    return res
+            except ApifyClientError as exc:
+                last_exc = exc
+                continue
+
+        if last_exc:
+            return self._error(handle, last_exc)
+
+        return {
+            "success": False,
+            "configured": True,
+            "exists": None,
+            "platform": "twitter",
+            "username": handle,
+            "status": "empty_dataset",
+            "source": "apify",
+            "actor_id": self.profile_actor_id,
+            "tweets": [],
+            "replies": [],
+        }
 
     async def search(
         self,
@@ -128,6 +192,44 @@ class TwitterApifyService:
             "tweets": tweets,
             "run": run.as_dict(include_items=False),
             "raw_data": run.items,
+            "scraped_at": datetime.now(UTC).isoformat(),
+        }
+
+    @staticmethod
+    def _normalize_clappi_profile(handle: str, items: list[dict]) -> dict:
+        """Normalize the flat profile-first schema returned by clappi/x-twitter-profile-scraper."""
+        if not items:
+            return {"success": False, "exists": None, "platform": "twitter", "username": handle}
+        p = items[0]  # Clappi returns one item per profile URL
+        return {
+            "success": p.get("status") == "available",
+            "configured": True,
+            "exists": p.get("status") == "available",
+            "platform": "twitter",
+            "username": p.get("username") or handle,
+            "full_name": p.get("name"),
+            "bio": p.get("bio"),
+            "profile_pic_url": p.get("avatar_url"),
+            "profile_pic_hd": p.get("avatar_url"),
+            "banner_url": p.get("banner_url"),
+            "follower_count": p.get("followers"),
+            "following_count": p.get("following"),
+            "post_count": p.get("tweets_count"),
+            "is_verified": bool(p.get("is_verified") or p.get("is_blue_verified")),
+            "is_blue_verified": p.get("is_blue_verified"),
+            "user_id": p.get("id"),
+            "location": p.get("location"),
+            "website": p.get("website"),
+            "joined_at": p.get("created_at"),
+            "tweets": [],
+            "replies": [],
+            "recent_posts": [],
+            "all_hashtags": [],
+            "total_tweets_fetched": 0,
+            "total_replies_fetched": 0,
+            "status": "completed" if p.get("status") == "available" else "empty_dataset",
+            "source": "apify_clappi_twitter_scraper",
+            "raw_data": items,
             "scraped_at": datetime.now(UTC).isoformat(),
         }
 

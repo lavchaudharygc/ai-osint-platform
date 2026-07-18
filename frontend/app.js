@@ -248,6 +248,27 @@ function resetConsoleWorkspace() {
     if (emptyState) emptyState.style.display = "flex";
     if (grid) grid.style.display = "none";
     currentInvestigationData = null;
+
+    // Reset our 4 new cards
+    const assocCount = document.getElementById("associated-accounts-count");
+    const assocResults = document.getElementById("associated-accounts-results");
+    if (assocCount) assocCount.innerText = "0 Accounts Found";
+    if (assocResults) assocResults.innerHTML = "";
+
+    const secretCount = document.getElementById("secret-profiles-count");
+    const secretResults = document.getElementById("secret-profiles-results");
+    if (secretCount) secretCount.innerText = "0 Aliases Found";
+    if (secretResults) secretResults.innerHTML = "";
+
+    const personalityStatus = document.getElementById("personality-profile-status");
+    const personalityResults = document.getElementById("personality-profile-results");
+    if (personalityStatus) personalityStatus.innerText = "Not Analyzed";
+    if (personalityResults) personalityResults.innerHTML = "";
+
+    const telegramIntelStatus = document.getElementById("telegram-intel-status");
+    const telegramIntelResults = document.getElementById("telegram-intel-results");
+    if (telegramIntelStatus) telegramIntelStatus.innerText = "No Data";
+    if (telegramIntelResults) telegramIntelResults.innerHTML = "";
 }
 
 // Trigger Scan
@@ -786,7 +807,46 @@ function renderInvestigationResults(data) {
             }
             
             if (generalResults.length === 0) {
-                dorkContainerEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:15px;">Google search indexing returned 0 matching general items.</span>`;
+                dorkContainerEl.innerHTML = `<div style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px 15px;">Google search indexing returned 0 matching general items.</div>`;
+                
+                const queriesList = dorking.queries || [];
+                if (queriesList.length > 0) {
+                    const manualDorksDiv = document.createElement("div");
+                    manualDorksDiv.style.cssText = "margin-top:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:10px;";
+                    manualDorksDiv.innerHTML = `<div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:8px;">You can manually search these prepared dork queries in Google:</div>`;
+                    const queriesContainer = document.createElement("div");
+                    queriesContainer.style.cssText = "display:flex; flex-direction:column; gap:6px;";
+                    
+                    queriesList.forEach(q => {
+                        const row = document.createElement("div");
+                        row.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:6px 10px; border-radius:4px; font-size:0.75rem; font-family:'Share Tech Mono', monospace;";
+                        
+                        const catBadge = document.createElement("span");
+                        catBadge.className = "tag-pill";
+                        catBadge.style.cssText = "font-size:0.6rem; padding:1px 5px; text-transform:uppercase;";
+                        catBadge.innerText = q.category.replace(/_/g, ' ');
+                        
+                        const queryText = document.createElement("span");
+                        queryText.style.cssText = "flex:1; margin-left:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--accent-gold);";
+                        queryText.innerText = q.query;
+                        
+                        const btnCopy = document.createElement("button");
+                        btnCopy.style.cssText = "background:transparent; border:1px solid rgba(255,215,0,0.3); color:var(--accent-gold); font-size:0.65rem; padding:2px 6px; border-radius:3px; cursor:pointer;";
+                        btnCopy.innerText = "COPY";
+                        btnCopy.onclick = () => {
+                            navigator.clipboard.writeText(q.query);
+                            btnCopy.innerText = "COPIED!";
+                            setTimeout(() => { btnCopy.innerText = "COPY"; }, 1500);
+                        };
+                        
+                        row.appendChild(catBadge);
+                        row.appendChild(queryText);
+                        row.appendChild(btnCopy);
+                        queriesContainer.appendChild(row);
+                    });
+                    manualDorksDiv.appendChild(queriesContainer);
+                    dorkContainerEl.appendChild(manualDorksDiv);
+                }
             } else {
                 // Group general results by category
                 const generalGrouped = {};
@@ -830,6 +890,207 @@ function renderInvestigationResults(data) {
             }
         }
     }
+
+    // 1. Associated Accounts rendering
+    const assocCountEl = document.getElementById("associated-accounts-count");
+    const assocResultsEl = document.getElementById("associated-accounts-results");
+    const assocAccounts = (data.reverse_lookup_results && data.reverse_lookup_results.associated_accounts) || [];
+    if (assocCountEl) {
+        assocCountEl.innerText = `${assocAccounts.length} Accounts Found`;
+    }
+    if (assocResultsEl) {
+        assocResultsEl.innerHTML = "";
+        if (assocAccounts.length === 0) {
+            assocResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No associated accounts detected.</span>`;
+        } else {
+            assocAccounts.forEach(acc => {
+                const card = document.createElement("div");
+                card.style.cssText = "background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:10px 12px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;";
+                card.innerHTML = `
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <span style="font-weight:600; color:var(--accent-blue);">@${acc.username}</span>
+                        <span style="font-size:0.7rem; color:var(--text-secondary);">Source: ${acc.source} · Platform: ${acc.platform}</span>
+                        ${acc.evidence ? `<span style="font-size:0.7rem; color:var(--text-primary); margin-top:2px; font-style:italic;">Evidence: "${acc.evidence}"</span>` : ""}
+                    </div>
+                    <div style="text-align:right; flex-shrink:0;">
+                        <span class="system-badge" style="background:rgba(0,188,212,0.08); border-color:rgba(0,188,212,0.2); color:var(--accent-blue);">${typeof acc.confidence === 'string' ? acc.confidence : Math.round(acc.confidence * 100) + '%'} Match</span>
+                    </div>
+                `;
+                assocResultsEl.appendChild(card);
+            });
+        }
+    }
+
+    // 2. Secret Profiles → Guessed Emails (per front-end sketch)
+    const secretCountEl = document.getElementById("secret-profiles-count");
+    const secretResultsEl = document.getElementById("secret-profiles-results");
+    // Pull emails from intelligence_report (pattern-generated by email_guesser)
+    const guessedEmails = (
+        data.intelligence_report &&
+        data.intelligence_report.executive_summary &&
+        data.intelligence_report.executive_summary.contact_information &&
+        data.intelligence_report.executive_summary.contact_information.emails
+    ) || [];
+    if (secretCountEl) {
+        secretCountEl.innerText = guessedEmails.length > 0
+            ? `${guessedEmails.length} Patterns Generated`
+            : "0 Emails Generated";
+    }
+    if (secretResultsEl) {
+        secretResultsEl.innerHTML = "";
+        if (guessedEmails.length === 0) {
+            secretResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No email patterns generated.</span>`;
+        } else {
+            // Warn: these are guesses, not verified
+            const warning = document.createElement("div");
+            warning.style.cssText = "background:rgba(255,165,0,0.08); border:1px solid rgba(255,165,0,0.25); border-radius:6px; padding:8px 12px; font-size:0.72rem; color:#ffa500; margin-bottom:6px;";
+            warning.innerHTML = `⚠️ <strong>Unverified</strong> — algorithmically guessed from username pattern. Not confirmed real addresses.`;
+            secretResultsEl.appendChild(warning);
+
+            guessedEmails.forEach((email, i) => {
+                const confidence = Math.max(95 - i * 10, 40); // descending: 95, 85, 75…
+                const card = document.createElement("div");
+                card.style.cssText = "background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:10px 12px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;";
+                card.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                        <span style="font-size:1rem;">📧</span>
+                        <span style="font-family:'Share Tech Mono',monospace; font-size:0.82rem; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${email}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                        <span class="system-badge" style="background:rgba(255,165,0,0.08); border-color:rgba(255,165,0,0.25); color:#ffa500; font-size:0.65rem;">${confidence}% guess</span>
+                        <button onclick="navigator.clipboard.writeText('${email}').then(()=>{this.textContent='✓ Copied';setTimeout(()=>{this.textContent='📋 Copy'},1500)})" style="background:rgba(0,188,212,0.1); border:1px solid rgba(0,188,212,0.25); color:var(--accent-blue); padding:3px 8px; border-radius:4px; font-size:0.7rem; cursor:pointer;">📋 Copy</button>
+                    </div>
+                `;
+                secretResultsEl.appendChild(card);
+            });
+        }
+    }
+
+    // 3. Personality Profile rendering
+    const personalityStatusEl = document.getElementById("personality-profile-status");
+    const personalityResultsEl = document.getElementById("personality-profile-results");
+    const profileType = (data.reverse_lookup_results && data.reverse_lookup_results.profile_type) || {};
+    
+    const pReport = data.intelligence_report || {};
+    const pSections = pReport.intelligence_sections || {};
+    const hashIntel = pSections.hashtag_intelligence || {};
+    const keyDisc = hashIntel.key_discoveries || {};
+    const traits = keyDisc.personality_indicators || [];
+
+    if (personalityStatusEl) {
+        personalityStatusEl.innerText = profileType.primary_type ? "Analysis Completed" : "Not Classified";
+    }
+    if (personalityResultsEl) {
+        personalityResultsEl.innerHTML = "";
+        if (!profileType.primary_type) {
+            personalityResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">Insufficient indicators to classify personality/interests.</span>`;
+        } else {
+            let html = `
+                <div style="display:flex; flex-direction:column; gap:8px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:6px;">
+                    <div>
+                        <span style="font-size:0.75rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600;">Dominant Profile Type:</span>
+                        <div style="font-size:0.95rem; font-weight:700; color:var(--accent-gold); margin-top:2px;">${profileType.primary_type.replace(/_/g, ' ').toUpperCase()} (${Math.round(profileType.confidence * 100)}% Confidence)</div>
+                    </div>
+                    ${profileType.description ? `<div style="font-size:0.8rem; color:var(--text-primary); line-height:1.4;">${profileType.description}</div>` : ""}
+                    ${profileType.professional_field ? `<div style="font-size:0.78rem; color:var(--text-secondary);"><strong>Professional Field:</strong> ${profileType.professional_field}</div>` : ""}
+                </div>
+            `;
+
+            const interests = profileType.interests || [];
+            if (interests.length > 0) {
+                html += `
+                    <div style="margin-top:10px;">
+                        <div style="font-size:0.75rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; margin-bottom:6px;">Interest Fingerprint</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                `;
+                interests.forEach(interest => {
+                    html += `<span class="tag-pill" style="font-size:0.72rem; padding:3px 8px; background:rgba(0,188,212,0.05); border:1px solid rgba(0,188,212,0.15); border-radius:4px; color:var(--accent-blue);">${interest}</span>`;
+                });
+                html += `</div></div>`;
+            }
+
+            if (traits.length > 0) {
+                html += `
+                    <div style="margin-top:10px;">
+                        <div style="font-size:0.75rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; margin-bottom:6px;">Personality Trait Indicators</div>
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                `;
+                traits.forEach(t => {
+                    html += `
+                        <div style="background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.03); border-radius:4px; padding:6px 10px; font-size:0.75rem; display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-weight:600; color:var(--text-primary);">${t.trait} (${t.category})</span>
+                            <span class="system-badge" style="font-size:0.6rem; padding:1px 5px; background:rgba(0,180,255,0.08); border-color:rgba(0,180,255,0.2); color:var(--accent-blue);">${t.confidence} Match</span>
+                        </div>
+                    `;
+                });
+                html += `</div></div>`;
+            }
+
+            personalityResultsEl.innerHTML = html;
+        }
+    }
+
+    // 4. Telegram Intelligence rendering
+    const tgIntelStatusEl = document.getElementById("telegram-intel-status");
+    const tgIntelResultsEl = document.getElementById("telegram-intel-results");
+    const tgData = (data.scraped_data && data.scraped_data.telegram) || {};
+    
+    if (tgIntelStatusEl) {
+        tgIntelStatusEl.innerText = tgData.exists ? "Active Account/Channel" : (tgData.exists === false ? "No Account Found" : "No Data");
+    }
+    if (tgIntelResultsEl) {
+        tgIntelResultsEl.innerHTML = "";
+        if (!tgData.username) {
+            tgIntelResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No Telegram intelligence cached for this target username.</span>`;
+        } else {
+            let mtprotoHTML = "";
+            if (tgData.mtproto_status) {
+                const ms = tgData.mtproto_status;
+                mtprotoHTML = `
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:10px 12px; border-radius:6px; font-size:0.78rem; margin-top:10px;">
+                        <span style="font-size:0.7rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; display:block; margin-bottom:4px;">MTProto API Access Diagnostics:</span>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                            <div>MTProto Enabled: <span style="font-weight:600; color:${ms.enabled ? 'var(--accent-blue)' : 'var(--text-secondary)'};">${ms.enabled ? 'YES' : 'NO'}</span></div>
+                            <div>Auth Dependency: <span style="font-weight:600; color:${ms.dependency_available ? 'var(--accent-blue)' : 'var(--accent-crimson)'};">${ms.dependency_available ? 'AVAILABLE' : 'MISSING'}</span></div>
+                            <div>Credentials Configured: <span style="font-weight:600; color:${ms.credentials_configured ? 'var(--accent-blue)' : 'var(--text-secondary)'};">${ms.credentials_configured ? 'YES' : 'NO'}</span></div>
+                            <div>Session File: <span style="font-weight:600; color:${ms.session_file_present ? 'var(--accent-blue)' : 'var(--text-secondary)'};">${ms.session_file_present ? 'FOUND' : 'NOT FOUND'}</span></div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            let signalsHTML = "";
+            if (tgData.verification_signals) {
+                const vs = tgData.verification_signals;
+                signalsHTML = `
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                        <span class="system-badge" style="background:${vs.is_verified ? 'rgba(0,188,212,0.08)' : 'rgba(255,255,255,0.03)'}; border-color:${vs.is_verified ? 'rgba(0,188,212,0.2)' : 'rgba(255,255,255,0.08)'}; color:${vs.is_verified ? 'var(--accent-blue)' : 'var(--text-secondary)'};">Verified Badge: ${vs.is_verified ? 'YES' : 'NO'}</span>
+                        <span class="system-badge" style="background:${vs.is_scam ? 'rgba(255,51,102,0.08)' : 'rgba(255,255,255,0.03)'}; border-color:${vs.is_scam ? 'rgba(255,51,102,0.2)' : 'rgba(255,255,255,0.08)'}; color:${vs.is_scam ? 'var(--accent-crimson)' : 'var(--text-secondary)'};">Scam Signal: ${vs.is_scam ? 'YES' : 'NO'}</span>
+                        <span class="system-badge" style="background:${vs.is_fake ? 'rgba(255,51,102,0.08)' : 'rgba(255,255,255,0.03)'}; border-color:${vs.is_fake ? 'rgba(255,51,102,0.2)' : 'rgba(255,255,255,0.08)'}; color:${vs.is_fake ? 'var(--accent-crimson)' : 'var(--text-secondary)'};">Fake Signal: ${vs.is_fake ? 'YES' : 'NO'}</span>
+                    </div>
+                `;
+            }
+
+            tgIntelResultsEl.innerHTML = `
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:6px; display:flex; gap:12px; align-items:start;">
+                    <div style="width:50px; height:50px; border-radius:50%; background:rgba(36,161,222,0.1); border:1px solid rgba(36,161,222,0.3); display:flex; align-items:center; justify-content:center; font-weight:bold; color:var(--accent-blue); flex-shrink:0;">TG</div>
+                    <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
+                        <div style="font-size:0.9rem; font-weight:700; color:var(--text-primary); display:flex; justify-content:space-between;">
+                            <span>${tgData.full_name || "Telegram Profile"}</span>
+                            <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:normal;">@${tgData.username}</span>
+                        </div>
+                        ${tgData.bio ? `<div style="font-size:0.8rem; color:var(--text-secondary); line-height:1.4;">${tgData.bio}</div>` : ""}
+                        <div style="font-size:0.78rem; color:var(--text-primary); font-weight:600; margin-top:2px;">
+                            Entity Type: ${(tgData.entity_type || "user").toUpperCase()} 
+                            ${tgData.subscriber_count ? `· ${Number(tgData.subscriber_count).toLocaleString()} members` : ""}
+                        </div>
+                        ${signalsHTML}
+                    </div>
+                </div>
+                ${mtprotoHTML}
+            `;
+        }
+    }
 }
 
 function renderInstagramPosts(igPosts) {
@@ -847,12 +1108,15 @@ function renderInstagramPosts(igPosts) {
     const posts = igPosts.posts || igPosts.reels || [];
     const hashtags = igPosts.all_hashtags || [];
 
+    // Filter out empty/null-only posts (private accounts return a skeleton with profile URL only)
+    const realPosts = posts.filter(p => p.caption || p.taken_at || p.like_count != null || p.display_url || (p.hashtags && p.hashtags.length));
+
     if (badge) {
         if (igPosts.error) {
             badge.innerText = `Error: ${igPosts.error}`;
             badge.style.color = "var(--accent-crimson)";
         } else {
-            badge.innerText = `${posts.length} posts · ${hashtags.length} hashtags`;
+            badge.innerText = `${realPosts.length} posts · ${hashtags.length} hashtags`;
             badge.style.color = "";
         }
     }
@@ -879,12 +1143,12 @@ function renderInstagramPosts(igPosts) {
     if (!feed) return;
     feed.innerHTML = "";
 
-    if (posts.length === 0) {
-        feed.innerHTML = `<div style="color:var(--text-secondary); font-size:0.82rem; padding:10px 0;">${igPosts.error ? igPosts.error : "No posts retrieved."}</div>`;
+    if (realPosts.length === 0) {
+        feed.innerHTML = `<div style="color:var(--text-secondary); font-size:0.82rem; padding:10px 0;">${igPosts.error ? igPosts.error : "No posts retrieved (account may be private or have no posts)."}</div>`;
         return;
     }
 
-    posts.forEach(post => {
+    realPosts.forEach(post => {
         const card = document.createElement("div");
         card.style.cssText = "background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:6px;";
 
@@ -914,21 +1178,21 @@ function renderInstagramPosts(igPosts) {
     });
 }
 
-// Helper to return platform-specific SVG vector icons
+// Helper to return platform-specific branded, coloured SVG icons
 function getPlatformSVG(platform) {
     const svgs = {
-        instagram: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>`,
-        twitter: `<svg class="svg-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`,
-        telegram: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>`,
-        linkedin: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path><rect x="2" y="9" width="4" height="12"></rect><circle cx="4" cy="4" r="2"></circle></svg>`,
-        facebook: `<svg class="svg-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06C2 17.08 5.66 21.25 10.44 22v-7.03H7.9v-2.91h2.54V9.85c0-2.52 1.5-3.91 3.78-3.91 1.09 0 2.23.2 2.23.2v2.46H15.2c-1.24 0-1.63.77-1.63 1.56v1.9h2.78l-.44 2.91h-2.34V22C18.34 21.25 22 17.08 22 12.06z"/></svg>`,
-        github: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>`,
-        reddit: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm4 11a1.5 1.5 0 1 1-1.5-1.5A1.5 1.5 0 0 1 16 13zm-6.5-1.5A1.5 1.5 0 1 1 8 13a1.5 1.5 0 0 1 1.5-1.5zm2.5 4.5c-1.5 0-2.5-1-2.5-1s1-1 2.5-1 2.5 1 2.5 1-1 1-2.5 1z"/></svg>`,
-        youtube: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>`,
-        pinterest: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 12a4 4 0 0 1 8 0c0 2.5-2 4.5-4.5 4.5S7 14.5 7 12"></path><path d="M12 7.5V16"></path></svg>`,
-        koo: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5-2 4-2 4 2 4 2"/></svg>`,
-        sharechat: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
-        moj: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v8M8 12h8"/></svg>`
+        instagram: `<svg class="svg-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="ig-grad" cx="30%" cy="107%" r="150%"><stop offset="0%" stop-color="#fdf497"/><stop offset="5%" stop-color="#fdf497"/><stop offset="45%" stop-color="#fd5949"/><stop offset="60%" stop-color="#d6249f"/><stop offset="90%" stop-color="#285AEB"/></radialGradient></defs><rect x="2" y="2" width="20" height="20" rx="5" ry="5" fill="url(#ig-grad)"/><rect x="2" y="2" width="20" height="20" rx="5" ry="5" fill="none" stroke="none"/><circle cx="12" cy="12" r="4" fill="none" stroke="white" stroke-width="1.8"/><circle cx="17.5" cy="6.5" r="1.2" fill="white"/></svg>`,
+        twitter: `<svg class="svg-icon" viewBox="0 0 24 24" fill="white" style="background:#000; border-radius:6px; padding:2px;"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`,
+        telegram: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" style="background:#29a9eb; border-radius:50%; padding:2px;"><path d="M21.93 3.36L3.46 10.27c-1.18.47-1.17 1.13-.22 1.42l4.58 1.43 10.62-6.7c.5-.3.95-.14.58.19L9.63 15.15l-.35 4.67c.51 0 .74-.23 1.02-.5l2.45-2.38 5.09 3.76c.94.52 1.61.25 1.84-.87l3.33-15.69c.34-1.36-.52-1.97-1.08-1.78z" fill="white"/></svg>`,
+        linkedin: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#0A66C2; border-radius:5px; padding:2px;"><path d="M6.94 5a2 2 0 1 1-4-.002 2 2 0 0 1 4 .002zM7 8.48H3V21h4V8.48zm6.32 0H9.34V21h3.94v-6.57c0-3.66 4.77-4 4.77 0V21H22v-7.93c0-6.17-7.06-5.94-8.72-2.91l.04-1.68z" fill="white"/></svg>`,
+        facebook: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#1877F2; border-radius:50%; padding:1px;"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06C2 17.08 5.66 21.25 10.44 22v-7.03H7.9v-2.91h2.54V9.85c0-2.52 1.5-3.91 3.78-3.91 1.09 0 2.23.2 2.23.2v2.46H15.2c-1.24 0-1.63.77-1.63 1.56v1.9h2.78l-.44 2.91h-2.34V22C18.34 21.25 22 17.08 22 12.06z" fill="white"/></svg>`,
+        github: `<svg class="svg-icon" viewBox="0 0 24 24" fill="white" style="background:#24292e; border-radius:50%; padding:1px;"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.09.66-.22.66-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.1-1.47-1.1-1.47-.9-.62.07-.6.07-.6 1 .07 1.52 1.02 1.52 1.02.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.8c.85.004 1.7.114 2.5.334 1.9-1.29 2.74-1.02 2.74-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.75c0 .27.16.58.67.48A10.01 10.01 0 0 0 22 12C22 6.48 17.52 2 12 2z"/></svg>`,
+        reddit: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#FF4500; border-radius:50%; padding:1px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5.88 11.27a1.5 1.5 0 0 1-1.5 1.5c-.43 0-.82-.18-1.1-.47-.96.67-2.3 1.1-3.79 1.15l.64 3.02 2.08-.44a1.1 1.1 0 1 1 .15.73l-2.32.49c-.1.02-.2-.04-.23-.14l-.71-3.37c-1.5-.04-2.85-.47-3.82-1.14-.28.29-.67.47-1.1.47a1.5 1.5 0 0 1-.27-2.97c-.02-.15-.03-.3-.03-.45 0-2.23 2.43-4.04 5.43-4.04s5.43 1.81 5.43 4.04c0 .15-.01.3-.03.45.43.14.75.55.75 1.03l.02-.87zm-8.88.23a1.1 1.1 0 1 1 2.2 0 1.1 1.1 0 0 1-2.2 0zm5.35 2.81s-.87.87-2.35.87-2.35-.87-2.35-.87c-.13-.13-.13-.33 0-.46.13-.13.33-.13.46 0 0 0 .7.66 1.89.66s1.89-.66 1.89-.66c.13-.13.33-.13.46 0 .13.13.13.33 0 .46zm-.05-1.71a1.1 1.1 0 1 1 2.2 0 1.1 1.1 0 0 1-2.2 0z" fill="white"/></svg>`,
+        youtube: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#FF0000; border-radius:6px; padding:2px;"><path d="M21.8 8s-.2-1.4-.8-2c-.77-.8-1.63-.81-2.02-.86C16.24 5 12 5 12 5s-4.24 0-6.98.14c-.4.05-1.25.06-2.02.86-.6.6-.8 2-.8 2S2 9.6 2 11.2v1.5c0 1.6.2 3.2.2 3.2s.2 1.4.8 2c.77.8 1.79.78 2.24.86C6.8 19 12 19 12 19s4.24 0 6.98-.16c.4-.05 1.25-.06 2.02-.86.6-.6.8-2 .8-2s.2-1.6.2-3.2v-1.5C22 9.6 21.8 8 21.8 8zM9.75 14.85V9.15l5.5 2.85-5.5 2.85z" fill="white"/></svg>`,
+        pinterest: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#E60023; border-radius:50%; padding:1px;"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.24 2.65 7.86 6.39 9.29-.09-.78-.17-1.98.04-2.83.18-.77 1.23-5.22 1.23-5.22s-.31-.63-.31-1.56c0-1.46.85-2.55 1.9-2.55.9 0 1.33.67 1.33 1.48 0 .9-.57 2.26-.87 3.52-.25 1.05.52 1.9 1.55 1.9 1.86 0 3.11-2.4 3.11-5.25 0-2.17-1.47-3.69-3.57-3.69-2.43 0-3.86 1.82-3.86 3.7 0 .73.28 1.52.63 1.94.07.08.08.16.06.24-.06.26-.2.82-.23.93-.04.15-.13.18-.3.11-1.12-.52-1.82-2.17-1.82-3.49 0-2.84 2.06-5.44 5.94-5.44 3.12 0 5.54 2.22 5.54 5.19 0 3.1-1.95 5.59-4.65 5.59-.91 0-1.76-.47-2.05-1.03l-.56 2.09c-.2.78-.75 1.76-1.12 2.35.85.26 1.74.4 2.67.4 5.52 0 10-4.48 10-10S17.52 2 12 2z" fill="white"/></svg>`,
+        koo: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#FFCC00; border-radius:8px; padding:2px;"><text x="4" y="17" font-size="13" font-weight="bold" fill="#2d2d2d">koo</text></svg>`,
+        sharechat: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#3DB97D; border-radius:8px; padding:2px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="white"/></svg>`,
+        moj: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#9B59B6; border-radius:50%; padding:2px;"><circle cx="12" cy="12" r="8" fill="white" fill-opacity="0.2"/><path d="M10 8l6 4-6 4V8z" fill="white"/></svg>`
     };
     return svgs[platform.toLowerCase()] || `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
 }
@@ -1099,6 +1363,92 @@ function renderOfficialReportTemplate(data, caseId) {
         }
     }
 
+    // 1. Associated Accounts Rows
+    const assocAccounts = (data.reverse_lookup_results && data.reverse_lookup_results.associated_accounts) || [];
+    let assocAccountsRows = "";
+    if (assocAccounts.length > 0) {
+        assocAccounts.forEach(acc => {
+            assocAccountsRows += `
+            <tr>
+                <td><strong>@${acc.username}</strong></td>
+                <td>${acc.platform.toUpperCase()}</td>
+                <td>${acc.source}</td>
+                <td>${Math.round(acc.confidence * 100)}%</td>
+                <td>${acc.evidence || "N/A"}</td>
+            </tr>`;
+        });
+    } else {
+        assocAccountsRows = `<tr><td colspan="5" style="text-align: center; color: #555;">No associated accounts detected.</td></tr>`;
+    }
+
+    // 2. Secret Profiles Rows
+    const secretVariations = (data.reverse_lookup_results && data.reverse_lookup_results.keyword_profile && data.reverse_lookup_results.keyword_profile.username_variations) || [];
+    let secretProfilesRows = "";
+    if (secretVariations.length > 0) {
+        secretVariations.forEach(v => {
+            secretProfilesRows += `
+            <tr>
+                <td style="font-family: monospace;"><strong>${v}</strong></td>
+                <td>Alias Handle Candidate</td>
+                <td>Keyword similarity profiling</td>
+            </tr>`;
+        });
+    } else {
+        secretProfilesRows = `<tr><td colspan="3" style="text-align: center; color: #555;">No username variations/aliases identified.</td></tr>`;
+    }
+
+    // 3. Personality Profile Summary
+    const profileType = (data.reverse_lookup_results && data.reverse_lookup_results.profile_type) || {};
+    const traits = (data.intelligence_report && data.intelligence_report.intelligence_sections && data.intelligence_report.intelligence_sections.hashtag_intelligence && data.intelligence_report.intelligence_sections.hashtag_intelligence.key_discoveries && data.intelligence_report.intelligence_sections.hashtag_intelligence.key_discoveries.personality_indicators) || [];
+    let personalityProfileHTML = "";
+    if (profileType.primary_type) {
+        let interestsHTML = (profileType.interests || []).map(i => `<span style="display: inline-block; background: #e0f2f1; color: #00796b; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; margin-right: 4px; margin-bottom: 4px;">${i}</span>`).join("");
+        let traitsHTML = traits.map(t => `<li><strong>${t.trait}</strong> (${t.category}) - ${t.confidence} match</li>`).join("");
+        personalityProfileHTML = `
+            <div class="evidence-box">
+                <strong>Dominant Profile Type:</strong> ${profileType.primary_type.replace(/_/g, ' ').toUpperCase()}<br>
+                <strong>Confidence Level:</strong> ${Math.round(profileType.confidence * 100)}%<br>
+                ${profileType.description ? `<strong>Description:</strong> ${profileType.description}<br>` : ""}
+                ${profileType.professional_field ? `<strong>Professional Field:</strong> ${profileType.professional_field}<br>` : ""}
+                <br>
+                <strong>Interest Fingerprint:</strong><br>
+                <div style="margin-top: 4px;">${interestsHTML || "None detected."}</div>
+                ${traitsHTML ? `<br><strong>Personality Trait Indicators:</strong><ul>${traitsHTML}</ul>` : ""}
+            </div>
+        `;
+    } else {
+        personalityProfileHTML = `<p>Insufficient indicators to classify personality or interest fingerprint.</p>`;
+    }
+
+    // 4. Telegram Intelligence Summary
+    const tgData = (data.scraped_data && data.scraped_data.telegram) || {};
+    let telegramIntelligenceHTML = "";
+    if (tgData.username) {
+        let signalsText = "";
+        if (tgData.verification_signals) {
+            const vs = tgData.verification_signals;
+            signalsText = `Verified: ${vs.is_verified ? "YES" : "NO"} | Scam: ${vs.is_scam ? "YES" : "NO"} | Fake: ${vs.is_fake ? "YES" : "NO"}`;
+        }
+        let mtprotoText = "";
+        if (tgData.mtproto_status) {
+            const ms = tgData.mtproto_status;
+            mtprotoText = `MTProto Enabled: ${ms.enabled ? "YES" : "NO"} | Session File: ${ms.session_file_present ? "FOUND" : "NOT FOUND"}`;
+        }
+        telegramIntelligenceHTML = `
+            <div class="evidence-box">
+                <strong>Username:</strong> @${tgData.username}<br>
+                <strong>Display Name:</strong> ${tgData.full_name || "N/A"}<br>
+                <strong>Entity Type:</strong> ${(tgData.entity_type || "user").toUpperCase()}<br>
+                ${tgData.subscriber_count ? `<strong>Subscribers/Members:</strong> ${Number(tgData.subscriber_count).toLocaleString()}<br>` : ""}
+                ${tgData.bio ? `<strong>Biography:</strong> ${tgData.bio}<br>` : ""}
+                ${signalsText ? `<strong>Security Signals:</strong> ${signalsText}<br>` : ""}
+                ${mtprotoText ? `<strong>API Access:</strong> ${mtprotoText}<br>` : ""}
+            </div>
+        `;
+    } else {
+        telegramIntelligenceHTML = `<p>No Telegram intelligence cached for this target username.</p>`;
+    }
+
 
 
     // AI Parsing Details
@@ -1122,17 +1472,19 @@ function renderOfficialReportTemplate(data, caseId) {
     // Generate table rows for cross platform matches
     let matchesRows = "";
     matches.forEach(m => {
-        const conf = m.exists ? 85 : 5;
-        const confClass = m.exists ? "finding-high" : "";
-        const evidenceStr = m.exists ? 
-            `MATCH IDENTIFIED. Active profile URL resolved status ${m.status_code}. Path: ${m.url}` : 
-            `ABSENT. Profile resolution returned status ${m.status_code || "Timeout"}.`;
-        
+        const conf = m.exists === true ? 85 : m.exists === null ? 0 : 5;
+        const confClass = m.exists === true ? "finding-high" : m.exists === null ? "" : "";
+        const evidenceStr = m.exists === true
+            ? `MATCH IDENTIFIED. Active profile URL resolved status ${m.status_code}. Path: ${m.url}`
+            : m.exists === null
+            ? `INCONCLUSIVE. ${m.note || 'Platform blocked automated check (HTTP ' + m.status_code + ')'}. Manual verification required.`
+            : `ABSENT. Profile resolution returned status ${m.status_code || "Timeout"}.`;
+
         matchesRows += `
         <tr>
             <td>${m.platform.toUpperCase()}</td>
             <td>${pData.username}</td>
-            <td class="${confClass}">${conf}%</td>
+            <td class="${confClass}">${m.exists === null ? 'N/A' : conf + '%'}</td>
             <td>${evidenceStr}</td>
         </tr>`;
     });
@@ -1316,8 +1668,14 @@ function renderOfficialReportTemplate(data, caseId) {
     
     <h4>3.2 Content Analysis</h4>
     <p>No anomalous content flags or illegal activity alerts observed on target timeline. Secondary posts examination is pending legal warrant verification.</p>
-    
-    <h4>3.3 Internal Database Registry Matches</h4>
+
+    <h4>3.2a Guessed Email Addresses (UNVERIFIED — Pattern-Generated, NOT Confirmed)</h4>
+    <p style="background:#fff3cd; border:1px solid #ffc107; padding:6px 10px; font-size:10pt; border-radius:4px;">⚠️ The following email addresses were algorithmically generated from the username pattern. They have <strong>NOT been verified</strong> and may not be real. Do not use as confirmed contact data.</p>
+    ${(() => {
+        const guessedEmails = (data.intelligence_report && data.intelligence_report.executive_summary && data.intelligence_report.executive_summary.contact_information && data.intelligence_report.executive_summary.contact_information.emails) || [];
+        if (guessedEmails.length === 0) return '<p style="color:#555;">No email patterns generated.</p>';
+        return '<ul>' + guessedEmails.map(e => `<li style="color:#856404; font-family:monospace;">${e} <em>(unverified guess)</em></li>`).join('') + '</ul>';
+    })()}
     ${hitekFilterNote}
     <table>
         <thead>
@@ -1375,6 +1733,42 @@ function renderOfficialReportTemplate(data, caseId) {
             ${dorkingRows}
         </tbody>
     </table>
+    
+    <h4>4.4 Associated Accounts Discovery</h4>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25%;">Username</th>
+                <th style="width: 20%;">Platform</th>
+                <th style="width: 20%;">Source</th>
+                <th style="width: 15%;">Confidence</th>
+                <th style="width: 20%;">Evidence Snippet</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${assocAccountsRows}
+        </tbody>
+    </table>
+
+    <h4>4.5 Secret Profiles / Alias Candidates</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Variation / Alias</th>
+                <th>Type</th>
+                <th>Profiling Method</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${secretProfilesRows}
+        </tbody>
+    </table>
+
+    <h4>4.6 Personality Profile & Interest Fingerprint</h4>
+    ${personalityProfileHTML}
+
+    <h4>4.7 Telegram Intelligence</h4>
+    ${telegramIntelligenceHTML}
     
     <div class="section-title">5. AI CORRELATION ANALYSIS</div>
     <div class="evidence-box">
@@ -1549,14 +1943,14 @@ function renderPlatformDossier(data) {
 
     matches.forEach(match => {
         const isPrimary = match.platform === primaryPlatform;
-        const exists = match.exists;
+        const exists = match.exists;  // true | false | null (inconclusive)
         const card = document.createElement("div");
-        card.className = `platform-intel-card ${isPrimary ? 'status-primary' : (exists ? 'status-found' : 'status-absent')}`;
+        card.className = `platform-intel-card ${isPrimary ? 'status-primary' : (exists === true ? 'status-found' : exists === null ? 'status-inconclusive' : 'status-absent')}`;
 
         const svgIcon = getPlatformSVG(match.platform);
-        const badgeText = exists ? "Profile found" : "Profile absent";
-        const badgeClass = exists ? "match-badge match-found" : "match-badge match-absent";
-        const codeText = match.status_code ? `HTTP ${match.status_code}` : (exists ? "RESOLVED" : "TIMEOUT");
+        const badgeText = exists === true ? "Profile found" : exists === null ? "Inconclusive" : "Profile absent";
+        const badgeClass = exists === true ? "match-badge match-found" : exists === null ? "match-badge match-inconclusive" : "match-badge match-absent";
+        const codeText = match.status_code ? `HTTP ${match.status_code}` : (exists === true ? "RESOLVED" : exists === null ? "BLOCKED" : "TIMEOUT");
 
         // Filter dorks and posts
         const platformDorks = getPlatformDorks(match.platform);
@@ -1769,14 +2163,13 @@ function togglePlatformCardCollapse(id, btn, platform, username) {
     const isExpanded = el.classList.contains("expanded");
     
     // Close or open
+    const svg = btn.querySelector(".platform-intel-toggle-icon svg") || btn.querySelector("svg");
     if (isExpanded) {
         el.classList.remove("expanded");
-        btn.querySelector("span").innerText = "Show Details";
-        btn.querySelector("svg").style.transform = "rotate(0deg)";
+        if (svg) svg.style.transform = "rotate(0deg)";
     } else {
         el.classList.add("expanded");
-        btn.querySelector("span").innerText = "Hide Details";
-        btn.querySelector("svg").style.transform = "rotate(180deg)";
+        if (svg) svg.style.transform = "rotate(180deg)";
         
         // Auto-scrape on expand if not yet scraped
         const status = el.getAttribute("data-scraped-status");
@@ -1794,7 +2187,7 @@ function toggleStaticCardCollapse(id, btn) {
     if (!collapsible) return;
     
     const isExpanded = collapsible.classList.contains("expanded");
-    const span = btn.querySelector("span");
+    const span = btn.querySelector(".toggle-text") || btn.querySelector("span");
     const svg = btn.querySelector("svg");
     
     if (isExpanded) {

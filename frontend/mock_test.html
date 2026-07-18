@@ -3,13 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UP Cyber HQs | AI-OSINT Control Panel</title>
+    <title>MOCK TEST — UP Cyber HQs | AI-OSINT Control Panel</title>
     <!-- Google Fonts for elite, clean look -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <!-- Link External CSS -->
     <link rel="stylesheet" href="styles.css">
+
+    <style>
+        #mock-toolbar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+            background: linear-gradient(90deg, #c0392b, #e67e22);
+            color: #fff; display: flex; align-items: center; gap: 16px;
+            padding: 6px 20px; font-size: 0.78rem; font-family: 'Share Tech Mono', monospace;
+            box-shadow: 0 2px 12px rgba(192,57,43,0.5);
+        }
+        #mock-toolbar strong { letter-spacing: 2px; }
+        #mock-toolbar button {
+            background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4);
+            color: #fff; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 0.72rem;
+            transition: background 0.2s;
+        }
+        #mock-toolbar button:hover { background: rgba(255,255,255,0.35); }
+        body { padding-top: 36px !important; }
+        
+        #preloader { display: none !important; }
+        #auth-portal { display: none !important; }
+        #dashboard { display: grid !important; }
+    </style>
+
 </head>
 <body>
+
+    <div id="mock-toolbar">
+        <strong>⚠ MOCK TEST MODE</strong>
+        <span>No real API calls — UI components test</span>
+        <button onclick="injectMock()">🔄 Re-inject Data</button>
+        <button onclick="window.location.href='index.html'">← Real App</button>
+    </div>
+
 
     <!-- PRELOADER -->
     <div id="preloader">
@@ -589,5 +620,8 @@
 
     <!-- Link External JS Script -->
     <script src="app.js?v=20260707-3"></script>
+
+    <script src="mock_data.js"></script>
+
 </body>
 </html>

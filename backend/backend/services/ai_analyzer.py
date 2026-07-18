@@ -132,10 +132,22 @@ Conflicting locations = reduce confidence
         return messages
 
     def _build_correlation_query(self, primary_profile: dict[str, Any], discovered_profiles: list[dict[str, Any]]) -> str:
-        discovered_summary = "\n".join(
-            f"{index}. Platform: {profile.get('platform')} | Username: {profile.get('username')} | URL: {profile.get('url')} | Exists: {profile.get('exists')}"
-            for index, profile in enumerate(discovered_profiles, 1)
-        )
+        summary_parts = []
+        for index, profile in enumerate(discovered_profiles, 1):
+            part = f"{index}. Platform: {profile.get('platform')} | Username: {profile.get('username')} | URL: {profile.get('url')} | Exists: {profile.get('exists')}"
+            if profile.get("exists") and (profile.get("full_name") or profile.get("bio")):
+                extra = []
+                if profile.get("full_name"):
+                    extra.append(f"Name: {profile.get('full_name')}")
+                if profile.get("bio"):
+                    extra.append(f"Bio: {str(profile.get('bio')).strip()[:100]}")
+                if profile.get("followers"):
+                    extra.append(f"Followers: {profile.get('followers')}")
+                if profile.get("posts"):
+                    extra.append(f"Posts: {profile.get('posts')}")
+                part += " (" + ", ".join(extra) + ")"
+            summary_parts.append(part)
+        discovered_summary = "\n".join(summary_parts)
         platform_name = str(primary_profile.get("platform") or "social media").upper()
         followers = primary_profile.get("followers")
         if followers is None:

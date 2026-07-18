@@ -1,0 +1,176 @@
+// ─── MOCK DATA for UI testing (no scraping needed) ─────────────────────
+const MOCK_DATA = {
+    investigation_id: "inv_mock_test_0001",
+    status: "completed_with_warnings",
+    platform_data: {
+        success: true, platform: "instagram", username: "arkagrawall",
+        full_name: "Ark Agrawal 🤸‍♂️",
+        bio: "Coffee . Sunset . Music
+@arksscameraroll 😼",
+        profile_pic_url: "https://i.pravatar.cc/150?u=arkagrawall",
+        profile_pic_hd: "https://i.pravatar.cc/320?u=arkagrawall",
+        follower_count: 142, following_count: 238, post_count: 0,
+        is_verified: false, is_private: true, is_business: false,
+        source: "mock_data", scraped_at: new Date().toISOString()
+    },
+    cross_platform_matches: [
+        { platform: "instagram", url: "https://www.instagram.com/arkagrawall/", exists: true, status_code: 200 },
+        { platform: "twitter", url: "https://x.com/arkagrawall", exists: true, status_code: 200 },
+        { platform: "linkedin", url: "https://www.linkedin.com/in/arkagrawall/", exists: null, status_code: 999, status: "blocked_by_platform", note: "LinkedIn blocks direct HTTP checks (HTTP 999). Use the scraper for accurate results." },
+        { platform: "telegram", url: "https://t.me/arkagrawall", exists: false, status_code: 200 },
+        { platform: "github", url: "https://github.com/arkagrawall", exists: true, status_code: 200 },
+        { platform: "pinterest", url: "https://www.pinterest.com/arkagrawall/", exists: true, status_code: 200 },
+        { platform: "youtube", url: "https://www.youtube.com/@arkagrawall", exists: false, status_code: 404 },
+        { platform: "reddit", url: "https://www.reddit.com/user/arkagrawall", exists: false, status_code: 404 },
+        { platform: "facebook", url: "https://www.facebook.com/arkagrawall/", exists: false, status_code: 400 }
+    ],
+    ai_correlation_result: {
+        confidence: 0.75, summary: "AI correlation completed using mock model.",
+        matching_platforms: ["instagram", "twitter", "github", "pinterest"],
+        primary_platform: "instagram",
+        ai_analysis: {
+            success: true,
+            parsed: {
+                decision: "PROBABLY SAME", confidence: 75,
+                reasons: [
+                    "Same username 'arkagrawall' found on Instagram, Twitter, GitHub, and Pinterest.",
+                    "Twitter bio '19, chasing code & chaos' aligns with GitHub developer activity.",
+                    "Instagram bio references secondary account @arksscameraroll — consistent multi-account pattern.",
+                    "Pinterest username + real name 'Ark agrawal' matches primary profile."
+                ],
+                next_steps: [
+                    "Scrape Twitter tweets to get more content for AI analysis.",
+                    "Investigate GitHub repositories for personal info or location clues.",
+                    "Approve LinkedIn scraper to confirm LinkedIn profile."
+                ]
+            },
+            model_used: "llama-3.3-70b-versatile (mock)"
+        }
+    },
+    risk_assessment: {
+        level: "medium", score: 75,
+        factors: ["cross_platform_presence", "multiple_platforms_confirmed"],
+        requires_human_review: true,
+        ai_risk_analysis: {
+            success: true,
+            analysis: "RISK LEVEL: MEDIUM\nRISK SCORE: 75\n\nINDICATORS:\n- Subject present on 4+ platforms with consistent username.\n- Private Instagram account; limited public content.\n- Active GitHub with multiple repos (TripChain, NeuroDrishti, Swasthya-setu).\n- No immediate threat indicators.\n\nRECOMMENDATIONS:\n- Monitor for new platform registrations.\n- Investigate GitHub repositories for code containing personal data.\n- Attempt LinkedIn scrape after permission approval."
+        }
+    },
+    internal_database_matches: { database_path: "./osint.db", by_username: [], by_phone: [], by_email: [], by_name: [], by_location: [], hitek_filtered: false },
+    hashtag_analysis: { original_username: "arkagrawall", hashtags_analyzed: [], platforms_checked: ["twitter"], findings: {}, potential_connections: [] },
+    dorking_results: {
+        status: "completed", queries_run: 50, result_count: 6,
+        results: [
+            { query: 'site:github.com "arkagrawall"', platform: "GitHub", category: "developer_tech", title: "arkagrawall/TripChain", url: "https://github.com/arkagrawall/TripChain", domain: "github.com", snippet: "Contribute to arkagrawall/TripChain development by creating an account on GitHub.", position: 1, source: "google_apify" },
+            { query: 'site:github.com "arkagrawall"', platform: "GitHub", category: "developer_tech", title: "arkagrawall/NeuroDrishti: GLANHE008", url: "https://github.com/arkagrawall/NeuroDrishti", domain: "github.com", snippet: "GLANHE008. Contribute to arkagrawall/NeuroDrishti — AI-based visual intelligence project.", position: 2, source: "google_apify" },
+            { query: 'site:github.com "arkagrawall"', platform: "GitHub", category: "developer_tech", title: "arkagrawall/Swasthya-setu", url: "https://github.com/arkagrawall/Swasthya-setu", domain: "github.com", snippet: "A project which helps intern doctors. Healthcare management system.", position: 3, source: "google_apify" },
+            { query: 'site:instagram.com "arkagrawall"', platform: "Instagram", category: "social_media", title: "From Classroom to Code — AI/ML Learning", url: "https://www.instagram.com/p/DXblaS4kySU/", domain: "www.instagram.com", snippet: "congratulations @arkagrawall — tagged in AI/ML university post 3 days ago.", position: 1, source: "google_apify" },
+            { query: 'site:instagram.com "arkagrawall"', platform: "Instagram", category: "social_media", title: "Greenfields ka best Trio 🔥", url: "https://www.instagram.com/p/CP2N94bjtHM/", domain: "www.instagram.com", snippet: "arkagrawall.. September 2021 — Greenfields Public School, Dilshad Garden.", position: 2, source: "google_apify" },
+            { query: 'site:pinterest.com "arkagrawall"', platform: "Pinterest", category: "social_media", title: "Ark agrawal (arkagrawall) – Profile", url: "https://in.pinterest.com/arkagrawall/", domain: "in.pinterest.com", snippet: "DUMPING MY TIME HERE. 101 Pins — Recreate When?, PINS that got me.", position: 1, source: "google_apify" }
+        ],
+        grouped_by_category: { developer_tech: [], social_media: [] }
+    },
+    instagram_posts: {
+        configured: true, username: "arkagrawall", total: 2,
+        posts: [
+            {
+                shortcode: "DXblaS4kySU", url: "https://www.instagram.com/p/DXblaS4kySU/",
+                taken_at: 1782290000, media_type: "photo",
+                caption: "🎓 Congratulations to @arkagrawall for completing the AI/ML certification! #aiml #coding #university",
+                hashtags: ["aiml", "coding", "university"], mentions: ["arkagrawall"],
+                like_count: 47, comment_count: 12, location: { name: "Greater Noida, India" }
+            },
+            {
+                shortcode: "CP2N94bjtHM", url: "https://www.instagram.com/p/CP2N94bjtHM/",
+                taken_at: 1622900000, media_type: "photo",
+                caption: "Greenfields ka best Trio 🔥 Memories from school",
+                hashtags: ["greenfields", "school", "memories"], mentions: [],
+                like_count: 88, comment_count: 19, location: { name: "Greenfields Public School, Dilshad Garden" }
+            }
+        ],
+        all_hashtags: ["aiml", "coding", "university", "greenfields", "school", "memories"],
+        success: true, status: "completed"
+    },
+    platform_content: { platform: "instagram", posts: [], replies: [], comments: [] },
+    intelligence_report: {
+        report_metadata: { target_username: "arkagrawall", generated_at: new Date().toISOString() },
+        executive_summary: {
+            target_identification: { username: "arkagrawall", real_name: "Ark Agrawal", aliases: ["arks_cameraroll"] },
+            profile_classification: { type: "tech_developer", professional_field: "Software / AI-ML", confidence: 0.72 },
+            key_findings: { total_platforms_found: 9, associated_accounts: 2, organizations_linked: 2, locations_identified: ["Greater Noida", "Dilshad Garden, Delhi"], risk_level: "MEDIUM" },
+            contact_information: {
+                emails: ["arkagrawall@gmail.com", "arkagrawall@outlook.com", "ark.agrawal@gmail.com", "arkagrawall@hotmail.com", "arkagrawall@yahoo.com"],
+                phone_numbers: [], social_profiles: ["https://github.com/arkagrawall", "https://in.pinterest.com/arkagrawall/"]
+            }
+        },
+        intelligence_sections: {
+            hashtag_intelligence: {
+                statistics: { total_hashtags: 6, unique_hashtags: 6 },
+                key_discoveries: {
+                    personality_indicators: [
+                        { trait: "Tech Enthusiast", category: "Professional", confidence: "HIGH" },
+                        { trait: "Creative / Aesthetic", category: "Personal", confidence: "MEDIUM" },
+                        { trait: "Academic Achiever", category: "Education", confidence: "HIGH" }
+                    ],
+                    locations_hinted: ["Greater Noida", "Dilshad Garden"]
+                },
+                categorized_hashtags: { technology: ["aiml", "coding"], personal: ["memories", "school"] }
+            }
+        }
+    },
+    reverse_lookup_results: {
+        associated_accounts: [
+            { username: "arksscameraroll", platform: "instagram", confidence: "95%", source: "bio_mention", evidence: "Directly mentioned in Instagram bio: '@arksscameraroll'" },
+            { username: "memes_greenarians", platform: "instagram", confidence: "60%", source: "dorking", evidence: "Tagged arkagrawall in school reel (Sep 2021)" }
+        ],
+        keyword_profile: {
+            username_variations: ["arks_agrawall", "ark_agrawall", "arkagrawal", "arksscameraroll"],
+            interest_keywords: ["coffee", "sunset", "music", "photography", "coding"]
+        },
+        profile_type: {
+            primary_type: "tech_creative", confidence: 0.72,
+            description: "Young tech-oriented creative — active developer with aesthetic photography interests. Likely CS/AI student.",
+            professional_field: "Software Development / AI-ML",
+            interests: ["Photography", "Music", "Coding", "AI/ML", "Coffee", "Travel"]
+        }
+    },
+    scraped_data: {
+        twitter: {
+            success: true, platform: "twitter", username: "arkagrawall", full_name: "Ark agrawal",
+            bio: "19, chasing code & chaos, save me!", follower_count: 89, following_count: 123, tweet_count: 34, is_verified: false,
+            tweets: [
+                { text: "just shipped my first ML model 🎉 #machinelearning #python", created_at: "2026-07-10T12:30:00Z", like_count: 12 },
+                { text: "coffee + sunset = peak productivity ☕🌅", created_at: "2026-07-08T18:00:00Z", like_count: 34 },
+                { text: "working on NeuroDrishti — AI for visual intelligence 🔥", created_at: "2026-06-25T09:15:00Z", like_count: 22 }
+            ]
+        }
+    },
+    apify_social_results: { status: "completed_with_warnings" },
+    timestamp: new Date().toISOString()
+};
+
+function injectMock() {
+    window.currentInvestigationData = MOCK_DATA;
+    window.currentCaseId = "MOCK-2026-0001";
+
+    const workspaceEl = document.getElementById("results-workspace-grid");
+    const emptyStateEl = document.getElementById("results-empty-state");
+    if (workspaceEl) workspaceEl.style.display = "grid";
+    if (emptyStateEl) emptyStateEl.style.display = "none";
+
+    if (typeof renderInvestigationResults === "function") {
+        renderInvestigationResults(MOCK_DATA);
+    }
+    if (typeof renderInstagramPosts === "function") {
+        renderInstagramPosts(MOCK_DATA.instagram_posts);
+    }
+    if (typeof renderPlatformDossier === "function") {
+        renderPlatformDossier(MOCK_DATA);
+    }
+
+    console.log("[MOCK] Inject completed successfully.");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(injectMock, 500);
+});

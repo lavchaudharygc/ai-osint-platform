@@ -374,6 +374,7 @@ def combine_instagram_profile_results(
 
 async def run_all_social_scrapers(
     username: str,
+    active_platforms: set[str] | None = None
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any], dict[str, Any]]:
     """Start every social collector concurrently for one ordinary public username.
 
@@ -389,39 +390,77 @@ async def run_all_social_scrapers(
     twitter_apify_service = TwitterApifyService()
     linkedin_apify_service = LinkedInApifyService()
 
-    collector_tasks = {
-        "instagram_profile": asyncio.create_task(
-            instagram_profile_service.fetch_profile(username)
-        ),
-        "instagram_flashapi": asyncio.create_task(
-            FlashAPIService().lookup_username(username, "instagram")
-        ),
-        "instagram_posts": asyncio.create_task(
-            instagram_posts_service.fetch_posts(username, scrape_type="posts")
-        ),
-        "twitter_profile_and_replies": asyncio.create_task(
-            scrape_platform(username, "twitter")
-        ),
-        "twitter_tweet_search_v2": asyncio.create_task(
-            twitter_apify_service.search(twitter_handles=[username])
-        ),
-        "reddit": asyncio.create_task(scrape_platform(username, "reddit")),
-        "linkedin_profiles": asyncio.create_task(
-            scrape_platform(username, "linkedin")
-        ),
-        "linkedin_posts_search": asyncio.create_task(
-            linkedin_apify_service.search_posts(keyword=username)
-        ),
-        "facebook_combined": asyncio.create_task(
-            scrape_platform(username, "facebook")
-        ),
-        "telegram": asyncio.create_task(scrape_platform(username, "telegram")),
+    active = active_platforms if active_platforms is not None else {
+        "instagram", "twitter", "telegram", "linkedin", "reddit", "facebook"
     }
-    raw_values = await asyncio.gather(
-        *collector_tasks.values(),
-        return_exceptions=True,
-    )
+
+    skipped_result = {
+        "success": False,
+        "configured": True,
+        "status": "empty_dataset",
+        "error": "no profile data returned (skipped - profile does not exist)",
+        "run": {},
+    }
+
+    # Define tasks dynamically
+    collector_tasks = {}
+    
+    if "instagram" in active:
+        collector_tasks["instagram_profile"] = asyncio.create_task(
+            instagram_profile_service.fetch_profile(username)
+        )
+        collector_tasks["instagram_flashapi"] = asyncio.create_task(
+            FlashAPIService().lookup_username(username, "instagram")
+        )
+        collector_tasks["instagram_posts"] = asyncio.create_task(
+            instagram_posts_service.fetch_posts(username, scrape_type="posts")
+        )
+    
+    if "twitter" in active:
+        collector_tasks["twitter_profile_and_replies"] = asyncio.create_task(
+            scrape_platform(username, "twitter")
+        )
+        collector_tasks["twitter_tweet_search_v2"] = asyncio.create_task(
+            twitter_apify_service.search(twitter_handles=[username])
+        )
+        
+    if "reddit" in active:
+        collector_tasks["reddit"] = asyncio.create_task(scrape_platform(username, "reddit"))
+        
+    if "linkedin" in active:
+        collector_tasks["linkedin_profiles"] = asyncio.create_task(
+            scrape_platform(username, "linkedin")
+        )
+        collector_tasks["linkedin_posts_search"] = asyncio.create_task(
+            linkedin_apify_service.search_posts(keyword=username)
+        )
+        
+    if "facebook" in active:
+        collector_tasks["facebook_combined"] = asyncio.create_task(
+            scrape_platform(username, "facebook")
+        )
+        
+    if "telegram" in active:
+        collector_tasks["telegram"] = asyncio.create_task(scrape_platform(username, "telegram"))
+
+    raw_values = []
+    if collector_tasks:
+        raw_values = await asyncio.gather(
+            *collector_tasks.values(),
+            return_exceptions=True,
+        )
     collected = dict(zip(collector_tasks, raw_values, strict=True))
+
+    # Fill in skipped results for missing keys
+    all_keys = [
+        "instagram_profile", "instagram_flashapi", "instagram_posts",
+        "twitter_profile_and_replies", "twitter_tweet_search_v2",
+        "reddit", "linkedin_profiles", "linkedin_posts_search",
+        "facebook_combined", "telegram"
+    ]
+    for k in all_keys:
+        if k not in collected:
+            collected[k] = skipped_result
 
     collector_platforms = {
         "instagram_profile": "instagram",
@@ -573,10 +612,12 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
                 # Fallback to standard flow on critical failure
                 pass
 
+    from backend.services.intelligence.telegram_intel import TelegramIntelligenceExtractor
+
     service_map = {
         "instagram": InstagramDataService(),
         "twitter": TwitterDataService(),
-        "telegram": TelegramDataService(),
+        "telegram": TelegramIntelligenceExtractor(),
         "linkedin": LinkedInApifyService(),
         "reddit": RedditApifyService(),
         "facebook": FacebookApifyService(),
@@ -640,10 +681,30 @@ async def google_dork_username(username: str, platform_data: dict[str, Any]) -> 
     return await GoogleDorkingService().search_username(username, full_name=full_name)
 
 
-async def ai_correlate(platform_data: dict[str, Any], cross_matches: list[dict[str, Any]]) -> dict[str, Any]:
+async def ai_correlate(
+    platform_data: dict[str, Any],
+    cross_matches: list[dict[str, Any]],
+    scraped_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     positive_matches = [match for match in cross_matches if match.get("exists")]
     confidence = min(0.95, 0.35 + (len(positive_matches) * 0.1))
-    ai_analysis = await AIAnalyzer().analyze_correlation(platform_data, cross_matches)
+
+    # Enrich positive matches with bio, full name, followers, posts from scraped_data
+    enriched_matches = []
+    for match in cross_matches:
+        plat = match.get("platform")
+        exists = match.get("exists")
+        enriched_match = dict(match)
+        if exists and scraped_data and plat:
+            details = scraped_data.get(plat.lower())
+            if isinstance(details, dict) and details.get("success") is not False:
+                enriched_match["full_name"] = details.get("full_name") or details.get("name")
+                enriched_match["bio"] = details.get("bio") or details.get("description")
+                enriched_match["followers"] = details.get("follower_count") or details.get("followers")
+                enriched_match["posts"] = details.get("post_count") or details.get("posts_count")
+        enriched_matches.append(enriched_match)
+
+    ai_analysis = await AIAnalyzer().analyze_correlation(platform_data, enriched_matches)
     model_used = ai_analysis.get("model_used", "rules_fallback")
     if model_used == "rules_fallback":
         summary = "AI correlation fallback rules applied (configure GROQ_API_KEY or DEEPSEEK_API_KEY for advanced analysis)."
@@ -945,9 +1006,19 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
     cross_matches = await CrossPlatformSearchService().search_all_platforms(request.username)
     cross_matches = cross_matches[: max(request.correlation_depth * 4, 6)]
     
-    # 2. Run all scrapers in parallel via the standard run_all_social_scrapers
+    # Build active platforms set (include inconclusive matches like LinkedIn 999)
+    active_platforms = {
+        match["platform"].lower()
+        for match in cross_matches
+        if match.get("exists") is True or match.get("exists") is None
+    }
+    # Always ensure the primary/requested platform is active as a safety fallback
+    primary_platform = request.platform.lower() if request.platform else "instagram"
+    active_platforms.add(primary_platform)
+
+    # 2. Run active scrapers in parallel
     platform_profiles, instagram_posts, apify_social_results = (
-        await run_all_social_scrapers(request.username)
+        await run_all_social_scrapers(request.username, active_platforms=active_platforms)
     )
     
     scraped_data = platform_profiles
@@ -1227,7 +1298,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
 
     hashtag_analysis = await HashtagAnalyzer().analyze_hashtags(sorted(all_hashtags), request.username)
 
-    ai_result = await ai_correlate(platform_data, cross_matches)
+    ai_result = await ai_correlate(platform_data, cross_matches, scraped_data=scraped_data)
     risk = await assess_risk(platform_data, ai_result)
 
     # 8. Merge posts list from all scraped platforms
@@ -1264,6 +1335,17 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
             source='recent_posts',
             context={'username': request.username}
         )
+
+        try:
+            from backend.services.intelligence.email_guesser import EmailGuesser
+            guesser = EmailGuesser()
+            guessed_emails = await guesser.guess_emails(
+                request.username,
+                full_name=platform_data.get("full_name") or platform_data.get("name")
+            )
+            content_intel.emails = sorted(list(set(content_intel.emails + guessed_emails)))
+        except Exception:
+            pass
 
         hashtag_intel_analyzer = HashtagIntelligenceAnalyzer()
         hashtag_intel = await hashtag_intel_analyzer.analyze_hashtags(
