@@ -83,8 +83,141 @@ Section 1:----      Telegram Osint Bots (Publicly Available)  ------------------
                        - Usage: Send Keyword to Search
                        - Api Available: No
                        
+    Bot 9:---   @Funstatfan13_bot              
+          - Status:---   Active
+          - Features:--- 
+                       - Profile Analysis
+                       - Search for interest and likes
+                       - Activity in groups
+                       - History of Name Changes
+                       - Monitoring of all telegram
+                       - Search by groups
+                       - Search by users by names
+ 
+    Bot 10:---    @usercrawlerbot
+          - Status:---  Acctive
+          - Features:---
+                        - Profile Analysis
+                        - Language
+                        - Status
+                        - Gift
+                        - Registerd
+                        - Update / Found
+                        - Group / Chanels
+                        - Profile Changes
+                        - Available Groups
+                        - total Messages
                        
                        
+                       
+                       
+                       
+INTELLIGENCE/LEAKED Based Bots         ---------------------------------------------------------------------------------------------
+                       
+                       
+    Bot 1:---  @EgorLeaks_bot
+    
+         - Type:--- Credential breach checker
+         - Features:--- 
+                       - Checks emails/usernames against 15+ billion compromised credentials
+                       - Returns immediate breach results
+                       - Status: Active, widely used 
+                       - Caution: Entering sensitive information carries inherent risk
+         - Paid 
+         - Status:---  - Active  
+               
+               
+    Bot 2:---   @Breach_Forums_Bot
+         - Type:---  Credential breach checker
+         - Features:---
+                       - Search by Email
+                       - Search by Nickname
+                       - Search by phonenumber
+                       - Search by Password
+                       - Search by Car
+                       - Search by Social Media Accounts
+        - Paid
+        - Status:---   - Active 
+        
+        
+        
+    Bot 3:---   @Vehicleinforobot
+          - Type:---   Vehicle INformation
+          - Features:---
+                       - Search by Vehicle Number
+                       - Find Rc
+                       - Check Challan
+                       - Vehicle number to Phone number 
+         - Paid
+         - Status:---  -Active 
+         
+         
+         
+    Bot 4:---   @Th3Darkn1ghtR1s3s_bot
+         - Type:---   Telegram ID to Details
+         - Features:---
+                      - Get Phone NUmber from Tg User id
+                      - Search by Social media Username
+                      - Search by Contact
+                      - Search by Documents
+                      - Online Traces
+        - paid
+        - Status:---  - Active 
+        
+        
+        
+    Bot 5:---   @osintversebot
+        - Features:--- 
+                     - Vehicle Info
+                     - Phone number info
+        - Paid
+        - Status:---  - Active
+    
+    
+    
+    Bot 6:---  @numberdetail4bot
+         - Features:--- 
+                     - Number Details Bot
+                     - aadhar number
+                     - address
+                     - fater name
+         - Paid
+         - Status:---  - Active
+                    
+                    
+                    
+    Bot 7:---   @TrueCalleRobot
+         - Features:---
+                      - Number Name
+                      - Unknows Says
+                      - Sometime Shows Email too (if Available)
+                      - Sometime shows Facebook Profile And Another Social Media Account too (if Available)
+                      - Whatsapp And Telegram Link (if Available)
+                      - Carrier
+                      - Location
+         - free
+         - Status:---   - Active
+         
+         
+         
+    Bot 8:---   @josusbekbot
+        - Features:---  
+                     - Find Number Linked By telegram
+        - Paid/free
+        - Status:---  - Active
+        
+        
+        
+    Bot 9:---    @LeakCheck1_bot
+        - Features:---
+                     - Leak check by any email
+                     - Get details of leaks
+        - paid:---    - full details
+        - free:---    - only leak sites/domain name
+        - Status:---   - Active
+    
+    
+    
 Section 2:----   Public Data Sources ( no Api/Bot )  ------------------------------------------------------------------
 
                METHOD 1:---  URL Pattern: https://t.me/{username}
@@ -2300,6 +2433,11 @@ def duckduckgo_search(username):
         'abstract': data.get('Abstract', ''),
         'related_topics': data.get('RelatedTopics', [])
     }
+    
+    
+    
+    
+    
 
 
      
