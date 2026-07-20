@@ -206,6 +206,30 @@ class TelegramMTProtoService:
         response.pop("profile_url", None)
         return response
 
+    async def query_osint_bot(
+        self,
+        client: Any,
+        bot_username: str,
+        target_username: str,
+        max_wait_seconds: float = 2.5,
+    ) -> dict[str, Any] | None:
+        """Query a Telegram OSINT bot (e.g. @userinfobot) and read the bot's response message."""
+        try:
+            bot_entity = await client.get_entity(bot_username)
+            await client.send_message(bot_entity, target_username)
+            await asyncio.sleep(max_wait_seconds)
+            messages = await client.get_messages(bot_entity, limit=2)
+            if messages:
+                latest = messages[0]
+                return {
+                    "bot": bot_username,
+                    "response_text": latest.text or "",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+        except Exception as exc:
+            return {"bot": bot_username, "error": str(exc)}
+        return None
+
     def _entity_response(
         self,
         entity: Any,
