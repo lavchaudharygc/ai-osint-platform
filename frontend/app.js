@@ -314,6 +314,12 @@ async function triggerInvestigation() {
     await logLine(`[SYS] INTEGRATING PROFILE DEPTH ENVELOPE: ${depth}`, 100);
     await logLine(`[NET] INITIATING DIRECTORIES SEARCH ENRICHMENTS...`, 150);
 
+    // Immediately show results grid workspace and hide empty standby state
+    const emptyState = document.getElementById("results-empty-state");
+    const grid = document.getElementById("results-workspace-grid");
+    if (emptyState) emptyState.style.display = "none";
+    if (grid) grid.style.display = "grid";
+
     // Render placeholder pulsing skeleton cards in the results workspace
     renderSkeletonDossier();
 
