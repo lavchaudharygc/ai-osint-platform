@@ -46,8 +46,8 @@ class Settings(BaseSettings):
     rapidapi_key: str | None = Field(default=None, validation_alias="RAPIDAPI_KEY")
     apify_api_token: str | None = Field(default=None, validation_alias="APIFY_API_TOKEN")
     apify_base_url: str = Field(default="https://api.apify.com/v2", validation_alias="APIFY_BASE_URL")
-    apify_http_timeout_seconds: float = Field(default=30.0, ge=5.0, le=120.0, validation_alias="APIFY_HTTP_TIMEOUT_SECONDS")
-    apify_run_timeout_seconds: float = Field(default=240.0, ge=10.0, le=900.0, validation_alias="APIFY_RUN_TIMEOUT_SECONDS")
+    apify_http_timeout_seconds: float = Field(default=60.0, ge=5.0, le=180.0, validation_alias="APIFY_HTTP_TIMEOUT_SECONDS")
+    apify_run_timeout_seconds: float = Field(default=300.0, ge=10.0, le=900.0, validation_alias="APIFY_RUN_TIMEOUT_SECONDS")
     apify_poll_wait_seconds: int = Field(default=20, ge=1, le=60, validation_alias="APIFY_POLL_WAIT_SECONDS")
     apify_twitter_profile_actor_id: str = Field(
         default="apidojo/twitter-profile-scraper",
@@ -82,16 +82,16 @@ class Settings(BaseSettings):
     flashapi_endpoint_path: str = Field(default="ig/info_username/", validation_alias="FLASHAPI_ENDPOINT_PATH")
     flashapi_username_param: str = Field(default="user", validation_alias="FLASHAPI_USERNAME_PARAM")
     flashapi_nocors: bool = Field(default=False, validation_alias="FLASHAPI_NOCORS")
-    flashapi_timeout_seconds: float = Field(default=15.0, validation_alias="FLASHAPI_TIMEOUT_SECONDS")
+    flashapi_timeout_seconds: float = Field(default=20.0, validation_alias="FLASHAPI_TIMEOUT_SECONDS")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_mtproto_enabled: bool = Field(default=False, validation_alias="TELEGRAM_MTPROTO_ENABLED")
     telegram_api_id: int | None = Field(default=None, validation_alias="TELEGRAM_API_ID")
     telegram_api_hash: str | None = Field(default=None, validation_alias="TELEGRAM_API_HASH")
     telegram_session_path: str = Field(default="./data/telegram_osint", validation_alias="TELEGRAM_SESSION_PATH")
-    telegram_mtproto_timeout_seconds: float = Field(default=20.0, ge=5.0, le=60.0, validation_alias="TELEGRAM_MTPROTO_TIMEOUT_SECONDS")
+    telegram_mtproto_timeout_seconds: float = Field(default=35.0, ge=5.0, le=120.0, validation_alias="TELEGRAM_MTPROTO_TIMEOUT_SECONDS")
     serpapi_key: str | None = Field(default=None, validation_alias="SERPAPI_KEY")
     serpapi_base_url: str = Field(default="https://serpapi.com/search.json", validation_alias="SERPAPI_BASE_URL")
-    serpapi_timeout_seconds: float = Field(default=20.0, validation_alias="SERPAPI_TIMEOUT_SECONDS")
+    serpapi_timeout_seconds: float = Field(default=35.0, validation_alias="SERPAPI_TIMEOUT_SECONDS")
     serpapi_results_per_query: int = Field(default=5, validation_alias="SERPAPI_RESULTS_PER_QUERY")
     brightdata_serp_api_key: str | None = Field(default=None, validation_alias="BRIGHTDATA_SERP_API_KEY")
     brightdata_serp_base_url: str = Field(default="https://api.brightdata.com/request", validation_alias="BRIGHTDATA_SERP_BASE_URL")
@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     brightdata_serp_max_retries: int = Field(default=2, ge=0, le=5, validation_alias="BRIGHTDATA_SERP_MAX_RETRIES")
     brightdata_serp_retry_backoff_seconds: float = Field(default=1.0, ge=0.0, le=30.0, validation_alias="BRIGHTDATA_SERP_RETRY_BACKOFF_SECONDS")
     apify_serp_timeout_seconds: float = Field(default=120.0, validation_alias="APIFY_SERP_TIMEOUT_SECONDS")
+    zerobounce_api_key: str | None = Field(default=None, validation_alias="ZEROBOUNCE_API_KEY")
+    hunter_api_key: str | None = Field(default=None, validation_alias="HUNTER_API_KEY")
+    hibp_api_key: str | None = Field(default=None, validation_alias="HIBP_API_KEY")
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:5500"]
 
 

@@ -1111,6 +1111,27 @@ function renderInvestigationResults(data) {
                         ${signalsHTML}
                     </div>
                 </div>
+                ${(() => {
+                    const ia = tgData.intelligence_analysis || {};
+                    let extraHTML = "";
+                    if (ia.links_extracted && ia.links_extracted.length > 0) {
+                        extraHTML += `<div style="margin-top:8px; font-size:0.75rem; color:var(--text-secondary);"><strong>Links in Bio:</strong> ${ia.links_extracted.map(l => `<a href="${l}" target="_blank" style="color:var(--accent-blue); margin-right:6px;">${l}</a>`).join("")}</div>`;
+                    }
+                    if (ia.handles_mentioned && ia.handles_mentioned.length > 0) {
+                        extraHTML += `<div style="margin-top:4px; font-size:0.75rem; color:var(--text-secondary);"><strong>Handles Mentioned:</strong> ${ia.handles_mentioned.map(h => `<span class="tag-pill" style="font-size:0.65rem; padding:1px 5px; margin-right:4px;">${h}</span>`).join("")}</div>`;
+                    }
+                    if (ia.recommended_osint_bots && ia.recommended_osint_bots.length > 0) {
+                        extraHTML += `
+                            <div style="margin-top:10px; background:rgba(0,198,255,0.03); border:1px solid rgba(0,198,255,0.12); padding:8px 10px; border-radius:6px;">
+                                <div style="font-size:0.7rem; text-transform:uppercase; font-weight:700; color:var(--accent-blue); margin-bottom:4px;">Recommended Telegram OSINT Bots (Methodology):</div>
+                                <div style="display:flex; flex-direction:column; gap:3px;">
+                                    ${ia.recommended_osint_bots.map(b => `<div style="font-size:0.72rem; color:var(--text-secondary);"><strong style="color:var(--accent-gold);">${b.bot}</strong> — ${b.purpose}</div>`).join("")}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    return extraHTML;
+                })()}
                 ${mtprotoHTML}
             `;
         }

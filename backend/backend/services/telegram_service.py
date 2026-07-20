@@ -158,19 +158,25 @@ class TelegramDataService:
 
         profile_url = f"{self.BASE_URL}/{normalized_username}"
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=6.0) as client:
                 response = await client.get(profile_url, headers={"User-Agent": self.USER_AGENT})
         except httpx.TimeoutException:
-            public_result = self._base_response(
-                username=normalized_username,
-                profile_url=profile_url,
-                scraped_at=scraped_at,
-                success=False,
-                exists=None,
-                status="timeout",
-                error="Timed out while fetching the public Telegram page.",
-            )
-            return await self._with_authorized_fallback(normalized_username, public_result)
+            # Fallback to Telegram public channel preview endpoint /s/
+            preview_url = f"{self.BASE_URL}/s/{normalized_username}"
+            try:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=5.0) as client:
+                    response = await client.get(preview_url, headers={"User-Agent": self.USER_AGENT})
+            except (httpx.TimeoutException, httpx.HTTPError):
+                public_result = self._base_response(
+                    username=normalized_username,
+                    profile_url=profile_url,
+                    scraped_at=scraped_at,
+                    success=False,
+                    exists=None,
+                    status="timeout",
+                    error="Timed out while fetching the public Telegram page.",
+                )
+                return await self._with_authorized_fallback(normalized_username, public_result)
         except httpx.HTTPError as exc:
             public_result = self._base_response(
                 username=normalized_username,
