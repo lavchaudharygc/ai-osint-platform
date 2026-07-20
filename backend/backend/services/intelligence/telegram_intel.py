@@ -21,7 +21,7 @@ class TelegramIntelligenceExtractor:
         self.mtproto_service = TelegramMTProtoService()
 
     async def get_profile(self, username: str) -> Dict[str, Any]:
-        """Combine public metadata, MTProto connection status, bio entities, and OSINT bot pointers."""
+        """Combine public metadata, MTProto connection status, bio entities, and active OSINT bot queries."""
         clean_username = username.strip("@").split("/")[-1]
         profile = await self.public_service.get_profile(clean_username)
 
@@ -43,12 +43,13 @@ class TelegramIntelligenceExtractor:
             "has_profile_photo": bool(profile.get("profile_pic_url")),
         }
 
-        # 4. Intelligence analysis payload
+        # 4. Intelligence analysis payload including active bot responses
         profile["intelligence_analysis"] = {
             "links_extracted": links_found,
             "handles_mentioned": mentions_found,
             "entity_type": profile.get("entity_type") or ("channel" if "channel" in bio_text.lower() else "user"),
-            "recommended_osint_bots": self.OSINT_BOT_RECOMMENDATIONS
+            "recommended_osint_bots": self.OSINT_BOT_RECOMMENDATIONS,
+            "bot_responses": profile.get("bot_responses", [])
         }
 
         return profile

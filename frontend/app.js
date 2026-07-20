@@ -1113,7 +1113,25 @@ function renderInvestigationResults(data) {
                 </div>
                 ${(() => {
                     const ia = tgData.intelligence_analysis || {};
+                    const botResponses = tgData.bot_responses || ia.bot_responses || [];
                     let extraHTML = "";
+
+                    if (botResponses && botResponses.length > 0) {
+                        extraHTML += `
+                            <div style="margin-top:10px; background:rgba(0,255,150,0.03); border:1px solid rgba(0,255,150,0.15); padding:10px; border-radius:6px;">
+                                <div style="font-size:0.72rem; text-transform:uppercase; font-weight:700; color:#00ff99; margin-bottom:6px;">🤖 OSINT Bot Dispatched Responses:</div>
+                                <div style="display:flex; flex-direction:column; gap:6px;">
+                                    ${botResponses.map(br => `
+                                        <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.05); padding:6px 8px; border-radius:4px; font-size:0.72rem;">
+                                            <div style="font-weight:700; color:var(--accent-gold); margin-bottom:2px;">${br.bot} ${br.timestamp ? `<span style="font-size:0.65rem; color:var(--text-secondary); font-weight:normal;">· ${new Date(br.timestamp).toLocaleTimeString()}</span>` : ''}</div>
+                                            <div style="font-family:'Share Tech Mono',monospace; white-space:pre-wrap; color:var(--text-primary); font-size:0.7rem;">${br.response_text || br.error || 'No response data'}</div>
+                                        </div>
+                                    `).join("")}
+                                </div>
+                            </div>
+                        `;
+                    }
+
                     if (ia.links_extracted && ia.links_extracted.length > 0) {
                         extraHTML += `<div style="margin-top:8px; font-size:0.75rem; color:var(--text-secondary);"><strong>Links in Bio:</strong> ${ia.links_extracted.map(l => `<a href="${l}" target="_blank" style="color:var(--accent-blue); margin-right:6px;">${l}</a>`).join("")}</div>`;
                     }

@@ -158,12 +158,27 @@ class TelegramMTProtoService:
             # Entity resolution is still useful when Telegram withholds expanded fields.
             full_info = None
 
-        return self._entity_response(
+        res = self._entity_response(
             entity,
             full_info=full_info,
             scraped_at=scraped_at,
             status="found_with_authorized_session",
         )
+
+        # Dispatch queries to Telegram OSINT bots via the active Telethon session
+        bot_queries = []
+        for bot_name in ["@userinfobot", "@SangMataInfo_bot"]:
+            try:
+                bot_resp = await self.query_osint_bot(client, bot_name, username, max_wait_seconds=2.0)
+                if bot_resp:
+                    bot_queries.append(bot_resp)
+            except Exception:
+                pass
+
+        if bot_queries:
+            res["bot_responses"] = bot_queries
+
+        return res
 
     async def _check_invite(self, client: Any, invite_hash: str, scraped_at: str) -> dict[str, Any]:
         invite = await client(functions.messages.CheckChatInviteRequest(invite_hash))
