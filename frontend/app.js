@@ -287,6 +287,15 @@ async function triggerInvestigation() {
         currentCaseId = customCase;
     }
 
+    // Immediately hide empty standby state & show skeleton workspace grid on button click
+    const emptyState = document.getElementById("results-empty-state");
+    const grid = document.getElementById("results-workspace-grid");
+    if (emptyState) emptyState.style.display = "none";
+    if (grid) grid.style.display = "grid";
+
+    // Render pulsing skeleton loaders across all 6 main section containers
+    renderSkeletonDossier();
+
     const loader = document.getElementById("console-loader");
     const stream = document.getElementById("console-stream");
     
@@ -313,15 +322,6 @@ async function triggerInvestigation() {
     await logLine(`[NET] ESTABLISHING INTERCEPT HOOK ON PLATFORM PORTAL: ${platform.toUpperCase()}`, 150);
     await logLine(`[SYS] INTEGRATING PROFILE DEPTH ENVELOPE: ${depth}`, 100);
     await logLine(`[NET] INITIATING DIRECTORIES SEARCH ENRICHMENTS...`, 150);
-
-    // Immediately show results grid workspace and hide empty standby state
-    const emptyState = document.getElementById("results-empty-state");
-    const grid = document.getElementById("results-workspace-grid");
-    if (emptyState) emptyState.style.display = "none";
-    if (grid) grid.style.display = "grid";
-
-    // Render placeholder pulsing skeleton cards in the results workspace
-    renderSkeletonDossier();
 
     // Set up a dynamic log heartbeat during network wait
     const progressMessages = [

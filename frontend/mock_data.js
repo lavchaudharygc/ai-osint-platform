@@ -1,12 +1,11 @@
-// ─── MOCK DATA for UI testing (no scraping needed) ─────────────────────
+// ─── MOCK DATA & CONTROL HOOKS FOR FRONTEND TESTING (NO BACKEND REQUIRED) ─────────────────────
 const MOCK_DATA = {
     investigation_id: "inv_mock_test_0001",
     status: "completed_with_warnings",
     platform_data: {
         success: true, platform: "instagram", username: "arkagrawall",
         full_name: "Ark Agrawal 🤸‍♂️",
-        bio: "Coffee . Sunset . Music
-@arksscameraroll 😼",
+        bio: "Coffee . Sunset . Music\n@arksscameraroll 😼",
         profile_pic_url: "https://i.pravatar.cc/150?u=arkagrawall",
         profile_pic_hd: "https://i.pravatar.cc/320?u=arkagrawall",
         follower_count: 142, following_count: 238, post_count: 0,
@@ -17,7 +16,7 @@ const MOCK_DATA = {
         { platform: "instagram", url: "https://www.instagram.com/arkagrawall/", exists: true, status_code: 200 },
         { platform: "twitter", url: "https://x.com/arkagrawall", exists: true, status_code: 200 },
         { platform: "linkedin", url: "https://www.linkedin.com/in/arkagrawall/", exists: null, status_code: 999, status: "blocked_by_platform", note: "LinkedIn blocks direct HTTP checks (HTTP 999). Use the scraper for accurate results." },
-        { platform: "telegram", url: "https://t.me/arkagrawall", exists: false, status_code: 200 },
+        { platform: "telegram", url: "https://t.me/arkagrawall", exists: true, status_code: 200 },
         { platform: "github", url: "https://github.com/arkagrawall", exists: true, status_code: 200 },
         { platform: "pinterest", url: "https://www.pinterest.com/arkagrawall/", exists: true, status_code: 200 },
         { platform: "youtube", url: "https://www.youtube.com/@arkagrawall", exists: false, status_code: 404 },
@@ -25,18 +24,18 @@ const MOCK_DATA = {
         { platform: "facebook", url: "https://www.facebook.com/arkagrawall/", exists: false, status_code: 400 }
     ],
     ai_correlation_result: {
-        confidence: 0.75, summary: "AI correlation completed using mock model.",
-        matching_platforms: ["instagram", "twitter", "github", "pinterest"],
+        confidence: 0.85, summary: "AI correlation completed using mock model.",
+        matching_platforms: ["instagram", "twitter", "telegram", "github", "pinterest"],
         primary_platform: "instagram",
         ai_analysis: {
             success: true,
             parsed: {
-                decision: "PROBABLY SAME", confidence: 75,
+                decision: "HIGHLY LIKELY MATCH", confidence: 85,
                 reasons: [
-                    "Same username 'arkagrawall' found on Instagram, Twitter, GitHub, and Pinterest.",
+                    "Same username 'arkagrawall' found on Instagram, Twitter, Telegram, GitHub, and Pinterest.",
                     "Twitter bio '19, chasing code & chaos' aligns with GitHub developer activity.",
                     "Instagram bio references secondary account @arksscameraroll — consistent multi-account pattern.",
-                    "Pinterest username + real name 'Ark agrawal' matches primary profile."
+                    "Telegram account exists with confirmed active handle @arkagrawall."
                 ],
                 next_steps: [
                     "Scrape Twitter tweets to get more content for AI analysis.",
@@ -53,7 +52,7 @@ const MOCK_DATA = {
         requires_human_review: true,
         ai_risk_analysis: {
             success: true,
-            analysis: "RISK LEVEL: MEDIUM\nRISK SCORE: 75\n\nINDICATORS:\n- Subject present on 4+ platforms with consistent username.\n- Private Instagram account; limited public content.\n- Active GitHub with multiple repos (TripChain, NeuroDrishti, Swasthya-setu).\n- No immediate threat indicators.\n\nRECOMMENDATIONS:\n- Monitor for new platform registrations.\n- Investigate GitHub repositories for code containing personal data.\n- Attempt LinkedIn scrape after permission approval."
+            analysis: "RISK LEVEL: MEDIUM\nRISK SCORE: 75\n\nINDICATORS:\n- Subject present on 5+ platforms with consistent username.\n- Private Instagram account; limited public content.\n- Active GitHub with multiple repos (TripChain, NeuroDrishti, Swasthya-setu).\n- Telegram handle active.\n\nRECOMMENDATIONS:\n- Monitor for new platform registrations.\n- Investigate GitHub repositories for code containing personal data."
         }
     },
     internal_database_matches: { database_path: "./osint.db", by_username: [], by_phone: [], by_email: [], by_name: [], by_location: [], hitek_filtered: false },
@@ -91,16 +90,32 @@ const MOCK_DATA = {
         all_hashtags: ["aiml", "coding", "university", "greenfields", "school", "memories"],
         success: true, status: "completed"
     },
+    scraped_data: {
+        telegram: {
+            exists: true, username: "arkagrawall", full_name: "Ark Agrawal",
+            bio: "Coffee . Sunset . Music 🎧", entity_type: "user", subscriber_count: null,
+            verification_signals: { is_verified: false, is_scam: false, is_fake: false },
+            mtproto_status: { enabled: true, dependency_available: true, credentials_configured: true, session_file_present: true }
+        },
+        twitter: {
+            success: true, platform: "twitter", username: "arkagrawall", full_name: "Ark agrawal",
+            bio: "19, chasing code & chaos, save me!", follower_count: 89, following_count: 123, tweet_count: 34, is_verified: false,
+            tweets: [
+                { text: "just shipped my first ML model 🎉 #machinelearning #python", created_at: "2026-07-10T12:30:00Z", like_count: 12 },
+                { text: "coffee + sunset = peak productivity ☕🌅", created_at: "2026-07-08T18:00:00Z", like_count: 34 }
+            ]
+        }
+    },
     platform_content: { platform: "instagram", posts: [], replies: [], comments: [] },
     intelligence_report: {
         report_metadata: { target_username: "arkagrawall", generated_at: new Date().toISOString() },
         executive_summary: {
             target_identification: { username: "arkagrawall", real_name: "Ark Agrawal", aliases: ["arks_cameraroll"] },
-            profile_classification: { type: "tech_developer", professional_field: "Software / AI-ML", confidence: 0.72 },
+            profile_classification: { type: "tech_developer", professional_field: "Software / AI-ML", confidence: 0.85 },
             key_findings: { total_platforms_found: 9, associated_accounts: 2, organizations_linked: 2, locations_identified: ["Greater Noida", "Dilshad Garden, Delhi"], risk_level: "MEDIUM" },
             contact_information: {
                 emails: ["arkagrawall@gmail.com", "arkagrawall@outlook.com", "ark.agrawal@gmail.com", "arkagrawall@hotmail.com", "arkagrawall@yahoo.com"],
-                phone_numbers: [], social_profiles: ["https://github.com/arkagrawall", "https://in.pinterest.com/arkagrawall/"]
+                phone_numbers: [], social_profiles: ["https://github.com/arkagrawall", "https://in.pinterest.com/arkagrawall/", "https://t.me/arkagrawall"]
             }
         },
         intelligence_sections: {
@@ -128,21 +143,10 @@ const MOCK_DATA = {
             interest_keywords: ["coffee", "sunset", "music", "photography", "coding"]
         },
         profile_type: {
-            primary_type: "tech_creative", confidence: 0.72,
+            primary_type: "tech_creative", confidence: 0.85,
             description: "Young tech-oriented creative — active developer with aesthetic photography interests. Likely CS/AI student.",
             professional_field: "Software Development / AI-ML",
             interests: ["Photography", "Music", "Coding", "AI/ML", "Coffee", "Travel"]
-        }
-    },
-    scraped_data: {
-        twitter: {
-            success: true, platform: "twitter", username: "arkagrawall", full_name: "Ark agrawal",
-            bio: "19, chasing code & chaos, save me!", follower_count: 89, following_count: 123, tweet_count: 34, is_verified: false,
-            tweets: [
-                { text: "just shipped my first ML model 🎉 #machinelearning #python", created_at: "2026-07-10T12:30:00Z", like_count: 12 },
-                { text: "coffee + sunset = peak productivity ☕🌅", created_at: "2026-07-08T18:00:00Z", like_count: 34 },
-                { text: "working on NeuroDrishti — AI for visual intelligence 🔥", created_at: "2026-06-25T09:15:00Z", like_count: 22 }
-            ]
         }
     },
     apify_social_results: { status: "completed_with_warnings" },
@@ -171,6 +175,59 @@ function injectMock() {
     console.log("[MOCK] Inject completed successfully.");
 }
 
+function testSkeletonState() {
+    const workspaceEl = document.getElementById("results-workspace-grid");
+    const emptyStateEl = document.getElementById("results-empty-state");
+    if (workspaceEl) workspaceEl.style.display = "grid";
+    if (emptyStateEl) emptyStateEl.style.display = "none";
+
+    if (typeof renderSkeletonDossier === "function") {
+        renderSkeletonDossier();
+    }
+}
+
+// Override triggerInvestigation for Mock Mode (NO real API network calls)
+window.triggerInvestigation = async function() {
+    const usernameInput = document.getElementById("target-username");
+    const username = (usernameInput && usernameInput.value.trim()) || "arkagrawall";
+    const platform = document.getElementById("target-platform")?.value || "instagram";
+
+    // 1. Instantly show workspace grid & hide empty standby state
+    testSkeletonState();
+
+    // 2. Show console loader with simulated logs
+    const loader = document.getElementById("console-loader");
+    const stream = document.getElementById("console-stream");
+    if (stream) stream.innerHTML = "";
+    if (loader) loader.style.display = "flex";
+
+    function logLine(text, delay = 0) {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                if (stream) {
+                    const line = document.createElement("div");
+                    line.className = "console-line";
+                    line.innerText = `[${new Date().toLocaleTimeString()}] ${text}`;
+                    stream.appendChild(line);
+                    stream.scrollTop = stream.scrollHeight;
+                }
+                resolve();
+            }, delay);
+        });
+    }
+
+    await logLine(`[SYS] (MOCK TEST MODE) ENGAGE TARGET: ${username}`, 50);
+    await logLine(`[NET] SIMULATING INTERCEPT HOOK ON PLATFORM: ${platform.toUpperCase()}`, 100);
+    await logLine(`[SYS] RENDERING PULSING SKELETON LOADERS FOR COMPONENT TESTING...`, 150);
+
+    // 3. After 1.2s simulation delay, render full mock data
+    setTimeout(() => {
+        if (loader) loader.style.display = "none";
+        injectMock();
+        logLine(`[SYS] MOCK DATASET RENDERED SUCCESSFULLY.`, 0);
+    }, 1200);
+};
+
 document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(injectMock, 500);
+    setTimeout(injectMock, 300);
 });
