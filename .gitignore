@@ -13,7 +13,7 @@ env/
 .DS_Store
 Thumbs.db
 
-# Sensitive
+# Sensitive & Local Credentials
 *.key
 *.pem
 credentials.json
@@ -21,11 +21,17 @@ credentials.json
 *.session-journal
 
 # DBs / Large Data Files
+DBs/
 DBs/hi-tek/*.csv
 DBs/hi-tek/*.db
 
-# Local Dev Scripts
+# Local Dev & Temp Scratch Files
 start_servers.py
+ignore/
+scratch/
+*_run.json
+*_report.json
+failed_run.json
 
 backend/.env
 frontend/node_modules/
