@@ -538,10 +538,19 @@ function renderInvestigationResults(data) {
 
     if (aiPlatforms) {
         aiPlatforms.innerHTML = "";
-        const plats = ai.matching_platforms || [];
+        const plats = [...(ai.matching_platforms || [])];
+        
+        // Ensure Telegram handle is included if Telegram intelligence shows account exists
+        const tgData = (data.scraped_data && data.scraped_data.telegram) || {};
+        const hasTg = tgData.username || tgData.exists || (data.cross_platform_matches && data.cross_platform_matches.some(m => m.platform.toLowerCase() === "telegram" && m.exists));
+        if (hasTg && !plats.some(p => p.toLowerCase() === "telegram")) {
+            plats.push("telegram");
+        }
+
         if (plats.length > 0) {
             plats.forEach(plat => {
-                const platData = data.scraped_data ? data.scraped_data[plat.toLowerCase()] : null;
+                const platLower = plat.toLowerCase();
+                const platData = data.scraped_data ? data.scraped_data[platLower] : null;
                 let profilePic = null;
                 if (platData) {
                     profilePic = platData.profile_pic_hd || platData.profile_pic_url || (platData.profile && (platData.profile.profile_pic_hd || platData.profile.profile_pic_url));
@@ -551,8 +560,10 @@ function renderInvestigationResults(data) {
                     profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
                 }
                 
+                const handleUsername = (platData && platData.username) || (platLower === "telegram" && tgData.username ? tgData.username : null);
+                
                 const capsule = document.createElement("a");
-                capsule.href = platData?.url || (data.cross_platform_matches?.find(m => m.platform.toLowerCase() === plat.toLowerCase())?.url) || "#";
+                capsule.href = platData?.url || (data.cross_platform_matches?.find(m => m.platform.toLowerCase() === platLower)?.url) || (platLower === "telegram" && handleUsername ? `https://t.me/${handleUsername}` : "#");
                 capsule.target = "_blank";
                 capsule.className = "profile-capsule";
                 capsule.style.cssText = "display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-glow); border-radius: 20px; color: var(--text-primary); text-decoration: none; font-size: 0.75rem; transition: all 0.2s; cursor: pointer; margin-right: 6px; margin-bottom: 6px;";
@@ -572,7 +583,8 @@ function renderInvestigationResults(data) {
                 
                 capsule.innerHTML = `
                     ${imgHtml}
-                    <span style="font-weight: 600;">${plat}</span>
+                    <span style="font-weight: 600; text-transform: uppercase;">${plat}</span>
+                    ${handleUsername ? `<span style="font-size:0.7rem; color:var(--accent-blue); font-family:'Share Tech Mono',monospace;">@${handleUsername}</span>` : ""}
                 `;
                 aiPlatforms.appendChild(capsule);
             });
@@ -949,6 +961,12 @@ function renderInvestigationResults(data) {
 
             guessedEmails.forEach((email, i) => {
                 const confidence = Math.max(95 - i * 10, 40); // descending: 95, 85, 75…
+                let badgeStyle = "background:rgba(255,165,0,0.08); border-color:rgba(255,165,0,0.25); color:#ffa500;";
+                if (confidence >= 85) {
+                    badgeStyle = "background:rgba(0,255,100,0.08); border-color:rgba(0,255,100,0.25); color:#00ff66;";
+                } else if (confidence >= 65) {
+                    badgeStyle = "background:rgba(255,215,0,0.08); border-color:rgba(255,215,0,0.25); color:var(--accent-gold);";
+                }
                 const card = document.createElement("div");
                 card.style.cssText = "background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:10px 12px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;";
                 card.innerHTML = `
@@ -957,7 +975,7 @@ function renderInvestigationResults(data) {
                         <span style="font-family:'Share Tech Mono',monospace; font-size:0.82rem; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${email}</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                        <span class="system-badge" style="background:rgba(255,165,0,0.08); border-color:rgba(255,165,0,0.25); color:#ffa500; font-size:0.65rem;">${confidence}% guess</span>
+                        <span class="system-badge" style="${badgeStyle} font-size:0.65rem;">${confidence}% guess</span>
                         <button onclick="navigator.clipboard.writeText('${email}').then(()=>{this.textContent='✓ Copied';setTimeout(()=>{this.textContent='📋 Copy'},1500)})" style="background:rgba(0,188,212,0.1); border:1px solid rgba(0,188,212,0.25); color:var(--accent-blue); padding:3px 8px; border-radius:4px; font-size:0.7rem; cursor:pointer;">📋 Copy</button>
                     </div>
                 `;
@@ -2213,36 +2231,49 @@ function triggerDeepScanFor(platform, username) {
 // Render pulsing skeleton cards in results workspace
 function renderSkeletonDossier() {
     const container = document.getElementById("platform-dossier-container");
-    if (!container) return;
-    container.innerHTML = "";
-    
-    const platforms = ["instagram", "twitter", "reddit", "telegram", "linkedin", "github"];
-    platforms.forEach(plat => {
-        const card = document.createElement("div");
-        card.className = "platform-intel-card skeleton-card skeleton-pulse";
-        
-        card.innerHTML = `
-            <div class="platform-intel-header">
-                <div class="platform-intel-title-group" style="width: 100%; display: flex; align-items: center; justify-content: space-between;">
-                    <div style="display:flex; align-items:center; gap:10px; width:45%;">
-                        <div class="skeleton-circle" style="width:20px; height:20px; background:rgba(255,255,255,0.06);"></div>
-                        <div class="skeleton-block" style="width:70%; height:12px; background:rgba(255,255,255,0.06);"></div>
+    if (container) {
+        container.innerHTML = "";
+        const platforms = ["instagram", "twitter", "reddit", "telegram", "linkedin", "github"];
+        platforms.forEach(plat => {
+            const card = document.createElement("div");
+            card.className = "platform-intel-card skeleton-card skeleton-pulse";
+            
+            card.innerHTML = `
+                <div class="platform-intel-header">
+                    <div class="platform-intel-title-group" style="width: 100%; display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display:flex; align-items:center; gap:10px; width:45%;">
+                            <div class="skeleton-circle" style="width:20px; height:20px; background:rgba(255,255,255,0.06);"></div>
+                            <div class="skeleton-block" style="width:70%; height:12px; background:rgba(255,255,255,0.06);"></div>
+                        </div>
+                        <div class="skeleton-block" style="width:65px; height:18px; background:rgba(255,255,255,0.06); border-radius:12px;"></div>
                     </div>
-                    <div class="skeleton-block" style="width:65px; height:18px; background:rgba(255,255,255,0.06); border-radius:12px;"></div>
                 </div>
-            </div>
-            <div class="platform-intel-profile" style="grid-template-columns: 80px 1fr;">
-                <div class="skeleton-circle" style="width:80px; height:80px; background:rgba(255,255,255,0.06);"></div>
-                <div style="display:flex; flex-direction:column; gap:10px;">
-                    <div style="display:flex; gap:15px;">
-                        <div class="skeleton-block" style="width:120px; height:10px; background:rgba(255,255,255,0.06);"></div>
-                        <div class="skeleton-block" style="width:140px; height:10px; background:rgba(255,255,255,0.06);"></div>
+                <div class="platform-intel-profile" style="grid-template-columns: 80px 1fr;">
+                    <div class="skeleton-circle" style="width:80px; height:80px; background:rgba(255,255,255,0.06);"></div>
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                        <div style="display:flex; gap:15px;">
+                            <div class="skeleton-block" style="width:120px; height:10px; background:rgba(255,255,255,0.06);"></div>
+                            <div class="skeleton-block" style="width:140px; height:10px; background:rgba(255,255,255,0.06);"></div>
+                        </div>
+                        <div class="skeleton-block" style="width:100%; height:32px; background:rgba(255,255,255,0.06);"></div>
                     </div>
-                    <div class="skeleton-block" style="width:100%; height:32px; background:rgba(255,255,255,0.06);"></div>
                 </div>
-            </div>
-        `;
-        container.appendChild(card);
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    const skeletonHTML = `
+        <div class="skeleton-pulse" style="display:flex; flex-direction:column; gap:8px; padding:10px;">
+            <div class="skeleton-block" style="width:55%; height:12px; background:rgba(255,255,255,0.06); border-radius:4px;"></div>
+            <div class="skeleton-block" style="width:90%; height:20px; background:rgba(255,255,255,0.06); border-radius:4px;"></div>
+            <div class="skeleton-block" style="width:40%; height:12px; background:rgba(255,255,255,0.06); border-radius:4px;"></div>
+        </div>
+    `;
+
+    ["associated-accounts-results", "secret-profiles-results", "personality-profile-results", "telegram-intel-results", "dorking-results-container"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = skeletonHTML;
     });
 }
 
