@@ -1,6 +1,49 @@
 const API_BASE = "http://127.0.0.1:8010";
 const DEMO_USER = "uppolice";
 const DEMO_PASS = "testingaccount";
+const DataMappers = window.OSINTDataMappers;
+
+if (!DataMappers) {
+    throw new Error("data_mappers.js must be loaded before app.js");
+}
+
+function escapeHTML(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function safeExternalUrl(value) {
+    if (!value) return "";
+    try {
+        const parsed = new URL(String(value));
+        return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+    } catch (_) {
+        return "";
+    }
+}
+
+function safeImageSource(value) {
+    const source = String(value || "");
+    if (/^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(source)) return source;
+    return safeExternalUrl(source);
+}
+
+function contentItemText(item) {
+    if (!item || typeof item !== "object") return "";
+    return DataMappers.firstDefined(
+        item.text,
+        item.full_text,
+        item.caption,
+        item.title,
+        item.body,
+        item.selftext,
+        ""
+    );
+}
 
 // Global State
 let activeTab = "scan-console";
@@ -269,6 +312,11 @@ function resetConsoleWorkspace() {
     const telegramIntelResults = document.getElementById("telegram-intel-results");
     if (telegramIntelStatus) telegramIntelStatus.innerText = "No Data";
     if (telegramIntelResults) telegramIntelResults.innerHTML = "";
+
+    const collectionStatus = document.getElementById("collection-coverage-status");
+    const collectionResults = document.getElementById("collection-coverage-results");
+    if (collectionStatus) collectionStatus.innerText = "Not Run";
+    if (collectionResults) collectionResults.innerHTML = "";
 }
 
 // Trigger Scan
@@ -489,14 +537,20 @@ function renderInvestigationResults(data) {
     }
 
     if (aiConf) {
-        const confidenceVal = parsedAI ? (parsedAI.confidence || 0) : Math.round((ai.confidence || 0.65) * 100);
-        aiConf.innerText = `Confidence Index: ${confidenceVal}%`;
+        const confidenceVal = DataMappers.confidencePercent(ai);
+        aiConf.innerText = confidenceVal === null
+            ? "Confidence Index: Not available"
+            : `Confidence Index: ${confidenceVal}%`;
     }
     const aiEngineStatus = document.getElementById("ai-engine-status");
     if (aiEngineStatus) {
+        const hasAIResult = Boolean(data.ai_correlation_result);
         const modelUsed = (ai.ai_analysis && ai.ai_analysis.model_used) || ai.model_used || "rules_fallback";
         const isGroq = (ai.ai_analysis && ai.ai_analysis.success === true) || (modelUsed !== "rules_fallback");
-        if (isGroq) {
+        if (!hasAIResult) {
+            aiEngineStatus.innerText = "not run";
+            aiEngineStatus.className = "risk-indicator-badge actor-status-neutral";
+        } else if (isGroq) {
             aiEngineStatus.innerText = "completed with groq";
             aiEngineStatus.className = "risk-indicator-badge risk-low";
         } else {
@@ -505,7 +559,7 @@ function renderInvestigationResults(data) {
         }
     }
     if (aiSum) {
-        aiSum.innerText = ai.summary || "Rule-based placeholder correlation pending AI provider configuration.";
+        aiSum.innerText = ai.summary || "No AI correlation result was returned for this investigation.";
     }
 
     if (aiDecisionEl && parsedAI) {
@@ -520,8 +574,10 @@ function renderInvestigationResults(data) {
             aiDecisionEl.classList.add("risk-low");
         }
     } else if (aiDecisionEl) {
-        aiDecisionEl.innerText = "PENDING";
-        aiDecisionEl.className = "risk-indicator-badge risk-medium";
+        aiDecisionEl.innerText = data.ai_correlation_result ? "PENDING" : "NOT RUN";
+        aiDecisionEl.className = data.ai_correlation_result
+            ? "risk-indicator-badge risk-medium"
+            : "risk-indicator-badge actor-status-neutral";
     }
 
     if (parsedAI && parsedAI.reasons && parsedAI.reasons.length > 0) {
@@ -547,7 +603,7 @@ function renderInvestigationResults(data) {
         const plats = [...(ai.matching_platforms || [])];
         
         // Ensure Telegram handle is included if Telegram intelligence shows account exists
-        const tgData = (data.scraped_data && data.scraped_data.telegram) || {};
+        const tgData = DataMappers.resolveTelegramData(data);
         const hasTg = tgData.username || tgData.exists || (data.cross_platform_matches && data.cross_platform_matches.some(m => m.platform.toLowerCase() === "telegram" && m.exists));
         if (hasTg && !plats.some(p => p.toLowerCase() === "telegram")) {
             plats.push("telegram");
@@ -556,7 +612,7 @@ function renderInvestigationResults(data) {
         if (plats.length > 0) {
             plats.forEach(plat => {
                 const platLower = plat.toLowerCase();
-                const platData = data.scraped_data ? data.scraped_data[platLower] : null;
+                const platData = DataMappers.getRenderablePlatformData(data, platLower);
                 let profilePic = null;
                 if (platData) {
                     profilePic = platData.profile_pic_hd || platData.profile_pic_url || (platData.profile && (platData.profile.profile_pic_hd || platData.profile.profile_pic_url));
@@ -601,6 +657,7 @@ function renderInvestigationResults(data) {
 
     // Render rich platform intelligence dossier cards
     renderPlatformDossier(data);
+    renderCollectionCoverage(data);
 
     // Internal Database Matches rendering
     const dbMatches = data.internal_database_matches || {};
@@ -1057,14 +1114,23 @@ function renderInvestigationResults(data) {
     // 4. Telegram Intelligence rendering
     const tgIntelStatusEl = document.getElementById("telegram-intel-status");
     const tgIntelResultsEl = document.getElementById("telegram-intel-results");
-    const tgData = (data.scraped_data && data.scraped_data.telegram) || {};
+    const tgData = DataMappers.resolveTelegramData(data);
     
     if (tgIntelStatusEl) {
-        tgIntelStatusEl.innerText = tgData.exists ? "Active Account/Channel" : (tgData.exists === false ? "No Account Found" : "No Data");
+        tgIntelStatusEl.innerText = tgData.target_type === "invite_link"
+            ? "Invite Preview"
+            : (tgData.exists ? "Active Account/Channel" : (tgData.exists === false ? "No Account Found" : "No Data"));
     }
     if (tgIntelResultsEl) {
         tgIntelResultsEl.innerHTML = "";
-        if (!tgData.username) {
+        const hasTelegramPayload = Boolean(
+            tgData.username
+            || tgData.full_name
+            || tgData.display_name
+            || tgData.target_type === "invite_link"
+            || tgData.invite_hash_redacted
+        );
+        if (!hasTelegramPayload) {
             tgIntelResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No Telegram intelligence cached for this target username.</span>`;
         } else {
             let mtprotoHTML = "";
@@ -1095,22 +1161,34 @@ function renderInvestigationResults(data) {
                 `;
             }
 
+            const telegramStatus = String(tgData.status || "").replace(/_/g, " ");
+            const telegramError = tgData.error && typeof tgData.error === "object"
+                ? (tgData.error.message || tgData.error.code || "Telegram lookup was unavailable")
+                : tgData.error;
+            const telegramNoticeHTML = (telegramStatus || telegramError) ? `
+                <div style="margin-top:10px; padding:8px 10px; border:1px solid ${telegramError ? 'rgba(255,51,102,0.2)' : 'rgba(0,188,212,0.16)'}; border-radius:5px; background:${telegramError ? 'rgba(255,51,102,0.05)' : 'rgba(0,188,212,0.04)'}; color:${telegramError ? 'var(--accent-crimson)' : 'var(--text-secondary)'}; font-size:0.75rem; line-height:1.4;">
+                    ${telegramStatus ? `<strong>Status:</strong> ${escapeHTML(telegramStatus)}` : ""}
+                    ${telegramError ? `${telegramStatus ? " · " : ""}${escapeHTML(telegramError)}` : ""}
+                </div>
+            ` : "";
+
             tgIntelResultsEl.innerHTML = `
                 <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:6px; display:flex; gap:12px; align-items:start;">
                     <div style="width:50px; height:50px; border-radius:50%; background:rgba(36,161,222,0.1); border:1px solid rgba(36,161,222,0.3); display:flex; align-items:center; justify-content:center; font-weight:bold; color:var(--accent-blue); flex-shrink:0;">TG</div>
                     <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
                         <div style="font-size:0.9rem; font-weight:700; color:var(--text-primary); display:flex; justify-content:space-between;">
-                            <span>${tgData.full_name || "Telegram Profile"}</span>
-                            <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:normal;">@${tgData.username}</span>
+                            <span>${escapeHTML(tgData.full_name || tgData.display_name || "Telegram Preview")}</span>
+                            <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:normal;">${tgData.username ? `@${escapeHTML(tgData.username)}` : "Invite preview"}</span>
                         </div>
-                        ${tgData.bio ? `<div style="font-size:0.8rem; color:var(--text-secondary); line-height:1.4;">${tgData.bio}</div>` : ""}
+                        ${tgData.bio ? `<div style="font-size:0.8rem; color:var(--text-secondary); line-height:1.4;">${escapeHTML(tgData.bio)}</div>` : ""}
                         <div style="font-size:0.78rem; color:var(--text-primary); font-weight:600; margin-top:2px;">
-                            Entity Type: ${(tgData.entity_type || "user").toUpperCase()} 
-                            ${tgData.subscriber_count ? `· ${Number(tgData.subscriber_count).toLocaleString()} members` : ""}
+                            Entity Type: ${escapeHTML((tgData.entity_type || tgData.target_type || "user").toUpperCase())}
+                            ${DataMappers.firstDefined(tgData.subscriber_count, tgData.member_count) !== undefined ? `· ${Number(DataMappers.firstDefined(tgData.subscriber_count, tgData.member_count)).toLocaleString()} members` : ""}
                         </div>
                         ${signalsHTML}
                     </div>
                 </div>
+                ${telegramNoticeHTML}
                 ${(() => {
                     const ia = tgData.intelligence_analysis || {};
                     const botResponses = tgData.bot_responses || ia.bot_responses || [];
@@ -1154,6 +1232,150 @@ function renderInvestigationResults(data) {
             `;
         }
     }
+}
+
+function renderCollectionCoverage(data) {
+    const statusEl = document.getElementById("collection-coverage-status");
+    const resultsEl = document.getElementById("collection-coverage-results");
+    if (!statusEl || !resultsEl) return;
+
+    const envelope = data.apify_social_results && typeof data.apify_social_results === "object"
+        ? data.apify_social_results
+        : {};
+    const primaryContent = data.platform_content && typeof data.platform_content === "object"
+        ? data.platform_content
+        : {};
+    const actors = envelope.actors && typeof envelope.actors === "object" ? envelope.actors : {};
+    const summary = envelope.summary && typeof envelope.summary === "object" ? envelope.summary : {};
+    const envelopeStatus = String(envelope.status || "not_returned");
+    statusEl.innerText = envelopeStatus.replace(/_/g, " ").toUpperCase();
+
+    const actorEntries = Object.entries(actors);
+    if (envelope.telegram && typeof envelope.telegram === "object") {
+        actorEntries.push(["telegram", envelope.telegram]);
+    }
+
+    const hasEnvelope = Object.keys(envelope).length > 0;
+    const hasPrimaryContent = Object.keys(primaryContent).length > 0;
+    if (!hasEnvelope && !hasPrimaryContent) {
+        resultsEl.innerHTML = `<div class="scraped-empty-state">No collection envelope or normalized platform content was returned.</div>`;
+        return;
+    }
+
+    const statusClass = actor => {
+        const status = String((actor && actor.status) || "").toLowerCase();
+        if (["not_configured", "empty_dataset", "skipped", "disabled"].includes(status)) return "actor-status-warning";
+        if (["provider_error", "orchestration_error", "failed", "error", "timeout", "timed-out", "aborted"].includes(status)) return "actor-status-failed";
+        if (["running", "ready", "queued"].includes(status)) return "actor-status-running";
+        if ((actor && actor.success === true) || ["completed", "found", "succeeded"].includes(status)) return "actor-status-success";
+        if (actor && actor.error) return "actor-status-failed";
+        return "actor-status-neutral";
+    };
+
+    const actorStatus = actor => {
+        if (!actor || typeof actor !== "object") return "not returned";
+        if (actor.status) return String(actor.status).replace(/_/g, " ");
+        if (actor.success === true) return "completed";
+        if (actor.success === false) return "unavailable";
+        return "unknown";
+    };
+
+    let html = "";
+    if (envelope.identity_notice) {
+        html += `<div class="apify-identity-notice">${escapeHTML(envelope.identity_notice)}</div>`;
+    }
+
+    html += `<div class="apify-social-summary">`;
+    [
+        ["Mode", envelope.mode || "not reported"],
+        ["Apify actors", DataMappers.firstDefined(summary.total, Object.keys(actors).length, 0)],
+        ["Completed", DataMappers.firstDefined(summary.completed, 0)],
+        ["Empty", DataMappers.firstDefined(summary.empty, 0)],
+        ["Failed", DataMappers.firstDefined(summary.failed, 0)],
+        ["Not configured", DataMappers.firstDefined(summary.not_configured, 0)]
+    ].forEach(([label, value]) => {
+        html += `<span class="apify-summary-item"><strong>${escapeHTML(label)}:</strong> ${escapeHTML(value)}</span>`;
+    });
+    html += `</div>`;
+
+    if (hasPrimaryContent) {
+        const collections = [
+            ["posts", DataMappers.asList(primaryContent.posts)],
+            ["replies", DataMappers.asList(primaryContent.replies)],
+            ["comments", DataMappers.asList(primaryContent.comments)]
+        ];
+        const primaryItems = collections.flatMap(([kind, items]) => items.map(item => ({ kind, item })));
+        html += `
+            <div class="scraped-section-header">
+                <span class="scraped-section-label">Normalized primary content · ${escapeHTML(primaryContent.platform || "unknown")}</span>
+                <span class="scraped-section-count">${primaryItems.length} items</span>
+            </div>
+            <div class="apify-social-summary">
+                ${collections.map(([kind, items]) => `<span class="apify-summary-item"><strong>${escapeHTML(kind)}:</strong> ${items.length}</span>`).join("")}
+            </div>
+        `;
+        if (primaryItems.length > 0) {
+            html += `<div class="scraped-feed-list">`;
+            primaryItems.slice(0, 5).forEach(({ kind, item }) => {
+                const text = contentItemText(item) || "Content item returned without public text.";
+                html += `
+                    <div class="scraped-feed-item">
+                        <div class="scraped-feed-meta"><span class="scraped-feed-tag">${escapeHTML(kind)}</span></div>
+                        <div class="scraped-feed-body">${escapeHTML(String(text).slice(0, 320))}</div>
+                    </div>
+                `;
+            });
+            html += `</div>`;
+        }
+    }
+
+    if (actorEntries.length > 0) {
+        html += `
+            <div class="scraped-section-header">
+                <span class="scraped-section-label">Collector results</span>
+                <span class="scraped-section-count">${actorEntries.length}</span>
+            </div>
+            <div class="apify-actor-grid">
+        `;
+        actorEntries.forEach(([key, actor]) => {
+            const safeActor = actor && typeof actor === "object" ? actor : {};
+            const itemCount = DataMappers.actorItemCount(safeActor);
+            const contentItems = [
+                ...DataMappers.asList(safeActor.posts),
+                ...DataMappers.asList(safeActor.tweets),
+                ...DataMappers.asList(safeActor.replies),
+                ...DataMappers.asList(safeActor.comments)
+            ].filter(item => contentItemText(item));
+            const rawError = safeActor.error;
+            const errorText = rawError && typeof rawError === "object"
+                ? (rawError.message || rawError.code || "Provider returned an error")
+                : rawError;
+
+            html += `
+                <div class="actor-result-card">
+                    <div class="actor-card-header">
+                        <div class="actor-title-group">
+                            <div class="actor-card-title">${escapeHTML(key.replace(/_/g, " "))}</div>
+                            <span class="actor-card-key">${escapeHTML(safeActor.actor_id || safeActor.source || "provider details unavailable")}</span>
+                        </div>
+                        <span class="actor-status-badge ${statusClass(safeActor)}">${escapeHTML(actorStatus(safeActor))}</span>
+                    </div>
+                    <div class="actor-meta-list">
+                        <div class="actor-meta-row"><span>Items returned</span><strong>${itemCount}</strong></div>
+                        ${errorText ? `<div class="actor-meta-row"><span>Error</span><strong style="color:var(--accent-crimson);">${escapeHTML(errorText)}</strong></div>` : ""}
+                    </div>
+                    ${contentItems.length > 0 ? `
+                        <div style="margin-top:9px; display:flex; flex-direction:column; gap:5px;">
+                            ${contentItems.slice(0, 2).map(item => `<div class="scraped-feed-excerpt">${escapeHTML(String(contentItemText(item)).slice(0, 180))}</div>`).join("")}
+                        </div>
+                    ` : ""}
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    resultsEl.innerHTML = html;
 }
 
 function renderInstagramPosts(igPosts) {
@@ -1332,7 +1554,7 @@ function renderOfficialReportTemplate(data, caseId) {
     }
     const risk = data.risk_assessment || { level: "low", score: 0, factors: [] };
     const score = risk.score !== undefined ? risk.score : 0;
-    const ai = data.ai_correlation_result || { confidence: 0.65, summary: "", matching_platforms: [] };
+    const ai = data.ai_correlation_result || {};
     const matches = data.cross_platform_matches || [];
     
     const currentDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -1484,9 +1706,9 @@ function renderOfficialReportTemplate(data, caseId) {
     }
 
     // 4. Telegram Intelligence Summary
-    const tgData = (data.scraped_data && data.scraped_data.telegram) || {};
+    const tgData = DataMappers.resolveTelegramData(data);
     let telegramIntelligenceHTML = "";
-    if (tgData.username) {
+    if (tgData.username || tgData.full_name || tgData.display_name || tgData.target_type === "invite_link" || tgData.invite_hash_redacted) {
         let signalsText = "";
         if (tgData.verification_signals) {
             const vs = tgData.verification_signals;
@@ -1499,10 +1721,10 @@ function renderOfficialReportTemplate(data, caseId) {
         }
         telegramIntelligenceHTML = `
             <div class="evidence-box">
-                <strong>Username:</strong> @${tgData.username}<br>
-                <strong>Display Name:</strong> ${tgData.full_name || "N/A"}<br>
-                <strong>Entity Type:</strong> ${(tgData.entity_type || "user").toUpperCase()}<br>
-                ${tgData.subscriber_count ? `<strong>Subscribers/Members:</strong> ${Number(tgData.subscriber_count).toLocaleString()}<br>` : ""}
+                <strong>Target:</strong> ${tgData.username ? `@${tgData.username}` : "Telegram invite preview (hash redacted)"}<br>
+                <strong>Display Name:</strong> ${tgData.full_name || tgData.display_name || "N/A"}<br>
+                <strong>Entity Type:</strong> ${(tgData.entity_type || tgData.target_type || "user").toUpperCase()}<br>
+                ${DataMappers.firstDefined(tgData.subscriber_count, tgData.member_count) !== undefined ? `<strong>Subscribers/Members:</strong> ${Number(DataMappers.firstDefined(tgData.subscriber_count, tgData.member_count)).toLocaleString()}<br>` : ""}
                 ${tgData.bio ? `<strong>Biography:</strong> ${tgData.bio}<br>` : ""}
                 ${signalsText ? `<strong>Security Signals:</strong> ${signalsText}<br>` : ""}
                 ${mtprotoText ? `<strong>API Access:</strong> ${mtprotoText}<br>` : ""}
@@ -1517,14 +1739,15 @@ function renderOfficialReportTemplate(data, caseId) {
     // AI Parsing Details
     const parsedAI = (ai.ai_analysis && ai.ai_analysis.parsed) ? ai.ai_analysis.parsed : ai.parsed;
     let aiDecisionText = parsedAI ? (parsedAI.decision || "UNKNOWN") : "UNKNOWN";
-    let aiConfidencePercent = parsedAI ? (parsedAI.confidence || 65) : Math.round((ai.confidence || 0.65) * 100);
+    const aiConfidencePercent = DataMappers.confidencePercent(ai);
+    const aiConfidenceLabel = aiConfidencePercent === null ? "Not available" : `${aiConfidencePercent}%`;
     
     let aiReasonsHTML = "";
     let aiStepsHTML = "";
     if (parsedAI && parsedAI.reasons && parsedAI.reasons.length > 0) {
         aiReasonsHTML = parsedAI.reasons.map(r => `<li>${r}</li>`).join("");
     } else {
-        aiReasonsHTML = "<li>Baseline identity overlap matching rules applied.</li>";
+        aiReasonsHTML = "<li>No AI correlation reasons were returned.</li>";
     }
     if (parsedAI && parsedAI.next_steps && parsedAI.next_steps.length > 0) {
         aiStepsHTML = parsedAI.next_steps.map(s => `<li>${s}</li>`).join("");
@@ -1835,9 +2058,9 @@ function renderOfficialReportTemplate(data, caseId) {
     
     <div class="section-title">5. AI CORRELATION ANALYSIS</div>
     <div class="evidence-box">
-        <strong>Correlation Decision:</strong> <span style="font-weight:bold; color:red;">${aiDecisionText}</span> (AI Confidence: ${aiConfidencePercent}%)<br><br>
+        <strong>Correlation Decision:</strong> <span style="font-weight:bold; color:red;">${aiDecisionText}</span> (AI Confidence: ${aiConfidenceLabel})<br><br>
         <strong>Identity Consolidation:</strong>
-        <p>${ai.summary || "Rule-based placeholder correlation pending AI provider configuration."}</p>
+        <p>${ai.summary || "No AI correlation result was returned for this investigation."}</p>
         
         <strong>Key Correlation Reasons:</strong>
         <ul>
@@ -1977,12 +2200,15 @@ function renderPlatformDossier(data) {
     if (!container) return;
     container.innerHTML = "";
 
-    const matches = data.cross_platform_matches || [];
+    const matches = DataMappers.buildPlatformEntries(data);
     const pData = data.platform_data || {};
-    const primaryPlatform = pData.platform;
+    const primaryPlatform = String(pData.platform || "").toLowerCase();
     const dorking = data.dorking_results || {};
     const dorkResults = dorking.results || [];
-    const searchedUsername = pData.username || document.getElementById("target-username")?.value || "";
+    const isTelegramInvitePreview = pData.target_type === "invite_link" || pData.invite_hash_redacted;
+    const searchedUsername = isTelegramInvitePreview
+        ? "[REDACTED_TELEGRAM_INVITE]"
+        : (pData.username || document.getElementById("target-username")?.value || "");
 
     // Helper to check if a dorking result belongs to a platform
     const getPlatformDorks = (platform) => {
@@ -2005,29 +2231,35 @@ function renderPlatformDossier(data) {
     };
 
     matches.forEach(match => {
-        const isPrimary = match.platform === primaryPlatform;
-        const exists = match.exists;  // true | false | null (inconclusive)
+        const matchPlatform = String(match.platform || "").toLowerCase();
+        const platformLabel = String(match.platform || matchPlatform || "unknown");
+        const safePlatformLabel = escapeHTML(platformLabel);
+        const matchUrl = safeExternalUrl(match.url);
+        const isPrimary = matchPlatform === primaryPlatform;
+        const preScraped = DataMappers.getRenderablePlatformData(data, matchPlatform);
+        const exists = match.exists;
         const card = document.createElement("div");
         card.className = `platform-intel-card ${isPrimary ? 'status-primary' : (exists === true ? 'status-found' : exists === null ? 'status-inconclusive' : 'status-absent')}`;
 
-        const svgIcon = getPlatformSVG(match.platform);
+        const svgIcon = getPlatformSVG(matchPlatform);
         const badgeText = exists === true ? "Profile found" : exists === null ? "Inconclusive" : "Profile absent";
         const badgeClass = exists === true ? "match-badge match-found" : exists === null ? "match-badge match-inconclusive" : "match-badge match-absent";
-        const codeText = match.status_code ? `HTTP ${match.status_code}` : (exists === true ? "RESOLVED" : exists === null ? "BLOCKED" : "TIMEOUT");
+        const codeText = match.scraper_confirmed
+            ? "SCRAPER CONFIRMED"
+            : (match.status_code ? `HTTP ${match.status_code}` : (exists === true ? "RESOLVED" : exists === null ? "BLOCKED" : "TIMEOUT"));
 
         // Filter dorks and posts
-        const platformDorks = getPlatformDorks(match.platform);
+        const platformDorks = getPlatformDorks(matchPlatform);
         let hasExtraContent = false;
-        let collapsibleId = `collapse-${match.platform}`;
+        const collapsibleId = `collapse-${matchPlatform.replace(/[^a-z0-9_-]/g, "-") || "unknown"}`;
         
-        const preScraped = data.scraped_data ? data.scraped_data[match.platform.toLowerCase()] : null;
-        const activeProfileData = isPrimary ? (pData && pData.success !== false ? pData : preScraped) : preScraped;
-        const isExpandedByDefault = exists && activeProfileData && activeProfileData.success !== false && activeProfileData.status !== "error" && !activeProfileData.error;
+        const activeProfileData = preScraped;
+        const isExpandedByDefault = exists === true && activeProfileData && activeProfileData.success !== false && activeProfileData.status !== "error" && !activeProfileData.error;
         
-        const isInstagramWithPosts = match.platform === "instagram" && data.instagram_posts && data.instagram_posts.posts && data.instagram_posts.posts.length > 0;
-        const isScrapable = ["twitter", "reddit", "linkedin", "facebook", "telegram"].includes(match.platform.toLowerCase());
+        const isInstagramWithPosts = matchPlatform === "instagram" && data.instagram_posts && data.instagram_posts.posts && data.instagram_posts.posts.length > 0;
+        const isScrapable = ["twitter", "reddit", "linkedin", "facebook", "telegram"].includes(matchPlatform);
         
-        if (exists && (isPrimary || platformDorks.length > 0 || isInstagramWithPosts || isScrapable)) {
+        if (exists === true && (isPrimary || platformDorks.length > 0 || isInstagramWithPosts || isScrapable)) {
             hasExtraContent = true;
         }
 
@@ -2043,10 +2275,10 @@ function renderPlatformDossier(data) {
 
         // Header section HTML
         let html = `
-            <div class="platform-intel-header" ${hasExtraContent ? `style="cursor: pointer;" onclick="togglePlatformCardCollapse('${collapsibleId}', this, '${match.platform}', '${searchedUsername}')"` : ""}>
+            <div class="platform-intel-header" ${hasExtraContent ? `style="cursor: pointer;"` : ""}>
                 <div class="platform-intel-title-group">
                     <span style="display:flex; align-items:center;">${svgIcon}</span>
-                    <span class="platform-intel-name">${match.platform}</span>
+                    <span class="platform-intel-name">${safePlatformLabel}</span>
                 </div>
                 <div class="platform-intel-badges">
                     <span class="${badgeClass}">${badgeText}</span>
@@ -2056,7 +2288,7 @@ function renderPlatformDossier(data) {
             </div>
         `;
 
-        if (exists) {
+        if (exists === true) {
             let profileHTML = "";
             
             // Build the card body matching the screenshot layout
@@ -2067,16 +2299,21 @@ function renderPlatformDossier(data) {
                 const followers = activeProfileData.follower_count !== undefined ? activeProfileData.follower_count : (activeProfileData.followers || 0);
                 const following = activeProfileData.following_count !== undefined ? activeProfileData.following_count : (activeProfileData.following || 0);
                 const postCount = activeProfileData.post_count !== undefined ? activeProfileData.post_count : (activeProfileData.posts_count || activeProfileData.statuses_count || 0);
-                const website = activeProfileData.website || activeProfileData.profile_url || match.url;
+                const website = safeExternalUrl(activeProfileData.website || activeProfileData.profile_url || match.url);
 
-                let profilePic = activeProfileData.profile_pic_hd || activeProfileData.profile_pic_url;
-                if (profilePic && !profilePic.startsWith("data:")) {
+                let profilePic = safeImageSource(activeProfileData.profile_pic_hd || activeProfileData.profile_pic_url);
+                if (profilePic && !profilePic.startsWith("data:image/")) {
                     profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
                 }
 
+                const safeName = escapeHTML(name);
+                const safeHandle = escapeHTML(handle);
+                const safeBio = escapeHTML(bio);
+                const avatarLabel = escapeHTML(platformLabel.substring(0, 2).toUpperCase());
+
                 const avatarHTML = profilePic
-                    ? `<img src="${profilePic}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" onerror="this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\'>${match.platform.substring(0,2).toUpperCase()}</span>';">`
-                    : `<span class="scraped-profile-avatar-placeholder">${match.platform.substring(0,2).toUpperCase()}</span>`;
+                    ? `<img src="${escapeHTML(profilePic)}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" onerror="this.style.display='none';">`
+                    : `<span class="scraped-profile-avatar-placeholder">${avatarLabel}</span>`;
 
                 let followersText = followers ? `${Number(followers).toLocaleString()} followers` : "";
                 if (following) followersText += ` · ${Number(following).toLocaleString()} following`;
@@ -2089,16 +2326,16 @@ function renderPlatformDossier(data) {
                         </div>
                         <div class="scraped-profile-info" style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
                             <div class="scraped-profile-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 5px;">
-                                <span class="display-name">${name}</span>
-                                <span class="handle" style="color: var(--text-secondary); font-weight: normal; font-size: 0.85rem;">- @${handle}</span>
+                                <span class="display-name">${safeName}</span>
+                                <span class="handle" style="color: var(--text-secondary); font-weight: normal; font-size: 0.85rem;">- @${safeHandle}</span>
                             </div>
-                            ${bio ? `<div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; white-space: pre-line;">${bio}</div>` : ""}
+                            ${bio ? `<div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; white-space: pre-line;">${safeBio}</div>` : ""}
                             ${website ? `<div class="scraped-profile-website" style="font-size: 0.78rem; display: flex; align-items: center; gap: 4px;"><span style="opacity: 0.6;">🔗</span> <a href="${website}" target="_blank" style="color: var(--accent-blue); text-decoration: none; word-break: break-all;">${website}</a></div>` : ""}
                             ${followersText ? `<div class="scraped-profile-followers" style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 600; margin-top: 2px;">${followersText}</div>` : ""}
                         </div>
                     </div>
                 `;
-            } else if (match.platform === "telegram" && match.public_evidence) {
+            } else if (matchPlatform === "telegram" && match.public_evidence) {
                 const ev = match.public_evidence;
                 const members = ev.page_extra && ev.page_extra.participants_count ? ev.page_extra.participants_count : 0;
                 profileHTML = `
@@ -2108,13 +2345,13 @@ function renderPlatformDossier(data) {
                         </div>
                         <div class="scraped-profile-info" style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
                             <div class="scraped-profile-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 5px;">
-                                <span class="display-name">${ev.full_name || "Private/Group"}</span>
-                                <span class="handle" style="color: var(--text-secondary); font-weight: normal; font-size: 0.85rem;">- Entity Type: ${(ev.entity_type || "invite_link").toUpperCase()}</span>
+                                <span class="display-name">${escapeHTML(ev.full_name || "Private/Group")}</span>
+                                <span class="handle" style="color: var(--text-secondary); font-weight: normal; font-size: 0.85rem;">- Entity Type: ${escapeHTML((ev.entity_type || "invite_link").toUpperCase())}</span>
                             </div>
-                            <div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary);">Bio Present: ${ev.bio_present.toString().toUpperCase()}</div>
+                            <div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary);">Bio Present: ${String(Boolean(ev.bio_present)).toUpperCase()}</div>
                             ${members ? `<div class="scraped-profile-followers" style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 600;">${Number(members).toLocaleString()} members</div>` : ""}
                             <div style="font-size: 0.78rem; margin-top: 2px;">
-                                <a href="${match.url}" target="_blank" style="color: var(--accent-blue); text-decoration: none; font-weight: 600;">Open Public Channel/Invite Link ↗</a>
+                                ${matchUrl ? `<a href="${escapeHTML(matchUrl)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-blue); text-decoration: none; font-weight: 600;">Open Public Channel/Invite Link ↗</a>` : ""}
                             </div>
                         </div>
                     </div>
@@ -2128,11 +2365,11 @@ function renderPlatformDossier(data) {
                         </div>
                         <div class="scraped-profile-info" style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
                             <div class="scraped-profile-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 5px;">
-                                <span class="display-name">@${searchedUsername}</span>
+                                <span class="display-name">@${escapeHTML(searchedUsername)}</span>
                             </div>
                             <div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary);">Public profile found. Scrape details to load bio, stats, and timeline.</div>
                             <div style="font-size: 0.78rem; display: flex; gap: 10px; align-items: center; margin-top: 2px;">
-                                <a href="${match.url}" target="_blank" style="color: var(--accent-blue); text-decoration: none; font-weight: 600;">Open Profile ↗</a>
+                                ${matchUrl ? `<a href="${escapeHTML(matchUrl)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-blue); text-decoration: none; font-weight: 600;">Open Profile ↗</a>` : ""}
                             </div>
                         </div>
                     </div>
@@ -2164,7 +2401,7 @@ function renderPlatformDossier(data) {
                                     <span style="font-size:0.7rem; color:var(--text-secondary);">${mediaIcon} · ${dateStr}</span>
                                     <span style="font-size:0.7rem; color:var(--accent-blue);">❤️ ${post.like_count || 0} 💬 ${post.comment_count || 0}</span>
                                 </div>
-                                ${caption ? `<div style="color:var(--text-primary); line-height:1.4;">${caption}${post.caption.length > 150 ? '...' : ''}</div>` : ""}
+                                ${caption ? `<div style="color:var(--text-primary); line-height:1.4;">${escapeHTML(caption)}${post.caption.length > 150 ? '...' : ''}</div>` : ""}
                             </div>
                         `;
                     });
@@ -2178,10 +2415,11 @@ function renderPlatformDossier(data) {
                             <div style="display:flex; flex-direction:column; gap:8px; max-height:200px; overflow-y:auto; padding-right:5px;">
                     `;
                     platformDorks.forEach(dork => {
+                        const dorkUrl = safeExternalUrl(dork.url);
                         dorksHTML += `
                             <div style="background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.04); border-radius:6px; padding:8px 10px; font-size:0.8rem; display:flex; flex-direction:column; gap:2px;">
-                                <a href="${dork.url}" target="_blank" style="color:var(--accent-blue); text-decoration:none; font-weight:600; line-height:1.3;">${dork.title || "Web Match"}</a>
-                                <div style="color:var(--text-secondary); font-size:0.75rem; line-height:1.4;">${dork.snippet || ""}</div>
+                                ${dorkUrl ? `<a href="${escapeHTML(dorkUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue); text-decoration:none; font-weight:600; line-height:1.3;">${escapeHTML(dork.title || "Web Match")}</a>` : `<span style="color:var(--text-primary); font-weight:600;">${escapeHTML(dork.title || "Web Match")}</span>`}
+                                <div style="color:var(--text-secondary); font-size:0.75rem; line-height:1.4;">${escapeHTML(dork.snippet || "")}</div>
                             </div>
                         `;
                     });
@@ -2191,7 +2429,7 @@ function renderPlatformDossier(data) {
                 let scrapedDetailsHTML = "";
                 if (preScraped) {
                     const tempDiv = document.createElement("div");
-                    renderScrapedDetails(match.platform, preScraped, tempDiv, searchedUsername, true);
+                    renderScrapedDetails(matchPlatform, preScraped, tempDiv, searchedUsername, true);
                     scrapedDetailsHTML = tempDiv.innerHTML;
                 }
 
@@ -2209,13 +2447,21 @@ function renderPlatformDossier(data) {
             // Absent profile state
             html += `
                 <div style="font-size:0.8rem; color:var(--text-secondary); font-style:italic; margin-top:10px;">
-                    No public footprint detected on ${match.platform} for username "${searchedUsername}".
+                    No public footprint detected on ${safePlatformLabel} for username "${escapeHTML(searchedUsername)}".
                 </div>
             `;
         }
 
         card.innerHTML = html;
         container.appendChild(card);
+        if (hasExtraContent) {
+            const header = card.querySelector(".platform-intel-header");
+            if (header) {
+                header.addEventListener("click", () => {
+                    togglePlatformCardCollapse(collapsibleId, header, matchPlatform, searchedUsername);
+                });
+            }
+        }
     });
 }
 
@@ -2275,6 +2521,34 @@ function triggerDeepScanFor(platform, username) {
 
 // Render pulsing skeleton cards in results workspace
 function renderSkeletonDossier() {
+    const aiConfidence = document.getElementById("ai-confidence");
+    const aiDecision = document.getElementById("ai-decision-badge");
+    const aiEngine = document.getElementById("ai-engine-status");
+    const aiSummary = document.getElementById("ai-summary");
+    if (aiConfidence) aiConfidence.innerText = "Confidence Index: Not available";
+    if (aiDecision) {
+        aiDecision.innerText = "PENDING";
+        aiDecision.className = "risk-indicator-badge actor-status-running";
+    }
+    if (aiEngine) {
+        aiEngine.innerText = "running";
+        aiEngine.className = "risk-indicator-badge actor-status-running";
+    }
+    if (aiSummary) aiSummary.innerText = "Awaiting correlation results for the current investigation.";
+    ["ai-reasons-section", "ai-steps-section", "ai-error-notice"].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.style.display = "none";
+    });
+    const aiPlatforms = document.getElementById("ai-associated-platforms");
+    if (aiPlatforms) aiPlatforms.innerHTML = "";
+    [
+        ["collection-coverage-status", "RUNNING"],
+        ["telegram-intel-status", "Loading"]
+    ].forEach(([id, label]) => {
+        const element = document.getElementById(id);
+        if (element) element.innerText = label;
+    });
+
     const container = document.getElementById("platform-dossier-container");
     if (container) {
         container.innerHTML = "";
@@ -2316,7 +2590,7 @@ function renderSkeletonDossier() {
         </div>
     `;
 
-    ["associated-accounts-results", "secret-profiles-results", "personality-profile-results", "telegram-intel-results", "dorking-results-container"].forEach(id => {
+    ["collection-coverage-results", "associated-accounts-results", "secret-profiles-results", "personality-profile-results", "telegram-intel-results", "dorking-results-container"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = skeletonHTML;
     });
@@ -2396,7 +2670,7 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
     const plat = platform.toLowerCase();
 
     // Helpers
-    const esc = s => (s || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const esc = escapeHTML;
 
     // Handle failed scraper execution, empty dataset, or API errors
     if (data && (data.success === false || data.status === "empty_dataset" || data.status === "error" || data.error)) {
@@ -2419,13 +2693,15 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
     }
 
     const fmtNum = n => Number(n || 0).toLocaleString();
-    const fmtDate = (v, unix) => {
-        if (!v) return "";
-        const d = unix ? new Date(v * 1000) : new Date(v);
+    const fmtDate = (v, unix = false) => {
+        if (v === undefined || v === null || v === "") return "";
+        const numeric = Number(v);
+        const looksLikeUnixSeconds = Number.isFinite(numeric) && numeric > 0 && numeric < 100000000000;
+        const d = (unix || looksLikeUnixSeconds) ? new Date(numeric * 1000) : new Date(v);
         return isNaN(d) ? String(v) : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) + " · " + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     };
 
-    const truncate = (s, n) => { s = (s || "").trim(); return s.length > n ? s.substring(0, n) + "…" : s; };
+    const truncate = (s, n) => { s = String(s ?? "").trim(); return s.length > n ? s.substring(0, n) + "…" : s; };
 
     const sectionHeader = (icon, title, count) => `
         <div class="scraped-section-header">
@@ -2451,12 +2727,15 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
 
     if (plat === "twitter") {
         const profile = Array.isArray(data) ? data[0] : (data.profile || data || {});
-        const tweets = data.tweets || (Array.isArray(data) ? data : []);
-        const bio = profile.description || profile.bio || "";
-        const followers = profile.followers_count || profile.followers || 0;
-        const following = profile.friends_count || profile.following || 0;
-        const tweetCount = profile.statuses_count || 0;
-        const joined = profile.created_at ? fmtDate(profile.created_at) : "";
+        const tweets = DataMappers.firstList(data.tweets, data.recent_posts, profile.tweets, Array.isArray(data) ? data : []);
+        const replies = DataMappers.firstList(data.replies, profile.replies);
+        const timeline = DataMappers.mergeUniqueItems(tweets, replies);
+        const bio = DataMappers.firstDefined(profile.bio, profile.description, "");
+        const followers = DataMappers.firstDefined(profile.follower_count, profile.followers_count, profile.followers, 0);
+        const following = DataMappers.firstDefined(profile.following_count, profile.friends_count, profile.following, 0);
+        const tweetCount = DataMappers.firstDefined(profile.post_count, profile.statuses_count, profile.tweet_count, profile.tweets_count, 0);
+        const joinedValue = DataMappers.firstDefined(profile.joined_at, profile.created_at);
+        const joined = joinedValue !== undefined ? fmtDate(joinedValue) : "";
 
         let profilePic = profile.profile_pic_hd || profile.profile_pic_url;
         if (profilePic && !profilePic.startsWith("data:")) {
@@ -2475,11 +2754,12 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             }
             html += `    </div>`;
             html += `    <div class="scraped-profile-identity">`;
-            if (profile.name) {
-                html += `      <span class="scraped-profile-name">${esc(profile.name)}</span>`;
+            const profileName = DataMappers.firstDefined(profile.full_name, profile.name);
+            if (profileName) {
+                html += `      <span class="scraped-profile-name">${esc(profileName)}</span>`;
             }
-            html += `      <span class="scraped-profile-handle">@${esc(profile.screen_name || username)}</span>`;
-            if (profile.verified) {
+            html += `      <span class="scraped-profile-handle">@${esc(DataMappers.firstDefined(profile.username, profile.screen_name, username))}</span>`;
+            if (DataMappers.firstDefined(profile.is_verified, profile.verified, false)) {
                 html += `      <span class="scraped-verified-badge" style="width:fit-content; margin-top:2px;">✓ Verified</span>`;
             }
             html += `    </div>`;
@@ -2494,29 +2774,31 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             html += `</div>`;
         }
 
-        const validTweets = tweets.filter(t => t.full_text || t.text);
+        const validTweets = timeline.filter(t => t.full_text || t.text);
         if (validTweets.length > 0) {
-            html += sectionHeader("💬", "Recent Tweets", validTweets.length);
+            html += sectionHeader("💬", "Recent Tweets & Replies", validTweets.length);
             html += `<div class="scraped-feed-list">`;
             validTweets.slice(0, 5).forEach(tweet => {
                 const dateStr = fmtDate(tweet.created_at);
-                const likes = tweet.favorite_count || 0;
-                const rts = tweet.retweet_count || 0;
+                const likes = DataMappers.firstDefined(tweet.like_count, tweet.favorite_count, 0);
+                const rts = DataMappers.firstDefined(tweet.retweet_count, 0);
+                const replyCount = DataMappers.firstDefined(tweet.reply_count, 0);
                 html += feedCard(
                     dateStr ? `<span class="scraped-feed-date">${dateStr}</span>` : "",
                     esc(truncate(tweet.full_text || tweet.text, 280)),
-                    `<span class="scraped-engagement">❤️ ${fmtNum(likes)}</span><span class="scraped-engagement">🔁 ${fmtNum(rts)}</span>`
+                    `<span class="scraped-engagement">❤️ ${fmtNum(likes)}</span><span class="scraped-engagement">🔁 ${fmtNum(rts)}</span><span class="scraped-engagement">Replies ${fmtNum(replyCount)}</span>`
                 );
             });
             html += `</div>`;
         }
     } else if (plat === "reddit") {
         const comments = data.comments || (Array.isArray(data) ? data.filter(i => i.dataType === "comment") : []);
-        const posts = data.posts || (Array.isArray(data) ? data.filter(i => i.dataType === "post") : []);
-        const user = data.user || {};
-        const linkKarma = user.link_karma || 0;
-        const commentKarma = user.comment_karma || 0;
-        const cakeDay = user.created_utc ? fmtDate(user.created_utc, true) : "";
+        const posts = DataMappers.firstList(data.posts, data.recent_posts, Array.isArray(data) ? data.filter(i => i.dataType === "post") : []);
+        const user = data.user || data.profile || data || {};
+        const linkKarma = DataMappers.firstDefined(user.link_karma, user.linkKarma);
+        const commentKarma = DataMappers.firstDefined(user.comment_karma, user.commentKarma);
+        const cakeDayValue = DataMappers.firstDefined(user.created_at, user.created_utc);
+        const cakeDay = cakeDayValue !== undefined ? fmtDate(cakeDayValue) : "";
 
         if (!excludeProfileCard) {
             html += sectionHeader("👤", "Redditor Profile");
@@ -2526,15 +2808,21 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             html += `      <span class="scraped-profile-avatar-placeholder" style="color:#ff4500;">RD</span>`;
             html += `    </div>`;
             html += `    <div class="scraped-profile-identity">`;
-            html += `      <span class="scraped-profile-name">u/${esc(user.name || username)}</span>`;
+            html += `      <span class="scraped-profile-name">u/${esc(DataMappers.firstDefined(user.name, data.username, username))}</span>`;
             html += `      <span class="scraped-profile-handle" style="color:#ff4500;">Reddit Account</span>`;
             html += `    </div>`;
             html += `  </div>`;
-            html += `<div class="scraped-stats-grid">`;
-            html += statTile("Post Karma", fmtNum(linkKarma), "blue");
-            html += statTile("Comment Karma", fmtNum(commentKarma));
-            html += statTile("Total", fmtNum(linkKarma + commentKarma), "gold");
-            html += `</div>`;
+            if (linkKarma !== undefined || commentKarma !== undefined) {
+                const resolvedLinkKarma = Number(linkKarma || 0);
+                const resolvedCommentKarma = Number(commentKarma || 0);
+                html += `<div class="scraped-stats-grid">`;
+                if (linkKarma !== undefined) html += statTile("Post Karma", fmtNum(linkKarma), "blue");
+                if (commentKarma !== undefined) html += statTile("Comment Karma", fmtNum(commentKarma));
+                html += statTile("Total", fmtNum(resolvedLinkKarma + resolvedCommentKarma), "gold");
+                html += `</div>`;
+            } else if (data.profile_metadata_note) {
+                html += `<div class="scraped-profile-meta-line">${esc(data.profile_metadata_note)}</div>`;
+            }
             if (cakeDay) html += `<div class="scraped-profile-meta-line">Cake Day: ${cakeDay}</div>`;
             html += `</div>`;
         }
@@ -2543,11 +2831,13 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             html += sectionHeader("📝", "Submissions", posts.length);
             html += `<div class="scraped-feed-list">`;
             posts.slice(0, 5).forEach(p => {
-                const dateStr = fmtDate(p.created_utc, true);
+                const dateStr = fmtDate(DataMappers.firstDefined(p.created_at, p.created_utc));
+                const postText = DataMappers.firstDefined(p.text, p.selftext, "");
+                const commentCount = DataMappers.firstDefined(p.comment_count, p.num_comments, 0);
                 html += feedCard(
                     `<span class="scraped-feed-tag">r/${esc(p.subreddit || "?")}</span>${dateStr ? `<span class="scraped-feed-date">${dateStr}</span>` : ""}`,
-                    `<strong>${esc(p.title || "Untitled")}</strong>${p.selftext ? `<div class="scraped-feed-excerpt">${esc(truncate(p.selftext, 200))}</div>` : ""}`,
-                    `<span class="scraped-engagement">⬆ ${fmtNum(p.score || 0)}</span><span class="scraped-engagement">💬 ${fmtNum(p.num_comments || 0)}</span>`
+                    `<strong>${esc(p.title || "Untitled")}</strong>${postText ? `<div class="scraped-feed-excerpt">${esc(truncate(postText, 200))}</div>` : ""}`,
+                    `<span class="scraped-engagement">⬆ ${fmtNum(p.score || 0)}</span><span class="scraped-engagement">💬 ${fmtNum(commentCount)}</span>`
                 );
             });
             html += `</div>`;
@@ -2557,22 +2847,25 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             html += sectionHeader("💬", "Comment Activity", comments.length);
             html += `<div class="scraped-feed-list">`;
             comments.slice(0, 5).forEach(c => {
-                const dateStr = fmtDate(c.created_utc, true);
+                const dateStr = fmtDate(DataMappers.firstDefined(c.created_at, c.created_utc));
                 html += feedCard(
                     `<span class="scraped-feed-tag">r/${esc(c.subreddit || "?")}</span>${dateStr ? `<span class="scraped-feed-date">${dateStr}</span>` : ""}`,
-                    esc(truncate(c.body || "", 200)),
+                    esc(truncate(DataMappers.firstDefined(c.text, c.body, ""), 200)),
                     c.score !== undefined ? `<span class="scraped-engagement">⬆ ${fmtNum(c.score)}</span>` : ""
                 );
             });
             html += `</div>`;
         }
     } else if (plat === "linkedin") {
-        const profile = Array.isArray(data) ? data[0] : (data.profile || data);
+        const profile = Array.isArray(data)
+            ? data[0]
+            : (data.profile || (Array.isArray(data.profiles) ? data.profiles[0] : null) || data);
+        const linkedInPosts = DataMappers.firstList(data.posts, data.recent_posts);
         if (profile) {
-            const headline = profile.headline || profile.title || "";
-            const summary = profile.summary || "";
-            const location = profile.location || profile.geoLocationName || "";
-            const connections = profile.connectionsCount || profile.connections || 0;
+            const headline = DataMappers.firstDefined(profile.headline, profile.title, "");
+            const summary = DataMappers.firstDefined(profile.bio, profile.summary, "");
+            const location = DataMappers.firstDefined(profile.location, profile.geoLocationName, "");
+            const connections = DataMappers.firstDefined(profile.connections_count, profile.connectionsCount, profile.connections);
 
             let profilePic = profile.profile_pic_hd || profile.profile_pic_url;
             if (profilePic && !profilePic.startsWith("data:")) {
@@ -2591,7 +2884,7 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
                 }
                 html += `    </div>`;
                 html += `    <div class="scraped-profile-identity">`;
-                html += `      <span class="scraped-profile-name">${esc(profile.fullName || profile.name || username)}</span>`;
+                html += `      <span class="scraped-profile-name">${esc(DataMappers.firstDefined(profile.full_name, profile.fullName, profile.name, username))}</span>`;
                 if (headline) {
                     html += `      <span class="scraped-profile-handle" style="color:#0077b5; font-family:inherit; font-size:0.75rem; font-weight:normal;">${esc(headline)}</span>`;
                 }
@@ -2599,7 +2892,7 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
                 html += `  </div>`;
                 if (summary) html += `<div class="scraped-profile-bio">${esc(truncate(summary, 300))}</div>`;
                 html += `<div class="scraped-stats-grid">`;
-                if (connections) html += statTile("Connections", fmtNum(connections), "blue");
+                if (connections !== undefined) html += statTile("Connections", fmtNum(connections), "blue");
                 if (location) html += statTile("Location", esc(location));
                 html += `</div>`;
                 html += `</div>`;
@@ -2618,11 +2911,27 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
                 });
                 html += `</div>`;
             }
+            if (linkedInPosts.length > 0) {
+                html += sectionHeader("📰", "Public LinkedIn Posts", linkedInPosts.length);
+                html += `<div class="scraped-feed-list">`;
+                linkedInPosts.slice(0, 5).forEach(post => {
+                    const dateStr = fmtDate(post.created_at);
+                    const reactions = DataMappers.firstDefined(post.reaction_count, post.like_count, 0);
+                    const comments = DataMappers.firstDefined(post.comment_count, 0);
+                    const reposts = DataMappers.firstDefined(post.repost_count, 0);
+                    html += feedCard(
+                        dateStr ? `<span class="scraped-feed-date">${dateStr}</span>` : "",
+                        esc(truncate(post.text || "", 300)),
+                        `<span class="scraped-engagement">Reactions ${fmtNum(reactions)}</span><span class="scraped-engagement">Comments ${fmtNum(comments)}</span><span class="scraped-engagement">Reposts ${fmtNum(reposts)}</span>`
+                    );
+                });
+                html += `</div>`;
+            }
         } else {
             html += `<div class="scraped-empty-state">No rich LinkedIn profile payload returned.</div>`;
         }
     } else if (plat === "facebook") {
-        const posts = Array.isArray(data) ? data : (data.posts || []);
+        const posts = DataMappers.firstList(Array.isArray(data) ? data : [], data.posts, data.recent_posts);
         let profilePic = data.profile_pic_hd || data.profile_pic_url;
         if (profilePic && !profilePic.startsWith("data:")) {
             profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
@@ -2640,7 +2949,7 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             }
             html += `    </div>`;
             html += `    <div class="scraped-profile-identity">`;
-            html += `      <span class="scraped-profile-name">${esc(username)}</span>`;
+            html += `      <span class="scraped-profile-name">${esc(DataMappers.firstDefined(data.full_name, data.name, username))}</span>`;
             html += `      <span class="scraped-profile-handle" style="color:#1877f2;">Facebook Entity</span>`;
             html += `    </div>`;
             html += `  </div>`;
@@ -2651,12 +2960,21 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             html += sectionHeader("📰", "Public Posts", posts.length);
             html += `<div class="scraped-feed-list">`;
             posts.slice(0, 5).forEach(post => {
-                const dateStr = post.time || post.date || "";
-                const likes = post.likes || post.reactions || 0;
+                const dateStr = fmtDate(DataMappers.firstDefined(post.created_at, post.time, post.date));
+                const likes = DataMappers.firstDefined(post.like_count, post.likes);
+                const reactions = DataMappers.firstDefined(post.reaction_count, typeof post.reactions === "number" ? post.reactions : undefined);
+                const comments = DataMappers.firstDefined(post.comment_count, post.comments);
+                const shares = DataMappers.firstDefined(post.share_count, post.shares);
+                const engagement = [
+                    likes !== undefined ? `<span class="scraped-engagement">Likes ${fmtNum(likes)}</span>` : "",
+                    reactions !== undefined ? `<span class="scraped-engagement">Reactions ${fmtNum(reactions)}</span>` : "",
+                    comments !== undefined ? `<span class="scraped-engagement">Comments ${fmtNum(comments)}</span>` : "",
+                    shares !== undefined ? `<span class="scraped-engagement">Shares ${fmtNum(shares)}</span>` : ""
+                ].filter(Boolean).join("");
                 html += feedCard(
                     dateStr ? `<span class="scraped-feed-date">${esc(dateStr)}</span>` : "",
                     esc(truncate(post.text || post.message || "", 300)),
-                    likes ? `<span class="scraped-engagement">👍 ${fmtNum(likes)}</span>` : ""
+                    engagement
                 );
             });
             html += `</div>`;
@@ -2682,13 +3000,20 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             }
             html += `    </div>`;
             html += `    <div class="scraped-profile-identity">`;
-            if (td.full_name) {
-                html += `      <span class="scraped-profile-name">${esc(td.full_name)}</span>`;
+            const telegramName = DataMappers.firstDefined(td.full_name, td.display_name);
+            if (telegramName) {
+                html += `      <span class="scraped-profile-name">${esc(telegramName)}</span>`;
             }
-            html += `      <span class="scraped-profile-handle">@${esc(td.username || username)}</span>`;
+            html += td.username
+                ? `      <span class="scraped-profile-handle">@${esc(td.username)}</span>`
+                : `      <span class="scraped-profile-handle">Invite preview (hash redacted)</span>`;
             html += `    </div>`;
             html += `  </div>`;
             if (td.bio) html += `<div class="scraped-profile-bio">${esc(td.bio)}</div>`;
+            const telegramMembers = DataMappers.firstDefined(td.subscriber_count, td.member_count);
+            if (telegramMembers !== undefined) {
+                html += `<div class="scraped-stats-grid">${statTile("Members", fmtNum(telegramMembers), "blue")}</div>`;
+            }
             html += `</div>`;
         }
     } else if (plat === "instagram") {

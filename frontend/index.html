@@ -273,7 +273,7 @@
                                             <span class="platform-intel-card-name" style="text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1.5px; font-weight: 600; color: var(--text-secondary);">Intelligence Correlation Analysis</span>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 12px;">
-                                            <span class="mono gold-text" id="ai-confidence" style="font-size: 0.75rem;">Confidence: 65%</span>
+                                            <span class="mono gold-text" id="ai-confidence" style="font-size: 0.75rem;">Confidence: Not available</span>
                                             <button class="platform-intel-toggle-btn">
                                                 <span class="toggle-text">Show Details</span>
                                                 <svg class="toggle-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px; height:12px; transition: transform 0.2s;"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -291,9 +291,9 @@
                                             <div>
                                                 <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Correlation Decision</div>
                                                 <span id="ai-decision-badge" class="risk-indicator-badge" style="margin-top: 0;">UNKNOWN</span>
-                                                <span id="ai-engine-status" class="risk-indicator-badge risk-medium" style="margin-top: 0; font-size: 0.65rem; padding: 2px 6px;">rules fallback</span>
+                                                <span id="ai-engine-status" class="risk-indicator-badge actor-status-neutral" style="margin-top: 0; font-size: 0.65rem; padding: 2px 6px;">not run</span>
                                             </div>
-                                            <p id="ai-summary">Rule-based placeholder correlation pending AI provider configuration.</p>
+                                            <p id="ai-summary">No AI correlation result has been run.</p>
                                             
                                             <div id="ai-reasons-section" style="display:none;">
                                                 <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px;">Key Reasons</div>
@@ -320,6 +320,28 @@
                                 <!-- 3. DYNAMIC PLATFORM DOSSIERS -->
                                 <div id="platform-dossier-container" style="display:flex; flex-direction:column; gap:20px; margin-top:0;">
                                     <!-- Dynamic platform cards injected here -->
+                                </div>
+
+                                <!-- 3.0 COLLECTION COVERAGE & NORMALIZED CONTENT -->
+                                <div class="glass-card platform-intel-card" id="collection-coverage-card">
+                                    <div class="platform-intel-card-header clickable-header" onclick="toggleStaticCardCollapse('collection-coverage-card', this)" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:18px; height:18px; color:var(--accent-blue);"><path d="M4 19V9"></path><path d="M10 19V5"></path><path d="M16 19v-7"></path><path d="M22 19V3"></path></svg>
+                                            <span class="platform-intel-card-name" style="text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1.5px; font-weight: 600; color: var(--text-secondary);">Collection Coverage &amp; Content</span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:12px;">
+                                            <span class="mono blue-text" id="collection-coverage-status" style="font-size:0.75rem;">Not Run</span>
+                                            <button class="platform-intel-toggle-btn">
+                                                <span class="toggle-text">Show Details</span>
+                                                <svg class="toggle-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px; height:12px; transition:transform 0.2s;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="platform-intel-collapsible">
+                                        <div class="platform-intel-card-body" style="padding-top:20px;">
+                                            <div id="collection-coverage-results" style="display:flex; flex-direction:column; gap:12px;"></div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <!-- 3.1 ASSOCIATED ACCOUNTS DISCOVERY -->
@@ -588,6 +610,7 @@
     </div>
 
     <!-- Link External JS Script -->
-    <script src="app.js?v=20260720-instant-skeleton"></script>
+    <script src="data_mappers.js?v=20260722-response-wiring"></script>
+    <script src="app.js?v=20260722-response-wiring"></script>
 </body>
 </html>

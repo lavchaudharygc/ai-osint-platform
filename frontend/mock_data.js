@@ -99,14 +99,35 @@ const MOCK_DATA = {
         },
         twitter: {
             success: true, platform: "twitter", username: "arkagrawall", full_name: "Ark agrawal",
-            bio: "19, chasing code & chaos, save me!", follower_count: 89, following_count: 123, tweet_count: 34, is_verified: false,
+            bio: "19, chasing code & chaos, save me!", follower_count: 89, following_count: 123, post_count: 34, joined_at: "2022-01-15T09:00:00Z", is_verified: false,
             tweets: [
-                { text: "just shipped my first ML model 🎉 #machinelearning #python", created_at: "2026-07-10T12:30:00Z", like_count: 12 },
-                { text: "coffee + sunset = peak productivity ☕🌅", created_at: "2026-07-08T18:00:00Z", like_count: 34 }
+                { id: "tw-1", text: "just shipped my first ML model 🎉 #machinelearning #python", created_at: "2026-07-10T12:30:00Z", like_count: 12, retweet_count: 3, reply_count: 2 },
+                { id: "tw-2", text: "coffee + sunset = peak productivity ☕🌅", created_at: "2026-07-08T18:00:00Z", like_count: 34, retweet_count: 5, reply_count: 1 }
             ]
+        },
+        linkedin: {
+            success: true, exists: true, platform: "linkedin", username: "arkagrawall",
+            full_name: "Ark Agrawal", headline: "AI/ML Student", bio: "Building applied machine-learning projects.",
+            connections_count: 218, location: "Greater Noida", experience: []
+        },
+        reddit: {
+            success: true, exists: true, platform: "reddit", username: "arkagrawall",
+            profile_metadata_note: "Reddit karma was not returned by the selected public actor.",
+            posts: [{ id: "rd-1", title: "My first ML project", text: "A short project write-up.", subreddit: "MachineLearning", score: 21, comment_count: 7, created_at: "2026-07-09T08:15:00Z" }],
+            comments: [{ id: "rd-c1", text: "Thanks for the feedback!", subreddit: "MachineLearning", score: 4, created_at: "2026-07-09T10:30:00Z" }]
+        },
+        facebook: {
+            success: true, exists: true, platform: "facebook", username: "arkagrawall", full_name: "Ark Agrawal",
+            posts: [{ id: "fb-1", text: "Public project update", created_at: "2026-07-07T11:00:00Z", like_count: 14, reaction_count: 18, comment_count: 3, share_count: 2 }]
         }
     },
-    platform_content: { platform: "instagram", posts: [], replies: [], comments: [] },
+    platform_content: {
+        platform: "instagram",
+        source: "apify_instagram_scraper",
+        posts: [{ id: "primary-content-1", caption: "Normalized primary post content #aiml", created_at: "2026-07-11T12:00:00Z" }],
+        replies: [],
+        comments: []
+    },
     intelligence_report: {
         report_metadata: { target_username: "arkagrawall", generated_at: new Date().toISOString() },
         executive_summary: {
@@ -149,13 +170,38 @@ const MOCK_DATA = {
             interests: ["Photography", "Music", "Coding", "AI/ML", "Coffee", "Travel"]
         }
     },
-    apify_social_results: { status: "completed_with_warnings" },
+    apify_social_results: {
+        status: "completed_with_warnings",
+        mode: "automatic_all_actors",
+        identity_notice: "Same usernames across platforms remain unverified candidates until corroborated.",
+        summary: { total: 4, completed: 3, empty: 0, failed: 1, not_configured: 0 },
+        actors: {
+            twitter_profile_and_replies: {
+                success: true, status: "completed", actor_id: "mock/twitter-profile", tweets: []
+            },
+            twitter_tweet_search_v2: {
+                success: true, status: "completed", actor_id: "mock/twitter-search",
+                tweets: [{ id: "tw-search-1", text: "Actor-only Twitter search result", created_at: "2026-07-12T12:00:00Z", like_count: 9 }]
+            },
+            linkedin_posts_search: {
+                success: true, status: "completed", actor_id: "mock/linkedin-posts",
+                posts: [{ id: "li-post-1", text: "Actor-only LinkedIn public post", created_at: "2026-07-13T12:00:00Z", reaction_count: 11, comment_count: 2, repost_count: 1 }]
+            },
+            facebook_posts: {
+                success: false, status: "provider_error", actor_id: "mock/facebook-posts",
+                error: { code: "mock_provider_error", message: "Mock provider failure for UI verification" }, posts: []
+            }
+        },
+        telegram: {
+            success: true, exists: true, status: "found", platform: "telegram", username: "arkagrawall", full_name: "Ark Agrawal"
+        }
+    },
     timestamp: new Date().toISOString()
 };
 
 function injectMock() {
-    window.currentInvestigationData = MOCK_DATA;
-    window.currentCaseId = "MOCK-2026-0001";
+    currentInvestigationData = MOCK_DATA;
+    currentCaseId = "MOCK-2026-0001";
 
     const workspaceEl = document.getElementById("results-workspace-grid");
     const emptyStateEl = document.getElementById("results-empty-state");
@@ -168,10 +214,6 @@ function injectMock() {
     if (typeof renderInstagramPosts === "function") {
         renderInstagramPosts(MOCK_DATA.instagram_posts);
     }
-    if (typeof renderPlatformDossier === "function") {
-        renderPlatformDossier(MOCK_DATA);
-    }
-
     console.log("[MOCK] Inject completed successfully.");
 }
 

@@ -29,6 +29,7 @@ class TelegramDataServiceTests(unittest.IsolatedAsyncioTestCase):
     def test_normalize_username_accepts_handles_and_public_urls(self) -> None:
         self.assertEqual(self.service.normalize_username("@Target_User"), "Target_User")
         self.assertEqual(self.service.normalize_username("https://t.me/Target_User"), "Target_User")
+        self.assertEqual(self.service.normalize_username("https://t.me/Target_User/"), "Target_User")
         self.assertEqual(self.service.normalize_username("t.me/s/Target_User"), "Target_User")
 
     def test_normalize_username_rejects_invalid_values(self) -> None:

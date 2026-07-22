@@ -22,8 +22,9 @@ class TelegramIntelligenceExtractor:
 
     async def get_profile(self, username: str) -> Dict[str, Any]:
         """Combine public metadata, MTProto connection status, bio entities, and active OSINT bot queries."""
-        clean_username = username.strip("@").split("/")[-1]
-        profile = await self.public_service.get_profile(clean_username)
+        # TelegramDataService owns URL/invite parsing. Passing the original target
+        # preserves invite links and also handles public URLs with trailing slashes.
+        profile = await self.public_service.get_profile(username)
 
         bio_text = str(profile.get("bio") or profile.get("description") or "")
         
