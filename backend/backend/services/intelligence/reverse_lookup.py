@@ -6,7 +6,8 @@ Uses extracted keywords to find associated accounts and profile type
 """
 
 import asyncio
-from typing import Dict, List, Optional, Set, Tuple
+import re
+from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -45,6 +46,80 @@ class ReverseKeywordLookup:
     """
     Reverse keyword lookup to find associated accounts and profile type
     """
+
+    # Keep the profile taxonomy and its evidence rules in one place.  Matching is
+    # boundary-aware (see _matching_keywords), so a word such as "art" does not
+    # accidentally classify "startup" as an arts profile.
+    PROFILE_KEYWORDS = {
+        'cyber_security_professional': (
+            'cybersecurity', 'cyber security', 'infosec', 'security analyst',
+            'security engineer', 'soc analyst', 'incident response', 'dfir',
+            'threat intelligence', 'threat hunting', 'digital forensics',
+        ),
+        'hacker_enthusiast': (
+            'hacker', 'hacking', 'ethical hacking', 'ethicalhacking', 'pentest',
+            'penetration testing', 'red team', 'redteam', 'bug bounty',
+            'bugbounty', 'ctf', 'capture the flag',
+        ),
+        'developer': (
+            'developer', 'software developer', 'programmer', 'programming',
+            'coding', 'software engineer', 'web developer', 'webdev', 'appdev',
+            'python', 'javascript', 'java', 'devops', 'cloud engineer',
+        ),
+        'politics': (
+            'politics', 'political', 'political science', 'political news',
+            'politicalnews', 'public affairs', 'publicaffairs', 'public policy',
+            'publicpolicy', 'governance',
+            'government', 'election', 'elections', 'democracy', 'parliament',
+            'lok sabha', 'loksabha', 'rajya sabha', 'rajyasabha', 'legislature',
+            'civic engagement', 'voter', 'voting',
+        ),
+        'student': (
+            'student', 'student life', 'studentlife', 'learner', 'studying',
+            'college', 'university', 'school', 'campus', 'academic', 'course',
+            'learning', 'training', 'certification', 'exam', 'degree',
+            'undergraduate', 'postgraduate', 'graduate student', 'scholarship',
+            'semester', 'btech', 'b tech',
+            'mtech', 'm tech', 'bca', 'mca', 'mba', 'intern', 'fresher',
+        ),
+        'art': (
+            'art', 'artist', 'artwork', 'digitalart', 'fineart', 'visualart',
+            'creative arts', 'creative',
+            'photography', 'photographer', 'street photography', 'portrait',
+            'graphic design', 'graphicdesign', 'designer', 'ui ux', 'uiux',
+            'illustration', 'illustrator', 'music', 'singer', 'guitar', 'piano',
+            'producer', 'musician', 'writer', 'writing', 'author', 'blogger', 'poetry',
+            'videography', 'filmmaker', 'film director', 'video editor',
+        ),
+        'business': (
+            'startup', 'startupindia', 'startup founder', 'startupfounder',
+            'founder', 'cofounder', 'co founder',
+            'entrepreneur', 'business', 'business owner', 'marketing',
+            'digital marketing', 'digitalmarketing', 'social media marketing',
+            'seo', 'brand', 'branding', 'advertising', 'finance', 'investing',
+            'trading', 'bitcoin', 'crypto', 'stocks', 'management', 'leadership',
+            'business strategy', 'operations', 'ceo', 'company', 'sales',
+        ),
+        'job_seeker': (
+            'job seeker', 'jobseeker', 'open to work', 'opentowork',
+            'seeking opportunities', 'looking for work', 'hiring', 'career',
+        ),
+        'content_creator': (
+            'content creator', 'contentcreator', 'influencer', 'youtuber',
+            'podcaster', 'reels creator', 'video creator',
+        ),
+        'privacy_advocate': (
+            'privacy advocate', 'privacy', 'encryption', 'opsec',
+            'digital rights', 'data protection',
+        ),
+    }
+
+    PROFILE_TEXT_FIELDS = {
+        'bio', 'biography', 'about', 'description', 'headline', 'occupation',
+        'title', 'job_title', 'profession', 'role', 'category',
+        'business_category', 'account_type', 'page_category',
+    }
+    MIN_CLASSIFICATION_SCORE = 0.20
     
     def __init__(self):
         self.hashtag_analyzer = HashtagIntelligenceAnalyzer()
@@ -91,7 +166,9 @@ class ReverseKeywordLookup:
             username=username,
             hashtag_analysis=hashtag_analysis,
             content_analysis=content_analysis,
-            dorking_analysis=dorking_analysis
+            dorking_analysis=dorking_analysis,
+            recent_posts=recent_posts,
+            context=context,
         )
         
         result.keyword_profile = keyword_profile
@@ -167,7 +244,9 @@ class ReverseKeywordLookup:
         username: str,
         hashtag_analysis,
         content_analysis,
-        dorking_analysis: Dict
+        dorking_analysis: Dict,
+        recent_posts: Optional[List[str]] = None,
+        context: Optional[Dict] = None,
     ) -> KeywordProfile:
         """
         Classify keywords into similar vs different from username
@@ -177,18 +256,29 @@ class ReverseKeywordLookup:
         # Get all keywords from various sources
         all_keywords = set()
         
-        # From hashtags
-        all_keywords.update(hashtag_analysis.categorized_hashtags.get('technology', []))
-        all_keywords.update(hashtag_analysis.categorized_hashtags.get('cybersecurity_specific', []))
-        all_keywords.update(hashtag_analysis.categorized_hashtags.get('business', []))
-        all_keywords.update(hashtag_analysis.categorized_hashtags.get('personal', []))
+        # From all hashtag categories, including education, politics and creative.
+        for category_keywords in hashtag_analysis.categorized_hashtags.values():
+            all_keywords.update(category_keywords)
         
         # From content
         all_keywords.update(content_analysis.skills)
         all_keywords.update(content_analysis.job_titles)
+        all_keywords.update(content_analysis.key_phrases)
+        for education in content_analysis.education:
+            if isinstance(education, dict):
+                all_keywords.update(str(value) for value in education.values() if value)
         
         # From dorking
         all_keywords.update(dorking_analysis.get('key_phrases', []))
+
+        # Bios and other profile metadata are real classification evidence, but
+        # store only matched terms in the keyword profile rather than exposing a
+        # complete bio again in this section of the API response.
+        profile_evidence, _ = self._extract_profile_evidence(context)
+        profile_terms = set()
+        for keywords in self.PROFILE_KEYWORDS.values():
+            profile_terms.update(self._matching_keywords(profile_evidence, keywords))
+        all_keywords.update(profile_terms)
         
         # Classify each keyword
         for keyword in all_keywords:
@@ -206,7 +296,13 @@ class ReverseKeywordLookup:
         professional_keywords = set()
         professional_keywords.update(hashtag_analysis.categorized_hashtags.get('technology', []))
         professional_keywords.update(hashtag_analysis.categorized_hashtags.get('cybersecurity_specific', []))
+        professional_keywords.update(hashtag_analysis.categorized_hashtags.get('creative', []))
         professional_keywords.update(hashtag_analysis.categorized_hashtags.get('business', []))
+        professional_keywords.update(hashtag_analysis.categorized_hashtags.get('education', []))
+        professional_keywords.update(hashtag_analysis.categorized_hashtags.get('politics', []))
+        professional_keywords.update(content_analysis.skills)
+        professional_keywords.update(content_analysis.job_titles)
+        professional_keywords.update(profile_terms)
         profile.professional_keywords = list(professional_keywords)
         
         # Extract associated entities
@@ -225,7 +321,9 @@ class ReverseKeywordLookup:
         # Calculate profile type indicators
         profile.profile_type_indicators = self._calculate_profile_indicators(
             hashtag_analysis,
-            content_analysis
+            content_analysis,
+            recent_posts=recent_posts,
+            context=context,
         )
         
         return profile
@@ -238,57 +336,101 @@ class ReverseKeywordLookup:
     def _calculate_profile_indicators(
         self,
         hashtag_analysis,
-        content_analysis
+        content_analysis,
+        recent_posts: Optional[List[str]] = None,
+        context: Optional[Dict] = None,
     ) -> Dict[str, float]:
         """
-        Calculate indicators for different profile types
+        Calculate absolute, evidence-weighted indicators for profile types.
+
+        Scores are deliberately not normalized against the largest result.  The
+        previous normalization turned a single weak clue into 100% confidence and
+        made the first zero-valued type (hacker_enthusiast) win empty analyses.
         """
-        indicators = {
-            'hacker_enthusiast': 0.0,
-            'cyber_security_professional': 0.0,
-            'developer': 0.0,
-            'designer': 0.0,
-            'entrepreneur': 0.0,
-            'student': 0.0,
-            'job_seeker': 0.0,
-            'content_creator': 0.0,
-            'privacy_advocate': 0.0,
-        }
-        
-        # Analyze hashtag categories
-        cybersecurity_tags = len(hashtag_analysis.categorized_hashtags.get('cybersecurity_specific', []))
-        tech_tags = len(hashtag_analysis.categorized_hashtags.get('technology', []))
-        business_tags = len(hashtag_analysis.categorized_hashtags.get('business', []))
-        creative_tags = len(hashtag_analysis.categorized_hashtags.get('creative', []))
-        
-        total_tags = hashtag_analysis.total_hashtags or 1
-        
-        # Calculate scores
-        if cybersecurity_tags > 0:
-            indicators['cyber_security_professional'] = cybersecurity_tags / total_tags
-            indicators['hacker_enthusiast'] = cybersecurity_tags / total_tags * 0.8
-        
-        if tech_tags > 0:
-            indicators['developer'] = tech_tags / total_tags
-        
-        if business_tags > 0:
-            indicators['entrepreneur'] = business_tags / total_tags
-        
-        if creative_tags > 0:
-            indicators['content_creator'] = creative_tags / total_tags
-            indicators['designer'] = creative_tags / total_tags * 0.6
-        
-        # Check content for additional indicators
-        if content_analysis.skills:
-            if any('security' in s.lower() or 'hack' in s.lower() for s in content_analysis.skills):
-                indicators['cyber_security_professional'] += 0.2
-                indicators['hacker_enthusiast'] += 0.2
-        
-        # Normalize
-        max_score = max(indicators.values()) if max(indicators.values()) > 0 else 1
-        indicators = {k: min(v / max_score, 1.0) for k, v in indicators.items()}
-        
+        hashtag_evidence = []
+        for category_keywords in hashtag_analysis.categorized_hashtags.values():
+            hashtag_evidence.extend(str(value) for value in category_keywords if value)
+
+        content_evidence = [str(value) for value in (recent_posts or []) if value]
+        content_evidence.extend(str(value) for value in content_analysis.skills if value)
+        content_evidence.extend(str(value) for value in content_analysis.job_titles if value)
+        content_evidence.extend(str(value) for value in content_analysis.key_phrases if value)
+        for education in content_analysis.education:
+            if isinstance(education, dict):
+                content_evidence.extend(str(value) for value in education.values() if value)
+
+        profile_evidence, explicit_business = self._extract_profile_evidence(context)
+        indicators = {}
+
+        for profile_type, keywords in self.PROFILE_KEYWORDS.items():
+            hashtag_matches = self._matching_keywords(hashtag_evidence, keywords)
+            content_matches = self._matching_keywords(content_evidence, keywords)
+            profile_matches = self._matching_keywords(profile_evidence, keywords)
+
+            # Independent sources have separate caps so repeated keywords in a
+            # single long post cannot manufacture high confidence.
+            score = min(len(hashtag_matches) * 0.25, 0.55)
+            score += min(len(content_matches) * 0.20, 0.50)
+            score += min(len(profile_matches) * 0.25, 0.55)
+
+            source_count = sum(bool(matches) for matches in (
+                hashtag_matches, content_matches, profile_matches
+            ))
+            if source_count >= 2:
+                score += 0.10
+            if profile_type == 'business' and explicit_business:
+                score += 0.40
+
+            indicators[profile_type] = round(min(score, 0.95), 2)
+
         return indicators
+
+    @staticmethod
+    def _normalize_evidence(value: Any) -> str:
+        """Normalize free text while preserving word boundaries."""
+        return re.sub(r'[^a-z0-9]+', ' ', str(value).lower()).strip()
+
+    def _matching_keywords(self, evidence: List[str], keywords) -> Set[str]:
+        """Return unique taxonomy terms found as complete words or phrases."""
+        normalized_evidence = [self._normalize_evidence(value) for value in evidence if value]
+        matches = set()
+        for keyword in keywords:
+            normalized_keyword = self._normalize_evidence(keyword)
+            if not normalized_keyword:
+                continue
+            needle = f' {normalized_keyword} '
+            if any(needle in f' {text} ' for text in normalized_evidence):
+                matches.add(normalized_keyword)
+        return matches
+
+    def _extract_profile_evidence(
+        self,
+        context: Optional[Dict]
+    ) -> Tuple[List[str], bool]:
+        """Collect bios/headlines/categories from nested platform payloads."""
+        evidence = []
+        explicit_business = False
+
+        def visit(value: Any) -> None:
+            nonlocal explicit_business
+            if isinstance(value, dict):
+                for raw_key, nested in value.items():
+                    key = str(raw_key).lower()
+                    if key in {'is_business', 'is_business_account', 'business_account'}:
+                        explicit_business = explicit_business or nested is True
+                    if key in self.PROFILE_TEXT_FIELDS:
+                        if isinstance(nested, str) and nested.strip():
+                            evidence.append(nested.strip())
+                        elif isinstance(nested, (list, tuple, set)):
+                            evidence.extend(str(item) for item in nested if item)
+                    visit(nested)
+            elif isinstance(value, (list, tuple, set)):
+                for item in value:
+                    visit(item)
+
+        visit(context or {})
+        # Preserve order while avoiding multiple copies of the same cross-platform bio.
+        return list(dict.fromkeys(evidence)), explicit_business
     
     async def _find_associated_accounts(
         self,
@@ -360,15 +502,31 @@ class ReverseKeywordLookup:
         Determine the type of profile based on all analysis
         """
         indicators = keyword_profile.profile_type_indicators
+
+        # Do not let dictionary order decide an empty analysis.  This was the
+        # source of the old "Hacker Enthusiast" result for profiles with no data.
+        ranked_types = sorted(
+            indicators.items(),
+            key=lambda item: (-float(item[1]), item[0])
+        )
+        if not ranked_types or ranked_types[0][1] < self.MIN_CLASSIFICATION_SCORE:
+            return ProfileType(
+                primary_type='unknown',
+                confidence=0.0,
+                description='Insufficient public evidence to classify this profile.',
+                secondary_types={},
+                ai_analysis=None,
+                professional_field='Unknown',
+                interests=[],
+                risk_indicators=['No significant risk indicators'],
+            )
+
+        dominant_type, dominant_score = ranked_types[0]
         
-        # Find the dominant profile type
-        dominant_type = max(indicators, key=indicators.get)
-        dominant_score = indicators[dominant_type]
-        
-        # Secondary types (score > 0.3)
+        # Surface other evidence-backed classifications without zero-score noise.
         secondary_types = {
             k: v for k, v in indicators.items()
-            if v > 0.3 and k != dominant_type
+            if v >= self.MIN_CLASSIFICATION_SCORE and k != dominant_type
         }
         
         # Build profile type description
@@ -376,9 +534,10 @@ class ReverseKeywordLookup:
             'cyber_security_professional': 'Cybersecurity professional with technical expertise',
             'hacker_enthusiast': 'Technology enthusiast with hacking/security interests',
             'developer': 'Software developer or programmer',
-            'designer': 'Creative designer or artist',
-            'entrepreneur': 'Business owner or startup founder',
-            'student': 'Student or learner',
+            'politics': 'Profile with evidenced interests in politics, governance, or public affairs',
+            'student': 'Student or active learner',
+            'art': 'Creative arts profile spanning design, photography, music, writing, or video',
+            'business': 'Business, entrepreneurship, management, finance, or marketing profile',
             'job_seeker': 'Actively seeking job opportunities',
             'content_creator': 'Content creator or influencer',
             'privacy_advocate': 'Privacy and security conscious individual',
@@ -403,10 +562,13 @@ class ReverseKeywordLookup:
         6. Risk indicators (if any)
         """
         
-        try:
-            ai_analysis = await self.ai_analyzer.analyze_text(ai_prompt)
-        except:
-            ai_analysis = None
+        ai_analysis = None
+        analyze_text = getattr(self.ai_analyzer, 'analyze_text', None)
+        if callable(analyze_text):
+            try:
+                ai_analysis = await analyze_text(ai_prompt)
+            except Exception:
+                ai_analysis = None
         
         return ProfileType(
             primary_type=dominant_type,
@@ -414,13 +576,32 @@ class ReverseKeywordLookup:
             description=type_descriptions.get(dominant_type, 'Unknown'),
             secondary_types=secondary_types,
             ai_analysis=ai_analysis,
-            professional_field=self._determine_professional_field(keyword_profile),
-            interests=self._extract_interests(keyword_profile),
+            professional_field=self._determine_professional_field(dominant_type, keyword_profile),
+            interests=self._extract_interests(keyword_profile, dominant_type),
             risk_indicators=self._extract_risk_indicators(keyword_profile)
         )
     
-    def _determine_professional_field(self, keyword_profile: KeywordProfile) -> str:
+    def _determine_professional_field(
+        self,
+        dominant_type: str,
+        keyword_profile: KeywordProfile
+    ) -> str:
         """Determine professional field"""
+        profile_fields = {
+            'cyber_security_professional': 'Cybersecurity',
+            'hacker_enthusiast': 'Technology/Cybersecurity',
+            'developer': 'Software Development',
+            'politics': 'Politics/Public Affairs',
+            'student': 'Education',
+            'art': 'Creative Arts',
+            'business': 'Business/Entrepreneurship',
+            'job_seeker': 'Career/Employment',
+            'content_creator': 'Media/Content Creation',
+            'privacy_advocate': 'Privacy/Digital Rights',
+        }
+        if dominant_type in profile_fields:
+            return profile_fields[dominant_type]
+
         professional_keywords = ' '.join(keyword_profile.professional_keywords).lower()
         
         if any(k in professional_keywords for k in ['cyber', 'security', 'hack', 'infosec']):
@@ -436,14 +617,20 @@ class ReverseKeywordLookup:
         else:
             return 'General'
     
-    def _extract_interests(self, keyword_profile: KeywordProfile) -> List[str]:
+    def _extract_interests(
+        self,
+        keyword_profile: KeywordProfile,
+        dominant_type: Optional[str] = None
+    ) -> List[str]:
         """Extract interests from keywords"""
         interests = set()
         
         interest_mapping = {
             'hacking': ['hack', 'cyber', 'security', 'redteam', 'pentest'],
             'coding': ['code', 'programming', 'developer', 'software'],
-            'design': ['design', 'graphic', 'creative', 'art'],
+            'politics': ['politics', 'political', 'governance', 'election', 'parliament'],
+            'education': ['student', 'college', 'university', 'study', 'course', 'degree'],
+            'creative_arts': ['design', 'graphic', 'creative', 'art', 'music', 'writer', 'photography'],
             'business': ['business', 'startup', 'entrepreneur', 'marketing'],
             'privacy': ['privacy', 'encryption', 'opsec', 'secure'],
             'social_media': ['instagram', 'reels', 'content', 'viral'],
@@ -453,8 +640,22 @@ class ReverseKeywordLookup:
         for interest, keywords in interest_mapping.items():
             if any(k in ' '.join(keyword_profile.interest_keywords).lower() for k in keywords):
                 interests.add(interest)
-        
-        return list(interests)
+
+        primary_interest = {
+            'politics': 'politics',
+            'student': 'education',
+            'art': 'creative_arts',
+            'business': 'business',
+            'developer': 'coding',
+            'cyber_security_professional': 'cybersecurity',
+            'hacker_enthusiast': 'hacking',
+            'content_creator': 'social_media',
+            'privacy_advocate': 'privacy',
+        }.get(dominant_type)
+        if primary_interest:
+            interests.add(primary_interest)
+
+        return sorted(interests)
     
     def _extract_risk_indicators(self, keyword_profile: KeywordProfile) -> List[str]:
         """Extract risk indicators"""

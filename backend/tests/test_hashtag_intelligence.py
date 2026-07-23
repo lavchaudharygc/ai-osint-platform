@@ -8,6 +8,46 @@ from backend.services.intelligence.hashtag_analyzer import HashtagIntelligenceAn
 
 
 class HashtagIntelligenceAnalyzerTests(unittest.IsolatedAsyncioTestCase):
+    def test_startup_is_business_not_technology_or_art(self) -> None:
+        categorized = HashtagIntelligenceAnalyzer()._categorize_hashtags(
+            ["#startup", "#startupindia"]
+        )
+
+        self.assertEqual(categorized["business"], ["#startup", "#startupindia"])
+        self.assertEqual(categorized["technology"], [])
+        self.assertEqual(categorized["creative"], [])
+
+    def test_politics_and_expanded_student_terms_are_categorized(self) -> None:
+        categorized = HashtagIntelligenceAnalyzer()._categorize_hashtags(
+            ["#publicpolicy", "#LokSabha", "#undergraduate", "#training"]
+        )
+
+        self.assertEqual(categorized["politics"], ["#publicpolicy", "#LokSabha"])
+        self.assertEqual(categorized["education"], ["#undergraduate", "#training"])
+        self.assertNotIn("#training", categorized["technology"])
+
+    async def test_professional_traits_use_canonical_personality_taxonomy(self) -> None:
+        indicators = await HashtagIntelligenceAnalyzer()._analyze_personality(
+            ["#publicpolicy", "#studentlife", "#digitalart", "#startupfounder"]
+        )
+        professional_traits = {
+            indicator.trait
+            for indicator in indicators
+            if indicator.category == "professional"
+        }
+
+        self.assertTrue({"politics", "student", "art", "business"}.issubset(professional_traits))
+        self.assertNotIn("designer", professional_traits)
+        self.assertNotIn("entrepreneur", professional_traits)
+
+    async def test_political_topic_is_not_emitted_as_a_risk_trait(self) -> None:
+        indicators = await HashtagIntelligenceAnalyzer()._analyze_personality(
+            ["#elections", "#governance", "#parliament"]
+        )
+
+        self.assertTrue(any(indicator.trait == "politics" for indicator in indicators))
+        self.assertFalse(any("risk" in indicator.category.lower() for indicator in indicators))
+
     async def test_analyze_hashtags_with_context_does_not_require_ai_entity_method(self) -> None:
         analyzer = HashtagIntelligenceAnalyzer()
 

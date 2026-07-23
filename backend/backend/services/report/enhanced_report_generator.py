@@ -5,6 +5,7 @@ Enhanced Report Generator with Intelligence Integration
 """
 
 import json
+import math
 from typing import Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,14 @@ class EnhancedReportGenerator:
     """
     Generates comprehensive reports with all intelligence data
     """
+
+    _UNCLASSIFIED_PROFILE_VALUES = {
+        "",
+        "unknown",
+        "unclassified",
+        "not_classified",
+        "insufficient_evidence",
+    }
     
     def __init__(self):
         self.ai_analyzer = AIAnalyzer()
@@ -340,7 +349,10 @@ class EnhancedReportGenerator:
         """
         Format profile classification for report
         """
-        if not reverse_lookup or not reverse_lookup.profile_type:
+        if (
+            not reverse_lookup
+            or not self._is_classified_profile(reverse_lookup.profile_type)
+        ):
             return {"status": "not_classified"}
         
         pt = reverse_lookup.profile_type
@@ -476,6 +488,24 @@ class EnhancedReportGenerator:
         return recommendations
     
     # Helper methods
+    @classmethod
+    def _is_classified_profile(cls, profile_type: object) -> bool:
+        """Return whether a profile type contains a usable classification."""
+        if not profile_type:
+            return False
+
+        primary_type = str(getattr(profile_type, "primary_type", "") or "")
+        normalized_type = primary_type.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized_type in cls._UNCLASSIFIED_PROFILE_VALUES:
+            return False
+
+        try:
+            confidence = float(getattr(profile_type, "confidence", 0) or 0)
+        except (TypeError, ValueError):
+            return False
+
+        return math.isfinite(confidence) and confidence > 0
+
     def _extract_real_name(self, intelligence: ComprehensiveIntelligence) -> Optional[str]:
         """Extract real name from intelligence"""
         if intelligence.content_intelligence:
@@ -494,14 +524,23 @@ class EnhancedReportGenerator:
     
     def _get_profile_type(self, intelligence: ComprehensiveIntelligence) -> str:
         """Get profile type"""
-        if intelligence.reverse_lookup and intelligence.reverse_lookup.profile_type:
+        if intelligence.reverse_lookup and self._is_classified_profile(
+            intelligence.reverse_lookup.profile_type
+        ):
             return intelligence.reverse_lookup.profile_type.primary_type
         return "Unknown"
     
     def _get_professional_field(self, intelligence: ComprehensiveIntelligence) -> str:
         """Get professional field"""
-        if intelligence.reverse_lookup and intelligence.reverse_lookup.profile_type:
-            return intelligence.reverse_lookup.profile_type.professional_field
+        if intelligence.reverse_lookup and self._is_classified_profile(
+            intelligence.reverse_lookup.profile_type
+        ):
+            professional_field = str(
+                intelligence.reverse_lookup.profile_type.professional_field or ""
+            ).strip()
+            normalized_field = professional_field.lower().replace("-", "_").replace(" ", "_")
+            if normalized_field not in self._UNCLASSIFIED_PROFILE_VALUES:
+                return professional_field
         return "Unknown"
     
     def _count_organizations(self, intelligence: ComprehensiveIntelligence) -> int:

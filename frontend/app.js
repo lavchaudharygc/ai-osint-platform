@@ -32,6 +32,44 @@ function safeImageSource(value) {
     return safeExternalUrl(source);
 }
 
+function getPersonalityClassification(profileType = {}) {
+    const rawType = String(profileType.primary_type || "").trim();
+    const normalizedType = rawType.toLowerCase().replace(/[\s-]+/g, "_");
+    const unavailableTypes = new Set(["", "unknown", "unclassified", "not_classified", "insufficient_evidence"]);
+    const rawConfidence = Number(profileType.confidence);
+    const normalizedConfidence = Number.isFinite(rawConfidence) && rawConfidence > 1
+        ? rawConfidence / 100
+        : rawConfidence;
+    const isClassified = !unavailableTypes.has(normalizedType)
+        && Number.isFinite(normalizedConfidence)
+        && normalizedConfidence > 0;
+
+    if (!isClassified) {
+        return {
+            isClassified: false,
+            primaryType: "insufficient_evidence",
+            label: "Insufficient Evidence",
+            confidence: 0,
+            confidencePercent: 0
+        };
+    }
+
+    const confidence = Math.min(normalizedConfidence, 1);
+    const label = normalizedType
+        .split("_")
+        .filter(Boolean)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+
+    return {
+        isClassified: true,
+        primaryType: normalizedType,
+        label,
+        confidence,
+        confidencePercent: Math.round(confidence * 100)
+    };
+}
+
 function contentItemText(item) {
     if (!item || typeof item !== "object") return "";
     return DataMappers.firstDefined(
@@ -1051,6 +1089,7 @@ function renderInvestigationResults(data) {
     const personalityStatusEl = document.getElementById("personality-profile-status");
     const personalityResultsEl = document.getElementById("personality-profile-results");
     const profileType = (data.reverse_lookup_results && data.reverse_lookup_results.profile_type) || {};
+    const profileClassification = getPersonalityClassification(profileType);
     
     const pReport = data.intelligence_report || {};
     const pSections = pReport.intelligence_sections || {};
@@ -1059,21 +1098,26 @@ function renderInvestigationResults(data) {
     const traits = keyDisc.personality_indicators || [];
 
     if (personalityStatusEl) {
-        personalityStatusEl.innerText = profileType.primary_type ? "Analysis Completed" : "Not Classified";
+        personalityStatusEl.innerText = profileClassification.isClassified ? "Analysis Completed" : "Insufficient Evidence";
     }
     if (personalityResultsEl) {
         personalityResultsEl.innerHTML = "";
-        if (!profileType.primary_type) {
-            personalityResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">Insufficient indicators to classify personality/interests.</span>`;
+        if (!profileClassification.isClassified) {
+            const fallbackDescription = profileType.description || "Insufficient public indicators to classify personality or interests.";
+            personalityResultsEl.innerHTML = `
+                <div style="display:flex; flex-direction:column; gap:5px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:6px;">
+                    <div style="font-size:0.85rem; font-weight:700; color:var(--text-secondary);">Insufficient Evidence</div>
+                    <div style="font-size:0.8rem; color:var(--text-secondary); line-height:1.4;">${escapeHTML(fallbackDescription)}</div>
+                </div>`;
         } else {
             let html = `
                 <div style="display:flex; flex-direction:column; gap:8px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:6px;">
                     <div>
                         <span style="font-size:0.75rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600;">Dominant Profile Type:</span>
-                        <div style="font-size:0.95rem; font-weight:700; color:var(--accent-gold); margin-top:2px;">${profileType.primary_type.replace(/_/g, ' ').toUpperCase()} (${Math.round(profileType.confidence * 100)}% Confidence)</div>
+                        <div style="font-size:0.95rem; font-weight:700; color:var(--accent-gold); margin-top:2px;">${escapeHTML(profileClassification.label.toUpperCase())} (${profileClassification.confidencePercent}% Confidence)</div>
                     </div>
-                    ${profileType.description ? `<div style="font-size:0.8rem; color:var(--text-primary); line-height:1.4;">${profileType.description}</div>` : ""}
-                    ${profileType.professional_field ? `<div style="font-size:0.78rem; color:var(--text-secondary);"><strong>Professional Field:</strong> ${profileType.professional_field}</div>` : ""}
+                    ${profileType.description ? `<div style="font-size:0.8rem; color:var(--text-primary); line-height:1.4;">${escapeHTML(profileType.description)}</div>` : ""}
+                    ${profileType.professional_field ? `<div style="font-size:0.78rem; color:var(--text-secondary);"><strong>Professional Field:</strong> ${escapeHTML(profileType.professional_field)}</div>` : ""}
                 </div>
             `;
 
@@ -1085,7 +1129,7 @@ function renderInvestigationResults(data) {
                         <div style="display:flex; flex-wrap:wrap; gap:6px;">
                 `;
                 interests.forEach(interest => {
-                    html += `<span class="tag-pill" style="font-size:0.72rem; padding:3px 8px; background:rgba(0,188,212,0.05); border:1px solid rgba(0,188,212,0.15); border-radius:4px; color:var(--accent-blue);">${interest}</span>`;
+                    html += `<span class="tag-pill" style="font-size:0.72rem; padding:3px 8px; background:rgba(0,188,212,0.05); border:1px solid rgba(0,188,212,0.15); border-radius:4px; color:var(--accent-blue);">${escapeHTML(interest)}</span>`;
                 });
                 html += `</div></div>`;
             }
@@ -1684,17 +1728,18 @@ function renderOfficialReportTemplate(data, caseId) {
 
     // 3. Personality Profile Summary
     const profileType = (data.reverse_lookup_results && data.reverse_lookup_results.profile_type) || {};
+    const profileClassification = getPersonalityClassification(profileType);
     const traits = (data.intelligence_report && data.intelligence_report.intelligence_sections && data.intelligence_report.intelligence_sections.hashtag_intelligence && data.intelligence_report.intelligence_sections.hashtag_intelligence.key_discoveries && data.intelligence_report.intelligence_sections.hashtag_intelligence.key_discoveries.personality_indicators) || [];
     let personalityProfileHTML = "";
-    if (profileType.primary_type) {
-        let interestsHTML = (profileType.interests || []).map(i => `<span style="display: inline-block; background: #e0f2f1; color: #00796b; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; margin-right: 4px; margin-bottom: 4px;">${i}</span>`).join("");
-        let traitsHTML = traits.map(t => `<li><strong>${t.trait}</strong> (${t.category}) - ${t.confidence} match</li>`).join("");
+    if (profileClassification.isClassified) {
+        let interestsHTML = (profileType.interests || []).map(i => `<span style="display: inline-block; background: #e0f2f1; color: #00796b; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; margin-right: 4px; margin-bottom: 4px;">${escapeHTML(i)}</span>`).join("");
+        let traitsHTML = traits.map(t => `<li><strong>${escapeHTML(t.trait)}</strong> (${escapeHTML(t.category)}) - ${escapeHTML(t.confidence)} match</li>`).join("");
         personalityProfileHTML = `
             <div class="evidence-box">
-                <strong>Dominant Profile Type:</strong> ${profileType.primary_type.replace(/_/g, ' ').toUpperCase()}<br>
-                <strong>Confidence Level:</strong> ${Math.round(profileType.confidence * 100)}%<br>
-                ${profileType.description ? `<strong>Description:</strong> ${profileType.description}<br>` : ""}
-                ${profileType.professional_field ? `<strong>Professional Field:</strong> ${profileType.professional_field}<br>` : ""}
+                <strong>Dominant Profile Type:</strong> ${escapeHTML(profileClassification.label.toUpperCase())}<br>
+                <strong>Confidence Level:</strong> ${profileClassification.confidencePercent}%<br>
+                ${profileType.description ? `<strong>Description:</strong> ${escapeHTML(profileType.description)}<br>` : ""}
+                ${profileType.professional_field ? `<strong>Professional Field:</strong> ${escapeHTML(profileType.professional_field)}<br>` : ""}
                 <br>
                 <strong>Interest Fingerprint:</strong><br>
                 <div style="margin-top: 4px;">${interestsHTML || "None detected."}</div>
@@ -1702,7 +1747,12 @@ function renderOfficialReportTemplate(data, caseId) {
             </div>
         `;
     } else {
-        personalityProfileHTML = `<p>Insufficient indicators to classify personality or interest fingerprint.</p>`;
+        const fallbackDescription = profileType.description || "Insufficient public indicators to classify personality or interests.";
+        personalityProfileHTML = `
+            <div class="evidence-box">
+                <strong>Classification Status:</strong> Insufficient Evidence<br>
+                <strong>Reason:</strong> ${escapeHTML(fallbackDescription)}
+            </div>`;
     }
 
     // 4. Telegram Intelligence Summary

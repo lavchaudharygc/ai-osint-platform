@@ -81,7 +81,8 @@ class HashtagIntelligenceAnalyzer:
                 'cyber', 'security', 'hacking', 'coding', 'developer',
                 'tech', 'software', 'programming', 'ai', 'machine',
                 'blockchain', 'crypto', 'web3', 'devops', 'cloud',
-                'google', 'android', 'ios', 'app', 'startup'
+                'google', 'android', 'ios', 'app', 'genai',
+                'artificialintelligence'
             ],
             'cybersecurity_specific': [
                 'redteam', 'blueteam', 'pentest', 'vulnerability',
@@ -90,10 +91,18 @@ class HashtagIntelligenceAnalyzer:
                 'ethicalhacking', 'infosec', 'opsec', 'privacy',
                 'encryption', 'darkweb', 'tor', 'osint'
             ],
+            'politics': [
+                'politics', 'political', 'publicpolicy', 'publicaffairs',
+                'governance', 'government', 'election', 'elections',
+                'democracy', 'parliament', 'loksabha', 'rajyasabha',
+                'civics', 'voter', 'voting', 'legislature'
+            ],
             'creative': [
                 'design', 'art', 'photography', 'video', 'editing',
                 'graphic', 'animation', 'creative', 'music', 'writing',
-                'content', 'reels', 'viral', 'trending'
+                'content', 'reels', 'viral', 'trending', 'artist',
+                'artwork', 'artistic', 'digitalart', 'fineart',
+                'visualart', 'uiux', 'graphicdesign', 'illustration'
             ],
             'business': [
                 'startup', 'business', 'entrepreneur', 'marketing',
@@ -110,7 +119,10 @@ class HashtagIntelligenceAnalyzer:
             'education': [
                 'student', 'college', 'university', 'school', 'study',
                 'learning', 'certification', 'course', 'exam', 'degree',
-                'campus', 'alumni', 'batch', 'class'
+                'campus', 'alumni', 'batch', 'class', 'learner',
+                'studying', 'academic', 'training', 'intern',
+                'undergraduate', 'postgraduate', 'semester',
+                'scholarship', 'btech', 'mtech', 'bca', 'mca', 'mba'
             ],
             'indian_context': [
                 'india', 'indian', 'bharat', 'desi', 'hindi',
@@ -429,20 +441,44 @@ class HashtagIntelligenceAnalyzer:
         professional_tags = {
             'hacker_enthusiast': ['hacking', 'hacker', 'cyber', 'security', 'redteam', 'pentest'],
             'developer': ['coding', 'developer', 'programming', 'software', 'webdev', 'appdev'],
-            'designer': ['design', 'graphic', 'creative', 'art', 'illustration'],
-            'entrepreneur': ['startup', 'business', 'founder', 'entrepreneur', 'ceo'],
-            'student': ['student', 'learning', 'study', 'college', 'university'],
+            'politics': [
+                'politics', 'political', 'publicpolicy', 'publicaffairs',
+                'governance', 'government', 'election', 'elections',
+                'democracy', 'parliament', 'loksabha', 'rajyasabha',
+                'civics', 'voter', 'voting', 'legislature'
+            ],
+            'art': [
+                'design', 'designer', 'graphic', 'creative', 'art',
+                'artist', 'artwork', 'artistic', 'digitalart',
+                'fineart', 'visualart', 'illustration', 'photography',
+                'music', 'writing', 'filmmaker', 'animation', 'uiux'
+            ],
+            'business': [
+                'startup', 'business', 'founder', 'entrepreneur', 'ceo',
+                'marketing', 'sales', 'branding', 'company', 'leadership'
+            ],
+            'student': [
+                'student', 'learner', 'learning', 'study', 'studying',
+                'college', 'university', 'school', 'campus', 'academic',
+                'training', 'course', 'certification', 'exam', 'degree',
+                'undergraduate', 'postgraduate', 'semester',
+                'scholarship', 'btech', 'mtech', 'bca', 'mca', 'mba'
+            ],
             'job_seeker': ['jobs', 'hiring', 'career', 'fresher', 'opportunity'],
         }
         
         for trait, keywords in professional_tags.items():
-            score = sum(1 for h in hashtags if any(k in h.lower() for k in keywords))
+            evidence = [
+                h for h in hashtags
+                if any(self._hashtag_matches_keyword(h, keyword) for keyword in keywords)
+            ]
+            score = len(evidence)
             if score > 0:
                 indicators.append(PersonalityIndicator(
                     category='professional',
                     trait=trait,
                     confidence=min(score / 5, 1.0),
-                    evidence=[h for h in hashtags if any(k in h.lower() for k in keywords)]
+                    evidence=evidence
                 ))
         
         # Personal personality indicators
@@ -455,13 +491,17 @@ class HashtagIntelligenceAnalyzer:
         }
         
         for trait, keywords in personal_tags.items():
-            score = sum(1 for h in hashtags if any(k in h.lower() for k in keywords))
+            evidence = [
+                h for h in hashtags
+                if any(self._hashtag_matches_keyword(h, keyword) for keyword in keywords)
+            ]
+            score = len(evidence)
             if score > 0:
                 indicators.append(PersonalityIndicator(
                     category='personal',
                     trait=trait,
                     confidence=min(score / 5, 1.0),
-                    evidence=[h for h in hashtags if any(k in h.lower() for k in keywords)]
+                    evidence=evidence
                 ))
         
         return indicators
@@ -530,7 +570,7 @@ class HashtagIntelligenceAnalyzer:
             categorized_flag = False
             
             for category, keywords in self.interest_categories.items():
-                if any(keyword in tag for keyword in keywords):
+                if any(self._hashtag_matches_keyword(tag, keyword) for keyword in keywords):
                     categorized[category].append(hashtag)
                     categorized_flag = True
                     break
@@ -539,6 +579,25 @@ class HashtagIntelligenceAnalyzer:
                 categorized['uncategorized'].append(hashtag)
         
         return categorized
+
+    @staticmethod
+    def _hashtag_matches_keyword(hashtag: str, keyword: str) -> bool:
+        """Match hashtag vocabulary without short-keyword substring collisions.
+
+        Longer terms may be embedded in compound hashtags (for example,
+        ``#startupindia``).  Terms of three characters or fewer must match the
+        complete normalized hashtag, because substring checks would otherwise
+        classify values such as ``#startup`` as art and ``#training`` as AI.
+        Common compound forms are listed explicitly in the category vocabulary.
+        """
+        normalized_tag = re.sub(r'[^a-z0-9]+', '', hashtag.lower().lstrip('#'))
+        normalized_keyword = re.sub(r'[^a-z0-9]+', '', keyword.lower())
+
+        if not normalized_tag or not normalized_keyword:
+            return False
+        if len(normalized_keyword) <= 3:
+            return normalized_tag == normalized_keyword
+        return normalized_keyword in normalized_tag
     
     def _extract_location_hints(self, hashtags: List[str]) -> List[str]:
         """

@@ -354,6 +354,11 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
         scrape_mock.assert_not_awaited()
         self.assertEqual(response.platform_data, primary)
         self.assertEqual(response.apify_social_results, envelope)
+        reverse_context = (
+            reverse_class.return_value.perform_reverse_lookup.await_args.kwargs["context"]
+        )
+        self.assertEqual(reverse_context["platform_data"], primary)
+        self.assertEqual(reverse_context["scraped_data"], profiles)
 
     def test_response_schema_exposes_apify_social_results(self) -> None:
         schema = InvestigationResponse.model_json_schema()

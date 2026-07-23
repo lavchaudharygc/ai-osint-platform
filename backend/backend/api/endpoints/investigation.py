@@ -1325,7 +1325,12 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
             hashtags=sorted(all_hashtags),
             recent_posts=posts_list,
             dorking_results=dork_results_list,
-            context={"platform_data": platform_data}
+            # Personality classification uses public bios/headlines/categories
+            # from every collected platform, not only the selected profile.
+            context={
+                "platform_data": platform_data,
+                "scraped_data": scraped_data,
+            }
         )
         reverse_lookup_results = reverse_lookup_results_model.dict()
 

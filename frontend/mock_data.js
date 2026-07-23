@@ -164,9 +164,9 @@ const MOCK_DATA = {
             interest_keywords: ["coffee", "sunset", "music", "photography", "coding"]
         },
         profile_type: {
-            primary_type: "tech_creative", confidence: 0.85,
-            description: "Young tech-oriented creative — active developer with aesthetic photography interests. Likely CS/AI student.",
-            professional_field: "Software Development / AI-ML",
+            primary_type: "student", confidence: 0.85,
+            description: "Student profile supported by education, coding, and campus-related public indicators.",
+            professional_field: "Education / Technology",
             interests: ["Photography", "Music", "Coding", "AI/ML", "Coffee", "Travel"]
         }
     },

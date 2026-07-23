@@ -247,3 +247,80 @@ test("both HTML entry points begin with honest AI status and mapper load order",
         assert.ok(html.indexOf("data_mappers.js") < html.indexOf("app.js"));
     }
 });
+
+test("personality helper treats fallback types and zero confidence as insufficient evidence", () => {
+    const app = loadApp();
+
+    for (const primaryType of [undefined, "unknown", "unclassified", "insufficient_evidence"]) {
+        const result = app.getPersonalityClassification({ primary_type: primaryType, confidence: 0.72 });
+        assert.equal(result.isClassified, false);
+        assert.equal(result.label, "Insufficient Evidence");
+        assert.equal(result.confidencePercent, 0);
+    }
+
+    const zeroConfidence = app.getPersonalityClassification({ primary_type: "politics", confidence: 0 });
+    assert.equal(zeroConfidence.isClassified, false);
+    assert.equal(zeroConfidence.label, "Insufficient Evidence");
+});
+
+test("personality helper exposes the new normal profile labels", () => {
+    const app = loadApp();
+    const expectedLabels = {
+        politics: "Politics",
+        student: "Student",
+        art: "Art",
+        business: "Business"
+    };
+
+    for (const [primaryType, expectedLabel] of Object.entries(expectedLabels)) {
+        const result = app.getPersonalityClassification({ primary_type: primaryType, confidence: 0.62 });
+        assert.equal(result.isClassified, true);
+        assert.equal(result.primaryType, primaryType);
+        assert.equal(result.label, expectedLabel);
+        assert.equal(result.confidencePercent, 62);
+    }
+});
+
+test("dashboard renders an unknown personality result as insufficient evidence", () => {
+    const status = fakeElement();
+    const results = fakeElement();
+    const app = loadApp({
+        "personality-profile-status": status,
+        "personality-profile-results": results
+    });
+
+    app.renderInvestigationResults({
+        reverse_lookup_results: {
+            profile_type: {
+                primary_type: "unknown",
+                confidence: 0,
+                description: "No reliable public indicators were found."
+            }
+        }
+    });
+
+    assert.equal(status.innerText, "Insufficient Evidence");
+    assert.match(results.innerHTML, /Insufficient Evidence/);
+    assert.match(results.innerHTML, /No reliable public indicators were found/);
+    assert.doesNotMatch(results.innerHTML, /Dominant Profile Type/);
+});
+
+test("official report does not present a fallback personality as dominant", () => {
+    const app = loadApp();
+    const html = app.renderOfficialReportTemplate({
+        status: "completed",
+        platform_data: { username: "target", platform: "instagram" },
+        risk_assessment: { level: "low", score: 0, factors: [] },
+        reverse_lookup_results: {
+            profile_type: {
+                primary_type: "insufficient_evidence",
+                confidence: 0,
+                description: "More public evidence is required."
+            }
+        }
+    }, "CASE-TEST");
+
+    assert.match(html, /Classification Status:<\/strong> Insufficient Evidence/);
+    assert.match(html, /More public evidence is required/);
+    assert.doesNotMatch(html, /Dominant Profile Type/);
+});
