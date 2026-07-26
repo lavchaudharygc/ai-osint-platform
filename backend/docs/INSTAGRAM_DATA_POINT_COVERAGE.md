@@ -2,7 +2,11 @@
 
 Source catalog: `docs/data_points_catalog-Instagram.csv` from the public OSINT repository.
 
-## Implemented in `backend/services/instagram_service.py`
+## Implemented through the selected Apify Instagram actors
+
+Profile fields come from `instagram_profile_service.py`; post fields come from
+`instagram_posts_service.py`. The investigation workflow does not call another
+provider when either actor is unavailable or returns no data.
 
 | Priority | Catalog data point | Backend field(s) |
 | --- | --- | --- |
@@ -32,21 +36,12 @@ Source catalog: `docs/data_points_catalog-Instagram.csv` from the public OSINT r
 | P0 | LinkedIn Profile Link in Bio | `linkedin_profile_link_in_bio` |
 | P0 | Professional Email in Bio | `professional_email_in_bio` |
 
-## Implemented through FlashAPI fallback when provider returns fields
+## Provider policy
 
-| Catalog data point | Backend field(s) |
-| --- | --- |
-| Username / name / bio / counts | top-level `platform_data` fields |
-| External URLs / bio links | `external_url`, `external_urls` |
-| Business/contact data | `contact_email`, `contact_phone`, `contact_address` |
-| Account region/Facebook id if present | `account_country_region`, `linked_facebook_account` |
-| Related Instagram suggestions | `related_instagram_profiles` from FlashAPI `chaining_results` |
-
-The FlashAPI fallback returns the fields the provider actually supplied and
-keeps unavailable catalog items documented in `catalog_coverage_notes` instead
-of filling the API response with empty placeholder arrays/nulls. Provider access
-messages such as `Access Delayed: Only owner can access` are treated as missing
-data instead of being exposed as profile names.
+Instagram is routed only to the configured Apify profile and posts actors.
+FlashAPI is not an automatic fallback or enrichment source. Missing and
+provider-error states remain explicit in the result so a failed actor cannot
+silently consume another provider's quota.
 
 ## Returned as stable keys with coverage notes
 

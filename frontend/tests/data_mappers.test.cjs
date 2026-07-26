@@ -250,6 +250,119 @@ test("a failed scraped Telegram placeholder cannot mask a richer invite preview"
     assert.equal(mappers.resolveTelegramData(response), invitePreview);
 });
 
+test("provider-neutral social results take precedence over the legacy actor envelope", () => {
+    const response = {
+        provider_results: {
+            status: "completed",
+            routing: { twitter: "apify_x_scraper" },
+            social: {
+                twitter: {
+                    success: true,
+                    status: "completed",
+                    platform: "twitter",
+                    username: "target",
+                    full_name: "Neutral Twitter Profile",
+                    tweets: [{ id: "neutral-tweet", text: "neutral source" }]
+                }
+            }
+        },
+        apify_social_results: {
+            status: "completed_with_warnings",
+            actors: {
+                twitter_profile_and_replies: {
+                    success: true,
+                    status: "completed",
+                    platform: "twitter",
+                    full_name: "Stale Legacy Profile",
+                    tweets: [{ id: "legacy-tweet", text: "legacy source" }]
+                }
+            }
+        }
+    };
+
+    const twitter = mappers.getRenderablePlatformData(response, "twitter");
+    assert.equal(twitter.full_name, "Neutral Twitter Profile");
+    assert.deepEqual(twitter.tweets.map(item => item.id), ["neutral-tweet"]);
+
+    const collection = mappers.resolveSocialCollection(response);
+    assert.equal(collection.source, "provider_results");
+    assert.equal(collection.status, "completed");
+    assert.deepEqual(collection.entries.map(([key]) => key), ["twitter"]);
+    assert.deepEqual(collection.routing, { twitter: "apify_x_scraper" });
+});
+
+test("provider-neutral nested social payloads render TikTok and split combined collectors", () => {
+    const response = {
+        provider_results: {
+            social: {
+                instagram: {
+                    profile: {
+                        success: true,
+                        status: "completed",
+                        platform: "instagram",
+                        username: "target",
+                        full_name: "Instagram Profile"
+                    },
+                    posts: {
+                        success: true,
+                        status: "completed",
+                        posts: [{ id: "ig-neutral", text: "Instagram post" }]
+                    }
+                },
+                tiktok: {
+                    success: true,
+                    status: "completed",
+                    platform: "tiktok",
+                    username: "target",
+                    full_name: "TikTok Profile",
+                    posts: [{ id: "tt-neutral", text: "TikTok video" }]
+                }
+            }
+        }
+    };
+
+    const instagram = mappers.getRenderablePlatformData(response, "instagram");
+    const tiktok = mappers.getRenderablePlatformData(response, "tiktok");
+    assert.equal(instagram.full_name, "Instagram Profile");
+    assert.equal(instagram.posts[0].id, "ig-neutral");
+    assert.equal(tiktok.full_name, "TikTok Profile");
+    assert.equal(tiktok.posts[0].id, "tt-neutral");
+    assert.equal(mappers.buildPlatformEntries(response).find(entry => entry.platform === "tiktok").exists, true);
+    assert.deepEqual(
+        mappers.resolveSocialCollection(response).entries.map(([key]) => key),
+        ["instagram_profile", "instagram_posts", "tiktok"]
+    );
+});
+
+test("GitHub specialized provider results create a renderable confirmed platform entry", () => {
+    const response = {
+        provider_results: {
+            specialized: {
+                github: {
+                    success: true,
+                    status: "completed",
+                    username: "octocat",
+                    profile: {
+                        username: "octocat",
+                        full_name: "The Octocat",
+                        avatar_url: "https://avatars.example/octocat.png",
+                        public_repos: 1
+                    },
+                    repositories: [{ id: 1, name: "hello-world", stars: 80 }]
+                }
+            }
+        }
+    };
+
+    const github = mappers.getRenderablePlatformData(response, "github");
+    const [entry] = mappers.buildPlatformEntries(response);
+    assert.equal(github.full_name, "The Octocat");
+    assert.equal(github.repositories[0].name, "hello-world");
+    assert.equal(entry.platform, "github");
+    assert.equal(entry.exists, true);
+    assert.equal(entry.scraper_confirmed, true);
+});
+
 test("production frontend contains no hard-coded 65 percent AI fallback", () => {
     const frontendRoot = path.resolve(__dirname, "..");
     for (const filename of ["app.js", "index.html", "mock_test.html"]) {

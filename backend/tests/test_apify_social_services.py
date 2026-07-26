@@ -131,7 +131,7 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
             "id": "unrelated",
             "author": {"userName": "OtherUser"},
         }
-        client = RecordingActorClient([[], [tweet, reply, unrelated]])
+        client = RecordingActorClient([[tweet, reply, unrelated]])
         service = twitter_service(client)
 
         result = await service.get_profile(
@@ -145,11 +145,6 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             client.calls,
             [
-                {
-                    "actor_id": "clappi/x-twitter-profile-scraper",
-                    "run_input": {"profileUrls": ["https://x.com/TargetUser"]},
-                    "dataset_limit": 25,
-                },
                 {
                     "actor_id": TWITTER_PROFILE_ACTOR,
                     "run_input": {
@@ -193,15 +188,28 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
             "url": "https://x.com/elonmusk/status/1880040599761596689",
             "id": "1880040599761596689"
         }
-        # Prepend empty clappi response so the loop falls through to the primary actor
-        client = RecordingActorClient([[], [tweet]])
+        client = RecordingActorClient([[tweet]])
         service = twitter_service(client)
 
         result = await service.get_profile("elonmusk")
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(client.calls[0]["actor_id"], TWITTER_PROFILE_ACTOR)
         self.assertTrue(result["success"])
         self.assertEqual(result["username"], "elonmusk")
         self.assertEqual(result["full_name"], "Elon Musk")
         self.assertEqual(result["tweets"][0]["like_count"], 1238034)
+
+    async def test_empty_profile_result_does_not_trigger_an_actor_fallback(self) -> None:
+        client = RecordingActorClient([[]])
+        service = twitter_service(client)
+
+        result = await service.get_profile("missing-user", max_items=8)
+
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(client.calls[0]["actor_id"], TWITTER_PROFILE_ACTOR)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "empty_dataset")
+        self.assertEqual(result["actor_id"], TWITTER_PROFILE_ACTOR)
 
     async def test_tweet_v2_search_actor_input_and_normalization(self) -> None:
         client = RecordingActorClient(

@@ -25,8 +25,18 @@ class InstagramPostsService:
     def is_configured(self) -> bool:
         return bool(self.token)
 
-    async def fetch_posts(self, username: str, scrape_type: str = "posts") -> dict[str, Any]:
+    async def fetch_posts(
+        self,
+        username: str,
+        scrape_type: str = "posts",
+        *,
+        max_items: int = MAX_ITEMS,
+    ) -> dict[str, Any]:
         """Run the Apify Instagram Posts actor synchronously and return structured results."""
+        if isinstance(max_items, bool) or not isinstance(max_items, int):
+            raise TypeError("max_items must be an integer")
+        if not 1 <= max_items <= self.MAX_ITEMS:
+            raise ValueError(f"max_items must be between 1 and {self.MAX_ITEMS}")
         if not self.is_configured():
             return {"configured": False, "posts": [], "reels": [], "all_hashtags": [], "error": "APIFY_API_TOKEN not set"}
 
@@ -35,7 +45,7 @@ class InstagramPostsService:
         payload = {
             "directUrls": [f"https://www.instagram.com/{username}/"],
             "resultsType": scrape_type,       # "posts" or "reels"
-            "resultsLimit": self.MAX_ITEMS,
+            "resultsLimit": max_items,
             "addParentData": False,
         }
 

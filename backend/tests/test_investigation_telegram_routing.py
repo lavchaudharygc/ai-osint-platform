@@ -48,7 +48,7 @@ class InvestigationTelegramRoutingTests(unittest.IsolatedAsyncioTestCase):
             result = await scrape_platform("Target_User", "telegram")
 
         self.assertEqual(result["authorized_access_status"], readiness)
-        self.assertEqual(result["flashapi_enrichment"]["status"], "skipped")
+        self.assertNotIn("flashapi_enrichment", result)
 
     async def test_invite_preview_never_fans_out_or_leaks_hash(self) -> None:
         invite_url = "https://t.me/+privateInviteHash"

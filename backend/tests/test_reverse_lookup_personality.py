@@ -1,5 +1,7 @@
 import unittest
+from unittest.mock import AsyncMock
 
+import backend.services.intelligence.reverse_lookup as reverse_lookup_module
 from backend.services.intelligence.content_intelligence import ContentIntelligence
 from backend.services.intelligence.hashtag_analyzer import HashtagAnalysis
 from backend.services.intelligence.reverse_lookup import KeywordProfile, ReverseKeywordLookup
@@ -137,6 +139,58 @@ class ReverseLookupPersonalityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Artist and photographer", evidence)
         self.assertIn("Startup founder", evidence)
         self.assertTrue(is_business)
+
+    async def test_perform_reverse_lookup_reuses_inputs_without_dorking_engine(self) -> None:
+        lookup = ReverseKeywordLookup()
+        lookup.hashtag_analyzer.analyze_hashtags = AsyncMock(
+            return_value=self._hashtags()
+        )
+        lookup.content_extractor.extract_from_content = AsyncMock(
+            return_value=self._content(
+                organizations=[{"name": "Example Labs"}],
+            )
+        )
+        lookup.ai_analyzer = object()
+
+        self.assertFalse(hasattr(reverse_lookup_module, "GoogleDorkingService"))
+        self.assertFalse(hasattr(lookup, "dorking_engine"))
+
+        result = await lookup.perform_reverse_lookup(
+            username="target_user",
+            hashtags=[],
+            recent_posts=[],
+            dorking_results=[{
+                "url": "https://github.com/reused-handle",
+                "platform": "GitHub",
+                "snippet": "reused-handle is a member of Example Labs",
+            }],
+            context={
+                "scraped_data": {
+                    "instagram": {
+                        "success": True,
+                        "username": "context_handle",
+                    },
+                },
+            },
+        )
+
+        accounts = {
+            (account.platform, account.username, account.source)
+            for account in result.associated_accounts
+        }
+        self.assertIn(
+            ("github", "reused-handle", "provided_dork_result"),
+            accounts,
+        )
+        self.assertIn(
+            ("instagram", "context_handle", "provided_platform_context"),
+            accounts,
+        )
+        self.assertIn(
+            ("organization", "Example Labs", "entity_extraction"),
+            accounts,
+        )
+        self.assertFalse(hasattr(lookup, "dorking_engine"))
 
 
 if __name__ == "__main__":

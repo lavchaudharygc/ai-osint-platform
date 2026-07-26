@@ -5,16 +5,15 @@ Reverse Keyword Lookup System
 Uses extracted keywords to find associated accounts and profile type
 """
 
-import asyncio
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .hashtag_analyzer import HashtagIntelligenceAnalyzer
 from .content_intelligence import ContentIntelligenceExtractor
 from backend.services.ai_analyzer import AIAnalyzer
-from backend.services.google_dorking import GoogleDorkingService
 from backend.schemas.intelligence_models import (
     AssociatedAccount,
     ProfileType,
@@ -125,7 +124,6 @@ class ReverseKeywordLookup:
         self.hashtag_analyzer = HashtagIntelligenceAnalyzer()
         self.content_extractor = ContentIntelligenceExtractor()
         self.ai_analyzer = AIAnalyzer()
-        self.dorking_engine = GoogleDorkingService()
         
     async def perform_reverse_lookup(
         self,
@@ -177,7 +175,8 @@ class ReverseKeywordLookup:
         associated_accounts = await self._find_associated_accounts(
             username=username,
             keyword_profile=keyword_profile,
-            context=context
+            context=context,
+            dorking_results=dorking_results,
         )
         
         result.associated_accounts = associated_accounts
@@ -436,40 +435,57 @@ class ReverseKeywordLookup:
         self,
         username: str,
         keyword_profile: KeywordProfile,
-        context: Optional[Dict]
+        context: Optional[Dict],
+        dorking_results: Optional[List[Dict]] = None,
     ) -> List[AssociatedAccount]:
         """
-        Find associated accounts using keyword reverse lookup
+        Infer associated accounts from evidence already collected upstream.
+
+        Reverse lookup is deliberately a pure enrichment step: it must never
+        start another search-provider request.  Account candidates therefore
+        come only from supplied dork results, collected platform profiles, and
+        entities extracted while analysing those inputs.
         """
         associated_accounts = []
-        
-        # Use username variations to find associated accounts
-        for variation in keyword_profile.username_variations[:5]:
-            # Create dork to search for this variation
-            dorks = [
-                f'site:instagram.com "{variation}"',
-                f'site:twitter.com "{variation}"',
-                f'site:linkedin.com "{variation}"',
-                f'"{variation}" social media',
-            ]
-            
-            for dork in dorks:
-                try:
-                    results = await self.dorking_engine.execute_single_dork(
-                        {'dork': dork, 'platform': 'reverse_lookup', 'category': 'associated'}
-                    )
-                    
-                    if results and results.get('has_results'):
-                        for item in results.get('results', [])[:3]:
-                            associated_accounts.append(AssociatedAccount(
-                                username=variation,
-                                platform=self._detect_platform_from_url(item.get('url', '')),
-                                confidence=0.6,
-                                source='keyword_reverse_lookup',
-                                evidence=item.get('snippet', '')[:200]
-                            ))
-                except:
-                    pass
+
+        # Reuse profile URLs from the dorking phase rather than repeating the
+        # same searches for each username variation.
+        for item in dorking_results or []:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get('url') or item.get('link') or '')
+            platform = self._detect_platform_from_url(url)
+            if platform == 'unknown':
+                platform = self._normalize_platform(item.get('platform'))
+            if platform == 'unknown':
+                continue
+
+            account_username = self._account_username_from_result(item, platform, url)
+            if not account_username:
+                continue
+            evidence = str(item.get('snippet') or item.get('title') or url)[:200]
+            associated_accounts.append(AssociatedAccount(
+                username=account_username,
+                platform=platform,
+                confidence=0.6,
+                source='provided_dork_result',
+                evidence=evidence,
+            ))
+
+        # The investigation endpoint supplies normalized primary and
+        # cross-platform profile payloads.  These are already-paid-for results,
+        # so they are safe evidence for associated-account candidates.
+        for platform, payload in self._context_profiles(context):
+            account_username = self._username_from_profile_payload(payload, platform)
+            if not account_username:
+                continue
+            associated_accounts.append(AssociatedAccount(
+                username=account_username,
+                platform=platform,
+                confidence=0.7,
+                source='provided_platform_context',
+                evidence=f'Username present in supplied {platform} profile data',
+            ))
         
         # Use professional keywords to find associated organizations
         for entity in keyword_profile.associated_entities[:3]:
@@ -481,15 +497,163 @@ class ReverseKeywordLookup:
                 evidence=f'Found in keywords: {entity}'
             ))
         
-        # Deduplicate
+        # Deduplicate per platform: the same handle on two services represents
+        # two distinct account candidates.
         seen = set()
         unique_accounts = []
         for account in associated_accounts:
-            if account.username not in seen:
-                seen.add(account.username)
+            identity = (account.platform.casefold(), account.username.casefold())
+            if identity not in seen:
+                seen.add(identity)
                 unique_accounts.append(account)
         
         return unique_accounts
+
+    @staticmethod
+    def _normalize_platform(value: Any) -> str:
+        """Normalize supported platform labels without guessing categories."""
+        normalized = str(value or '').strip().casefold()
+        aliases = {
+            'x': 'twitter',
+            'twitter/x': 'twitter',
+            'twitter': 'twitter',
+            'instagram': 'instagram',
+            'linkedin': 'linkedin',
+            'facebook': 'facebook',
+            'telegram': 'telegram',
+            'tiktok': 'tiktok',
+            'github': 'github',
+            'youtube': 'youtube',
+            'reddit': 'reddit',
+        }
+        return aliases.get(normalized, 'unknown')
+
+    def _account_username_from_result(
+        self,
+        item: Dict,
+        platform: str,
+        url: str,
+    ) -> Optional[str]:
+        """Extract one account identifier from a supplied search result."""
+        for key in ('username', 'handle', 'screen_name', 'login'):
+            candidate = self._clean_account_username(item.get(key))
+            if candidate:
+                return candidate
+
+        candidate = self._username_from_profile_url(url, platform)
+        if candidate:
+            return candidate
+
+        # Normalized dork results carry the original exact-match value.  Use it
+        # only when it looks like a handle, never when it is a name or email.
+        match_value = self._clean_account_username(item.get('match_value'))
+        if match_value and re.fullmatch(r'[A-Za-z0-9._-]{1,64}', match_value):
+            return match_value
+        return None
+
+    @staticmethod
+    def _clean_account_username(value: Any) -> Optional[str]:
+        candidate = str(value or '').strip().lstrip('@')
+        if not candidate or any(character.isspace() for character in candidate):
+            return None
+        return candidate[:100]
+
+    def _username_from_profile_url(self, url: str, platform: str) -> Optional[str]:
+        """Extract a handle from common public profile URL shapes."""
+        if not url:
+            return None
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return None
+
+        segments = [unquote(segment).strip() for segment in parsed.path.split('/') if segment]
+        if platform == 'facebook' and segments[:1] == ['profile.php']:
+            return self._clean_account_username(parse_qs(parsed.query).get('id', [None])[0])
+
+        prefixed_paths = {
+            'linkedin': {'in', 'company'},
+            'reddit': {'user', 'u'},
+            'youtube': {'user', 'c', 'channel'},
+        }
+        prefixes = prefixed_paths.get(platform, set())
+        if segments and segments[0].casefold() in prefixes:
+            segments = segments[1:]
+        if not segments:
+            return None
+
+        candidate = segments[0].lstrip('@')
+        reserved_paths = {
+            'instagram': {'accounts', 'explore', 'p', 'reel', 'reels', 'stories'},
+            'twitter': {'compose', 'explore', 'home', 'i', 'intent', 'search', 'share'},
+            'linkedin': {'feed', 'jobs', 'learning', 'posts', 'pulse'},
+            'facebook': {'groups', 'login', 'marketplace', 'pages', 'reel', 'share', 'watch'},
+            'telegram': {'addstickers', 'joinchat', 'proxy', 'share'},
+            'tiktok': {'discover', 'foryou', 'login', 'music', 'tag'},
+            'github': {'about', 'apps', 'collections', 'enterprise', 'features', 'login', 'marketplace', 'organizations', 'search', 'settings', 'topics'},
+            'youtube': {'feed', 'results', 'shorts', 'watch'},
+            'reddit': {'r', 'search'},
+        }
+        if candidate.casefold() in reserved_paths.get(platform, set()):
+            return None
+        return self._clean_account_username(candidate)
+
+    def _context_profiles(
+        self,
+        context: Optional[Dict],
+    ) -> List[Tuple[str, Dict]]:
+        """Return normalized platform profile payloads from supplied context."""
+        if not isinstance(context, dict):
+            return []
+
+        profiles = []
+        primary = context.get('platform_data')
+        if isinstance(primary, dict) and primary.get('success') is not False:
+            platform = self._normalize_platform(primary.get('platform'))
+            if platform != 'unknown':
+                profiles.append((platform, primary))
+
+        scraped = context.get('scraped_data')
+        if isinstance(scraped, dict):
+            for raw_platform, payload in scraped.items():
+                platform = self._normalize_platform(raw_platform)
+                if (
+                    platform != 'unknown'
+                    and isinstance(payload, dict)
+                    and payload.get('success') is not False
+                ):
+                    profiles.append((platform, payload))
+        return profiles
+
+    def _username_from_profile_payload(
+        self,
+        payload: Dict,
+        platform: str,
+    ) -> Optional[str]:
+        """Read a username from a normalized profile payload or its envelope."""
+        for key in ('username', 'user_name', 'handle', 'screen_name', 'login'):
+            candidate = self._clean_account_username(payload.get(key))
+            if candidate:
+                return candidate
+
+        for key in ('profile', 'user', 'account', 'page', 'data'):
+            nested = payload.get(key)
+            if isinstance(nested, dict):
+                candidate = self._username_from_profile_payload(nested, platform)
+                if candidate:
+                    return candidate
+            elif isinstance(nested, list):
+                for item in nested[:1]:
+                    if isinstance(item, dict):
+                        candidate = self._username_from_profile_payload(item, platform)
+                        if candidate:
+                            return candidate
+
+        for key in ('url', 'profile_url', 'profileUrl'):
+            candidate = self._username_from_profile_url(str(payload.get(key) or ''), platform)
+            if candidate:
+                return candidate
+        return None
     
     async def _determine_profile_type(
         self,
@@ -723,6 +887,9 @@ class ReverseKeywordLookup:
             'linkedin': ['linkedin.com'],
             'github': ['github.com'],
             'facebook': ['facebook.com'],
+            'telegram': ['t.me', 'telegram.me'],
+            'tiktok': ['tiktok.com'],
+            'reddit': ['reddit.com'],
             'youtube': ['youtube.com'],
         }
         

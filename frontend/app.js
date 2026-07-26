@@ -413,8 +413,8 @@ async function triggerInvestigation() {
     const progressMessages = [
         "[SYS] Probing registry databases...",
         "[NET] Performing DNS profile matching...",
-        "[SYS] Initiating Google Dorking pipelines...",
-        "[NET] Querying Apify social graph nodes...",
+        "[SYS] Querying SerpAPI for approved Google dorks...",
+        "[NET] Querying capability-routed social collectors...",
         "[SYS] Aggregating MTProto metadata indices...",
         "[NET] Running entity correlation models...",
         "[SYS] Formatting secondary identity matrices...",
@@ -853,7 +853,7 @@ function renderInvestigationResults(data) {
         
         if (dorking.status === "not_configured") {
             if (dorkCountEl) {
-                dorkCountEl.innerText = "Search Providers Not Configured";
+                dorkCountEl.innerText = "SerpAPI Not Configured";
                 dorkCountEl.style.color = "var(--accent-crimson)";
             }
             
@@ -865,7 +865,7 @@ function renderInvestigationResults(data) {
                     <span>⚠️ Google Dorking Service Offline</span>
                 </div>
                 <div style="font-size:0.75rem; color:var(--text-secondary);">
-                    Configure <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">SERPAPI_KEY</code>, <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">BRIGHTDATA_SERP_API_KEY</code>, or <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">APIFY_API_TOKEN</code>, or manually run these prepared dork queries in Google:
+                    Configure <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">SERPAPI_KEY</code>, or manually run these prepared dork queries in Google. Google search is routed only through SerpAPI; automatic provider fallback is disabled.
                 </div>
             `;
             dorkContainerEl.appendChild(warningEl);
@@ -908,7 +908,7 @@ function renderInvestigationResults(data) {
             const results = dorking.results || [];
             
             // Filter out social platform dorks from the general discovery card
-            const socialDomains = ["instagram.com", "twitter.com", "x.com", "t.me", "telegram.me", "linkedin.com", "reddit.com", "facebook.com", "github.com", "youtube.com", "pinterest.com"];
+            const socialDomains = ["instagram.com", "twitter.com", "x.com", "t.me", "telegram.me", "linkedin.com", "reddit.com", "facebook.com", "tiktok.com", "github.com", "youtube.com", "pinterest.com"];
             const generalResults = results.filter(r => {
                 const url = (r.url || "").toLowerCase();
                 return !socialDomains.some(d => url.includes(d));
@@ -1283,32 +1283,34 @@ function renderCollectionCoverage(data) {
     const resultsEl = document.getElementById("collection-coverage-results");
     if (!statusEl || !resultsEl) return;
 
-    const envelope = data.apify_social_results && typeof data.apify_social_results === "object"
-        ? data.apify_social_results
+    const collection = DataMappers.resolveSocialCollection(data);
+    const execution = data.execution_metadata && typeof data.execution_metadata === "object"
+        ? data.execution_metadata
+        : {};
+    const cache = execution.cache && typeof execution.cache === "object" ? execution.cache : {};
+    const budget = execution.provider_call_budget && typeof execution.provider_call_budget === "object"
+        ? execution.provider_call_budget
         : {};
     const primaryContent = data.platform_content && typeof data.platform_content === "object"
         ? data.platform_content
         : {};
-    const actors = envelope.actors && typeof envelope.actors === "object" ? envelope.actors : {};
-    const summary = envelope.summary && typeof envelope.summary === "object" ? envelope.summary : {};
-    const envelopeStatus = String(envelope.status || "not_returned");
+    const summary = collection.summary || {};
+    const routing = collection.routing || {};
+    const envelopeStatus = String(collection.status || "not_returned");
     statusEl.innerText = envelopeStatus.replace(/_/g, " ").toUpperCase();
 
-    const actorEntries = Object.entries(actors);
-    if (envelope.telegram && typeof envelope.telegram === "object") {
-        actorEntries.push(["telegram", envelope.telegram]);
-    }
-
-    const hasEnvelope = Object.keys(envelope).length > 0;
+    const actorEntries = collection.entries || [];
+    const hasEnvelope = Boolean(collection.source);
     const hasPrimaryContent = Object.keys(primaryContent).length > 0;
-    if (!hasEnvelope && !hasPrimaryContent) {
+    const hasExecutionMetadata = Object.keys(execution).length > 0;
+    if (!hasEnvelope && !hasPrimaryContent && !hasExecutionMetadata) {
         resultsEl.innerHTML = `<div class="scraped-empty-state">No collection envelope or normalized platform content was returned.</div>`;
         return;
     }
 
     const statusClass = actor => {
         const status = String((actor && actor.status) || "").toLowerCase();
-        if (["not_configured", "empty_dataset", "skipped", "disabled"].includes(status)) return "actor-status-warning";
+        if (["not_configured", "empty_dataset", "skipped", "disabled", "disabled_by_policy", "budget_exhausted", "not_found"].includes(status)) return "actor-status-warning";
         if (["provider_error", "orchestration_error", "failed", "error", "timeout", "timed-out", "aborted"].includes(status)) return "actor-status-failed";
         if (["running", "ready", "queued"].includes(status)) return "actor-status-running";
         if ((actor && actor.success === true) || ["completed", "found", "succeeded"].includes(status)) return "actor-status-success";
@@ -1325,22 +1327,56 @@ function renderCollectionCoverage(data) {
     };
 
     let html = "";
-    if (envelope.identity_notice) {
-        html += `<div class="apify-identity-notice">${escapeHTML(envelope.identity_notice)}</div>`;
+    if (collection.identityNotice) {
+        html += `<div class="apify-identity-notice">${escapeHTML(collection.identityNotice)}</div>`;
     }
 
-    html += `<div class="apify-social-summary">`;
-    [
-        ["Mode", envelope.mode || "not reported"],
-        ["Apify actors", DataMappers.firstDefined(summary.total, Object.keys(actors).length, 0)],
+    const cacheLabel = Object.keys(cache).length === 0
+        ? null
+        : (cache.hit
+            ? `hit${cache.age_seconds !== undefined ? ` (${cache.age_seconds}s old)` : ""}`
+            : `miss${cache.mode ? ` (${String(cache.mode).replace(/_/g, " ")})` : ""}`);
+    const budgetLabel = budget.maximum !== undefined
+        ? (cache.hit
+            ? `0 this run (cached run used ${DataMappers.firstDefined(budget.used, 0)}/${budget.maximum})`
+            : `${DataMappers.firstDefined(budget.used, 0)}/${budget.maximum} used`)
+        : null;
+    const summaryItems = [
+        ["Contract", collection.source === "provider_results" ? "provider-neutral" : "legacy-compatible"],
+        ["Mode", String(collection.mode || "not reported").replace(/_/g, " ")],
+        ["Collectors", DataMappers.firstDefined(summary.total, actorEntries.length, 0)],
         ["Completed", DataMappers.firstDefined(summary.completed, 0)],
-        ["Empty", DataMappers.firstDefined(summary.empty, 0)],
+        ["Empty/skipped", DataMappers.firstDefined(summary.empty, 0)],
         ["Failed", DataMappers.firstDefined(summary.failed, 0)],
-        ["Not configured", DataMappers.firstDefined(summary.not_configured, 0)]
-    ].forEach(([label, value]) => {
+        ["Not configured", DataMappers.firstDefined(summary.not_configured, 0)],
+        ...(budgetLabel ? [["Provider calls", budgetLabel]] : []),
+        ...(cacheLabel ? [["Cache", cacheLabel]] : [])
+    ];
+    html += `<div class="apify-social-summary">`;
+    summaryItems.forEach(([label, value]) => {
         html += `<span class="apify-summary-item"><strong>${escapeHTML(label)}:</strong> ${escapeHTML(value)}</span>`;
     });
     html += `</div>`;
+
+    const skippedCalls = Array.isArray(budget.skipped) ? budget.skipped : [];
+    if (skippedCalls.length > 0) {
+        html += `<div class="apify-identity-notice">${skippedCalls.length} capability ${skippedCalls.length === 1 ? "call was" : "calls were"} skipped to stay within this investigation's provider budget.</div>`;
+    }
+
+    const routeEntries = Object.entries(routing);
+    if (routeEntries.length > 0) {
+        html += `
+            <div class="scraped-section-header">
+                <span class="scraped-section-label">Capability routing</span>
+                <span class="scraped-section-count">${routeEntries.length} fixed routes</span>
+            </div>
+            <div class="apify-social-summary">
+                ${routeEntries.map(([capability, provider]) => `
+                    <span class="apify-summary-item"><strong>${escapeHTML(capability.replace(/_/g, " "))}:</strong> ${escapeHTML(String(provider).replace(/_/g, " "))}</span>
+                `).join("")}
+            </div>
+        `;
+    }
 
     if (hasPrimaryContent) {
         const collections = [
@@ -1393,14 +1429,14 @@ function renderCollectionCoverage(data) {
             const rawError = safeActor.error;
             const errorText = rawError && typeof rawError === "object"
                 ? (rawError.message || rawError.code || "Provider returned an error")
-                : rawError;
+                : (rawError || safeActor.reason);
 
             html += `
                 <div class="actor-result-card">
                     <div class="actor-card-header">
                         <div class="actor-title-group">
                             <div class="actor-card-title">${escapeHTML(key.replace(/_/g, " "))}</div>
-                            <span class="actor-card-key">${escapeHTML(safeActor.actor_id || safeActor.source || "provider details unavailable")}</span>
+                            <span class="actor-card-key">${escapeHTML(safeActor.actor_id || safeActor.provider || safeActor.source || "provider details unavailable")}</span>
                         </div>
                         <span class="actor-status-badge ${statusClass(safeActor)}">${escapeHTML(actorStatus(safeActor))}</span>
                     </div>
@@ -1515,6 +1551,7 @@ function getPlatformSVG(platform) {
         telegram: `<svg class="svg-icon" viewBox="0 0 24 24" fill="none" style="background:#29a9eb; border-radius:50%; padding:2px;"><path d="M21.93 3.36L3.46 10.27c-1.18.47-1.17 1.13-.22 1.42l4.58 1.43 10.62-6.7c.5-.3.95-.14.58.19L9.63 15.15l-.35 4.67c.51 0 .74-.23 1.02-.5l2.45-2.38 5.09 3.76c.94.52 1.61.25 1.84-.87l3.33-15.69c.34-1.36-.52-1.97-1.08-1.78z" fill="white"/></svg>`,
         linkedin: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#0A66C2; border-radius:5px; padding:2px;"><path d="M6.94 5a2 2 0 1 1-4-.002 2 2 0 0 1 4 .002zM7 8.48H3V21h4V8.48zm6.32 0H9.34V21h3.94v-6.57c0-3.66 4.77-4 4.77 0V21H22v-7.93c0-6.17-7.06-5.94-8.72-2.91l.04-1.68z" fill="white"/></svg>`,
         facebook: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#1877F2; border-radius:50%; padding:1px;"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06C2 17.08 5.66 21.25 10.44 22v-7.03H7.9v-2.91h2.54V9.85c0-2.52 1.5-3.91 3.78-3.91 1.09 0 2.23.2 2.23.2v2.46H15.2c-1.24 0-1.63.77-1.63 1.56v1.9h2.78l-.44 2.91h-2.34V22C18.34 21.25 22 17.08 22 12.06z" fill="white"/></svg>`,
+        tiktok: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#010101; border-radius:6px; padding:2px;"><path d="M15.6 3c.35 2.02 1.5 3.22 3.4 3.53v3.05a7.4 7.4 0 0 1-3.37-.82v6.05a5.8 5.8 0 1 1-5.8-5.8c.35 0 .7.03 1.04.1v3.12a2.76 2.76 0 1 0 1.72 2.56V3h3.01z" fill="#25F4EE"/><path d="M16.5 3c.35 1.73 1.25 2.78 2.5 3.25v2.33a6.2 6.2 0 0 1-2.47-.79v6.98a5.8 5.8 0 0 1-8.8 4.96 5.8 5.8 0 0 0 8.8-5.04V8.64A7.4 7.4 0 0 0 20 9.58V6.53C18.1 6.22 16.95 5.02 16.6 3h-.1z" fill="#FE2C55" opacity=".9"/><path d="M15.6 3c.35 2.02 1.5 3.22 3.4 3.53v1.12a6.1 6.1 0 0 1-3.37-.98v8.14a5.8 5.8 0 0 1-8.86 4.92 5.8 5.8 0 0 1 4.1-10.62v3.12a2.76 2.76 0 1 0 1.72 2.56V3h3.01z" fill="white"/></svg>`,
         github: `<svg class="svg-icon" viewBox="0 0 24 24" fill="white" style="background:#24292e; border-radius:50%; padding:1px;"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.09.66-.22.66-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.1-1.47-1.1-1.47-.9-.62.07-.6.07-.6 1 .07 1.52 1.02 1.52 1.02.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.8c.85.004 1.7.114 2.5.334 1.9-1.29 2.74-1.02 2.74-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.75c0 .27.16.58.67.48A10.01 10.01 0 0 0 22 12C22 6.48 17.52 2 12 2z"/></svg>`,
         reddit: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#FF4500; border-radius:50%; padding:1px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5.88 11.27a1.5 1.5 0 0 1-1.5 1.5c-.43 0-.82-.18-1.1-.47-.96.67-2.3 1.1-3.79 1.15l.64 3.02 2.08-.44a1.1 1.1 0 1 1 .15.73l-2.32.49c-.1.02-.2-.04-.23-.14l-.71-3.37c-1.5-.04-2.85-.47-3.82-1.14-.28.29-.67.47-1.1.47a1.5 1.5 0 0 1-.27-2.97c-.02-.15-.03-.3-.03-.45 0-2.23 2.43-4.04 5.43-4.04s5.43 1.81 5.43 4.04c0 .15-.01.3-.03.45.43.14.75.55.75 1.03l.02-.87zm-8.88.23a1.1 1.1 0 1 1 2.2 0 1.1 1.1 0 0 1-2.2 0zm5.35 2.81s-.87.87-2.35.87-2.35-.87-2.35-.87c-.13-.13-.13-.33 0-.46.13-.13.33-.13.46 0 0 0 .7.66 1.89.66s1.89-.66 1.89-.66c.13-.13.33-.13.46 0 .13.13.13.33 0 .46zm-.05-1.71a1.1 1.1 0 1 1 2.2 0 1.1 1.1 0 0 1-2.2 0z" fill="white"/></svg>`,
         youtube: `<svg class="svg-icon" viewBox="0 0 24 24" style="background:#FF0000; border-radius:6px; padding:2px;"><path d="M21.8 8s-.2-1.4-.8-2c-.77-.8-1.63-.81-2.02-.86C16.24 5 12 5 12 5s-4.24 0-6.98.14c-.4.05-1.25.06-2.02.86-.6.6-.8 2-.8 2S2 9.6 2 11.2v1.5c0 1.6.2 3.2.2 3.2s.2 1.4.8 2c.77.8 1.79.78 2.24.86C6.8 19 12 19 12 19s4.24 0 6.98-.16c.4-.05 1.25-.06 2.02-.86.6-.6.8-2 .8-2s.2-1.6.2-3.2v-1.5C22 9.6 21.8 8 21.8 8zM9.75 14.85V9.15l5.5 2.85-5.5 2.85z" fill="white"/></svg>`,
@@ -2269,6 +2306,7 @@ function renderPlatformDossier(data) {
             linkedin: ["linkedin.com"],
             reddit: ["reddit.com"],
             facebook: ["facebook.com"],
+            tiktok: ["tiktok.com"],
             github: ["github.com"],
             youtube: ["youtube.com"],
             pinterest: ["pinterest.com"]
@@ -2307,7 +2345,7 @@ function renderPlatformDossier(data) {
         const isExpandedByDefault = exists === true && activeProfileData && activeProfileData.success !== false && activeProfileData.status !== "error" && !activeProfileData.error;
         
         const isInstagramWithPosts = matchPlatform === "instagram" && data.instagram_posts && data.instagram_posts.posts && data.instagram_posts.posts.length > 0;
-        const isScrapable = ["twitter", "reddit", "linkedin", "facebook", "telegram"].includes(matchPlatform);
+        const isScrapable = ["twitter", "reddit", "linkedin", "facebook", "telegram", "tiktok", "github"].includes(matchPlatform);
         
         if (exists === true && (isPrimary || platformDorks.length > 0 || isInstagramWithPosts || isScrapable)) {
             hasExtraContent = true;
@@ -2602,7 +2640,7 @@ function renderSkeletonDossier() {
     const container = document.getElementById("platform-dossier-container");
     if (container) {
         container.innerHTML = "";
-        const platforms = ["instagram", "twitter", "reddit", "telegram", "linkedin", "github"];
+        const platforms = ["instagram", "twitter", "reddit", "telegram", "linkedin", "tiktok", "github"];
         platforms.forEach(plat => {
             const card = document.createElement("div");
             card.className = "platform-intel-card skeleton-card skeleton-pulse";
@@ -2650,13 +2688,24 @@ function renderSkeletonDossier() {
 async function scrapePlatformOnDemand(platform, username, collapsibleId, btn) {
     const el = document.getElementById(collapsibleId);
     if (!el) return;
+    const plat = String(platform || "").toLowerCase();
+    const routeLabels = {
+        twitter: "Apify X collector",
+        reddit: "Apify Reddit collector",
+        linkedin: "Bright Data collector",
+        facebook: "Apify Facebook collector",
+        telegram: "Telegram collector",
+        tiktok: "Apify TikTok collector",
+        github: "GitHub REST collector"
+    };
+    const routeLabel = routeLabels[plat] || "routed platform collector";
     
     el.setAttribute("data-scraped-status", "loading");
     
     // Render inline pulsing skeletons
     el.innerHTML = `
         <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.05); padding-top:15px;">
-            <div class="platform-intel-section-title">Querying Apify Portal Scraper...</div>
+            <div class="platform-intel-section-title">Querying ${escapeHTML(routeLabel)}...</div>
             <div class="skeleton-pulse" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
                 <div class="skeleton-block" style="width:50%; height:12px; background:rgba(255,255,255,0.05);"></div>
                 <div class="skeleton-block" style="width:100%; height:10px; background:rgba(255,255,255,0.05);"></div>
@@ -2670,7 +2719,6 @@ async function scrapePlatformOnDemand(platform, username, collapsibleId, btn) {
         let endpoint = "";
         let body = {};
         
-        const plat = platform.toLowerCase();
         if (plat === "twitter") {
             endpoint = `${API_BASE}/api/v1/apify/twitter/profile`;
             body = { username: username, max_items: 5 };
@@ -2678,16 +2726,22 @@ async function scrapePlatformOnDemand(platform, username, collapsibleId, btn) {
             endpoint = `${API_BASE}/api/v1/apify/reddit/collect`;
             body = { urls: [`https://www.reddit.com/user/${username}/`] };
         } else if (plat === "linkedin") {
-            endpoint = `${API_BASE}/api/v1/apify/linkedin/bulk`;
-            body = { action: "get-profiles", keywords: [`https://www.linkedin.com/in/${username}`], query_mode: "url", limit: 1 };
+            endpoint = `${API_BASE}/api/v1/providers/linkedin/profile`;
+            body = { username: username };
         } else if (plat === "facebook") {
             endpoint = `${API_BASE}/api/v1/apify/facebook/posts`;
             body = { urls: [`https://www.facebook.com/${username}`], results_limit: 5 };
         } else if (plat === "telegram") {
             endpoint = `${API_BASE}/api/v1/investigation/username`;
             body = { username: username, platform: "telegram", case_id: currentCaseId, correlation_depth: 1, filter_hitek: false };
+        } else if (plat === "tiktok") {
+            endpoint = `${API_BASE}/api/v1/providers/tiktok/profile`;
+            body = { username: username, max_items: 5 };
+        } else if (plat === "github") {
+            endpoint = `${API_BASE}/api/v1/providers/github/profile`;
+            body = { username: username, repo_limit: 10 };
         } else {
-            throw new Error("No targeted Apify scraper configured for " + platform);
+            throw new Error("No targeted collector configured for " + platform);
         }
 
         const response = await fetch(endpoint, {
@@ -2697,18 +2751,20 @@ async function scrapePlatformOnDemand(platform, username, collapsibleId, btn) {
         });
 
         if (!response.ok) {
-            throw new Error(`Scraper returned status code: ${response.status}`);
+            throw new Error(`Collector returned status code: ${response.status}`);
         }
 
         const resData = await response.json();
+        const renderData = DataMappers.getRenderablePlatformData(resData, plat)
+            || (resData && resData.platform_data && typeof resData.platform_data === "object" ? resData.platform_data : resData);
         el.setAttribute("data-scraped-status", "success");
-        renderScrapedDetails(platform, resData, el, username);
+        renderScrapedDetails(platform, renderData, el, username);
 
     } catch (err) {
         el.setAttribute("data-scraped-status", "error");
         el.innerHTML = `
             <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.05); padding-top:15px; color:var(--accent-crimson); font-size:0.8rem;">
-                ⚠️ Scraper Engine Offline or Limit Exceeded: ${err.message}
+                ⚠️ Routed collector unavailable or limit exceeded: ${escapeHTML(err.message)}
             </div>
         `;
     }
@@ -2728,11 +2784,11 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
         if (data.error) {
             errorMsg = typeof data.error === "object" ? (data.error.message || JSON.stringify(data.error)) : String(data.error);
         }
-        const msg = errorMsg || (data.run && data.run.status_message) || data.status_message || "Empty dataset returned (Apify quota limit exceeded or profile private/absent).";
+        const msg = errorMsg || data.reason || (data.run && data.run.status_message) || data.status_message || "The routed provider returned no public data, reached its limit, or could not access this profile.";
         container.innerHTML = `
             <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.05); padding-top:15px; color:var(--accent-crimson); font-size:0.8rem; line-height:1.4;">
                 <div style="font-weight:600; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
-                    <span>⚠️ Scraper Execution Notice</span>
+                    <span>⚠️ Collection Notice</span>
                 </div>
                 <div style="opacity:0.9; background:rgba(255,51,102,0.05); border:1px solid rgba(255,51,102,0.15); padding:8px 10px; border-radius:4px;">
                     ${esc(msg)}
@@ -3030,6 +3086,144 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             html += `</div>`;
         } else {
             html += `<div class="scraped-empty-state">No public Facebook posts returned.</div>`;
+        }
+    } else if (plat === "tiktok") {
+        const nestedProfile = data.profile && typeof data.profile === "object" ? data.profile : {};
+        const profile = { ...nestedProfile, ...data };
+        const posts = DataMappers.firstList(data.posts, data.recent_posts);
+        const bio = DataMappers.firstDefined(profile.bio, profile.biography, "");
+        const externalUrl = safeExternalUrl(DataMappers.firstDefined(profile.external_url, profile.website));
+        let profilePic = safeImageSource(DataMappers.firstDefined(profile.profile_pic_hd, profile.profile_pic_url));
+        if (profilePic && !profilePic.startsWith("data:image/")) {
+            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+        }
+
+        if (!excludeProfileCard) {
+            html += sectionHeader("♫", "TikTok Profile");
+            html += `<div class="scraped-profile-card">`;
+            html += `  <div class="scraped-profile-header">`;
+            html += `    <div class="scraped-profile-avatar-container" style="border-color:#25f4ee; background:rgba(37,244,238,0.05);">`;
+            if (profilePic) {
+                html += `      <img src="${esc(profilePic)}" class="scraped-profile-avatar" onerror="this.style.display='none'; this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\' style=\'color:#25f4ee;\'>TT</span>';">`;
+            } else {
+                html += `      <span class="scraped-profile-avatar-placeholder" style="color:#25f4ee;">TT</span>`;
+            }
+            html += `    </div>`;
+            html += `    <div class="scraped-profile-identity">`;
+            const displayName = DataMappers.firstDefined(profile.full_name, profile.display_name);
+            if (displayName) html += `      <span class="scraped-profile-name">${esc(displayName)}</span>`;
+            html += `      <span class="scraped-profile-handle" style="color:#25f4ee;">@${esc(profile.username || username)}</span>`;
+            if (profile.is_verified === true) {
+                html += `      <span class="scraped-verified-badge" style="width:fit-content; margin-top:2px;">✓ Verified</span>`;
+            }
+            html += `    </div>`;
+            html += `  </div>`;
+            if (bio) html += `<div class="scraped-profile-bio">${esc(bio)}</div>`;
+            html += `<div class="scraped-stats-grid">`;
+            html += statTile("Followers", fmtNum(DataMappers.firstDefined(profile.follower_count, 0)), "blue");
+            html += statTile("Following", fmtNum(DataMappers.firstDefined(profile.following_count, 0)));
+            html += statTile("Videos", fmtNum(DataMappers.firstDefined(profile.post_count, posts.length)), "gold");
+            if (profile.likes_count !== undefined && profile.likes_count !== null) {
+                html += statTile("Likes", fmtNum(profile.likes_count));
+            }
+            html += `</div>`;
+            if (externalUrl) {
+                html += `<div class="scraped-profile-meta-line"><a href="${esc(externalUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">External link ↗</a></div>`;
+            }
+            html += `</div>`;
+        }
+
+        if (posts.length > 0) {
+            html += sectionHeader("▶", "Recent TikTok Videos", posts.length);
+            html += `<div class="scraped-feed-list">`;
+            posts.slice(0, 5).forEach(post => {
+                const dateStr = fmtDate(DataMappers.firstDefined(post.created_at, post.taken_at));
+                const postUrl = safeExternalUrl(post.url);
+                const hashtags = DataMappers.asList(post.hashtags)
+                    .slice(0, 6)
+                    .map(tag => `<span class="scraped-feed-tag">#${esc(typeof tag === "object" ? (tag.name || tag.title || "") : tag)}</span>`)
+                    .join("");
+                const engagement = [
+                    `<span class="scraped-engagement">Likes ${fmtNum(DataMappers.firstDefined(post.like_count, 0))}</span>`,
+                    `<span class="scraped-engagement">Views ${fmtNum(DataMappers.firstDefined(post.view_count, 0))}</span>`,
+                    `<span class="scraped-engagement">Comments ${fmtNum(DataMappers.firstDefined(post.comment_count, 0))}</span>`,
+                    `<span class="scraped-engagement">Shares ${fmtNum(DataMappers.firstDefined(post.share_count, 0))}</span>`,
+                    postUrl ? `<a href="${esc(postUrl)}" target="_blank" rel="noopener noreferrer" class="scraped-engagement" style="color:var(--accent-blue);">Open ↗</a>` : ""
+                ].filter(Boolean).join("");
+                html += feedCard(
+                    `${dateStr ? `<span class="scraped-feed-date">${esc(dateStr)}</span>` : ""}${hashtags}`,
+                    esc(truncate(DataMappers.firstDefined(post.text, post.caption, "Video returned without a public caption."), 300)),
+                    engagement
+                );
+            });
+            html += `</div>`;
+        } else {
+            html += `<div class="scraped-empty-state">No public TikTok videos were returned.</div>`;
+        }
+    } else if (plat === "github") {
+        const nestedProfile = data.profile && typeof data.profile === "object" ? data.profile : {};
+        const profile = { ...data, ...nestedProfile };
+        const repositories = DataMappers.firstList(data.repositories, profile.repositories);
+        const profileUrl = safeExternalUrl(profile.profile_url);
+        const blogUrl = safeExternalUrl(profile.blog);
+        let profilePic = safeImageSource(DataMappers.firstDefined(profile.avatar_url, profile.profile_pic_url));
+        if (profilePic && !profilePic.startsWith("data:image/")) {
+            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+        }
+
+        if (!excludeProfileCard) {
+            html += sectionHeader("⌘", "GitHub Developer Profile");
+            html += `<div class="scraped-profile-card">`;
+            html += `  <div class="scraped-profile-header">`;
+            html += `    <div class="scraped-profile-avatar-container" style="border-color:#8b949e; background:rgba(139,148,158,0.05);">`;
+            if (profilePic) {
+                html += `      <img src="${esc(profilePic)}" class="scraped-profile-avatar" onerror="this.style.display='none'; this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\'>GH</span>';">`;
+            } else {
+                html += `      <span class="scraped-profile-avatar-placeholder">GH</span>`;
+            }
+            html += `    </div>`;
+            html += `    <div class="scraped-profile-identity">`;
+            if (profile.full_name) html += `      <span class="scraped-profile-name">${esc(profile.full_name)}</span>`;
+            html += `      <span class="scraped-profile-handle">@${esc(profile.username || username)}</span>`;
+            html += `    </div>`;
+            html += `  </div>`;
+            if (profile.bio) html += `<div class="scraped-profile-bio">${esc(profile.bio)}</div>`;
+            html += `<div class="scraped-stats-grid">`;
+            html += statTile("Followers", fmtNum(DataMappers.firstDefined(profile.followers, profile.follower_count, 0)), "blue");
+            html += statTile("Following", fmtNum(DataMappers.firstDefined(profile.following, profile.following_count, 0)));
+            html += statTile("Public repos", fmtNum(DataMappers.firstDefined(profile.public_repos, repositories.length)), "gold");
+            html += `</div>`;
+            const profileMeta = [profile.company, profile.location].filter(Boolean).map(esc).join(" · ");
+            if (profileMeta) html += `<div class="scraped-profile-meta-line">${profileMeta}</div>`;
+            if (profileUrl || blogUrl) {
+                html += `<div class="scraped-profile-meta-line">${profileUrl ? `<a href="${esc(profileUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">GitHub profile ↗</a>` : ""}${profileUrl && blogUrl ? " · " : ""}${blogUrl ? `<a href="${esc(blogUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">Website ↗</a>` : ""}</div>`;
+            }
+            html += `</div>`;
+        }
+
+        if (repositories.length > 0) {
+            html += sectionHeader("◆", "Public Repositories", repositories.length);
+            html += `<div class="scraped-feed-list">`;
+            repositories.slice(0, 8).forEach(repository => {
+                const repoUrl = safeExternalUrl(repository.url);
+                const updated = fmtDate(repository.updated_at);
+                const tags = [repository.language, repository.license]
+                    .filter(Boolean)
+                    .map(value => `<span class="scraped-feed-tag">${esc(value)}</span>`)
+                    .join("");
+                const title = esc(repository.full_name || repository.name || "Unnamed repository");
+                const titleHtml = repoUrl
+                    ? `<a href="${esc(repoUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue); text-decoration:none;"><strong>${title}</strong></a>`
+                    : `<strong>${title}</strong>`;
+                html += feedCard(
+                    `${tags}${updated ? `<span class="scraped-feed-date">Updated ${esc(updated)}</span>` : ""}`,
+                    `${titleHtml}${repository.description ? `<div class="scraped-feed-excerpt">${esc(truncate(repository.description, 240))}</div>` : ""}`,
+                    `<span class="scraped-engagement">Stars ${fmtNum(DataMappers.firstDefined(repository.stars, 0))}</span><span class="scraped-engagement">Forks ${fmtNum(DataMappers.firstDefined(repository.forks, 0))}</span><span class="scraped-engagement">Issues ${fmtNum(DataMappers.firstDefined(repository.open_issues, 0))}</span>`
+                );
+            });
+            html += `</div>`;
+        } else {
+            html += `<div class="scraped-empty-state">No public GitHub repositories were returned.</div>`;
         }
     } else if (plat === "telegram") {
         const td = data.platform_data || data;

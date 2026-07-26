@@ -18,10 +18,12 @@
         linkedin_profiles: "linkedin",
         linkedin_posts_search: "linkedin",
         facebook_pages: "facebook",
-        facebook_posts: "facebook"
+        facebook_posts: "facebook",
+        tiktok: "tiktok"
     };
     const NON_EVIDENCE_STATUSES = new Set([
         "not_configured", "empty_dataset", "skipped", "disabled",
+        "disabled_by_policy", "budget_exhausted", "invalid_target", "not_found",
         "provider_error", "orchestration_error", "error", "failed",
         "timeout", "timed-out", "aborted"
     ]);
@@ -90,24 +92,30 @@
         return score;
     }
 
-    function resolveTelegramData(response) {
-        if (!isRecord(response)) return {};
-        const scraped = response.scraped_data && response.scraped_data.telegram;
-        const primary = response.platform_data;
-        const envelopeTelegram = response.apify_social_results && response.apify_social_results.telegram;
-        const candidates = [
-            isRecord(scraped) ? scraped : null,
-            isRecord(primary) && String(primary.platform || "").toLowerCase() === "telegram" ? primary : null,
-            isRecord(envelopeTelegram) ? envelopeTelegram : null
-        ].filter(Boolean);
-        if (candidates.length === 0) return {};
-
-        return candidates.reduce((best, candidate) => (
-            telegramDataScore(candidate) > telegramDataScore(best) ? candidate : best
-        ));
+    function neutralSocialMap(response) {
+        if (!isRecord(response) || !isRecord(response.provider_results)) return null;
+        return isRecord(response.provider_results.social)
+            ? response.provider_results.social
+            : null;
     }
 
-    function actorSourcesFor(response, platform) {
+    function neutralPlatformSources(response, platform) {
+        const social = neutralSocialMap(response);
+        const normalizedPlatform = String(platform || "").toLowerCase();
+        if (!social || !Object.prototype.hasOwnProperty.call(social, normalizedPlatform)) {
+            return null;
+        }
+
+        const payload = social[normalizedPlatform];
+        if (!isRecord(payload)) return [];
+        if (["instagram", "facebook"].includes(normalizedPlatform)) {
+            const splitSources = [payload.profile, payload.posts].filter(isRecord);
+            return splitSources.length > 0 ? splitSources : [payload];
+        }
+        return [payload];
+    }
+
+    function legacyPlatformSources(response, platform) {
         const actors = response && response.apify_social_results && response.apify_social_results.actors;
         const actorMap = isRecord(actors) ? actors : {};
         const normalizedPlatform = String(platform || "").toLowerCase();
@@ -124,10 +132,42 @@
         if (normalizedPlatform === "facebook") {
             return [actorMap.facebook_pages, actorMap.facebook_posts];
         }
+        if (normalizedPlatform === "tiktok") return [actorMap.tiktok];
         if (normalizedPlatform === "telegram") {
             return [response && response.apify_social_results && response.apify_social_results.telegram];
         }
         return [];
+    }
+
+    function providerSourcesFor(response, platform) {
+        const normalizedPlatform = String(platform || "").toLowerCase();
+        const neutralSources = neutralPlatformSources(response, normalizedPlatform);
+        if (neutralSources !== null) return neutralSources;
+
+        if (normalizedPlatform === "github"
+            && isRecord(response)
+            && isRecord(response.provider_results)
+            && isRecord(response.provider_results.specialized)
+            && isRecord(response.provider_results.specialized.github)) {
+            return [response.provider_results.specialized.github];
+        }
+        return legacyPlatformSources(response, normalizedPlatform);
+    }
+
+    function resolveTelegramData(response) {
+        if (!isRecord(response)) return {};
+        const scraped = response.scraped_data && response.scraped_data.telegram;
+        const primary = response.platform_data;
+        const candidates = [
+            ...providerSourcesFor(response, "telegram"),
+            isRecord(scraped) ? scraped : null,
+            isRecord(primary) && String(primary.platform || "").toLowerCase() === "telegram" ? primary : null
+        ].filter(Boolean);
+        if (candidates.length === 0) return {};
+
+        return candidates.reduce((best, candidate) => (
+            telegramDataScore(candidate) > telegramDataScore(best) ? candidate : best
+        ));
     }
 
     function nestedProfile(payload, platform) {
@@ -139,6 +179,9 @@
         if (normalizedPlatform === "facebook") {
             return firstList(payload.pages)[0] || payload.page || payload.profile || {};
         }
+        if (["tiktok", "github"].includes(normalizedPlatform)) {
+            return payload.profile || {};
+        }
         return payload.profile || {};
     }
 
@@ -146,7 +189,10 @@
         if (!isRecord(payload)) return "unknown";
         const status = String(payload.status || "").toLowerCase();
         if (status === "not_configured" || payload.configured === false) return "not_configured";
-        if (["empty_dataset", "skipped", "disabled"].includes(status)) return "empty";
+        if ([
+            "empty_dataset", "skipped", "disabled", "disabled_by_policy",
+            "budget_exhausted", "invalid_target", "not_found"
+        ].includes(status)) return "empty";
         if (["provider_error", "orchestration_error", "error", "failed", "timeout", "timed-out", "aborted"].includes(status)) {
             return "failed";
         }
@@ -169,7 +215,7 @@
         const normalizedPlatform = String(platform || "").toLowerCase();
         if (!normalizedPlatform) return null;
 
-        const actorSources = actorSourcesFor(response, normalizedPlatform).filter(isRecord);
+        const actorSources = providerSourcesFor(response, normalizedPlatform).filter(isRecord);
         const scraped = isRecord(response.scraped_data) && isRecord(response.scraped_data[normalizedPlatform])
             ? response.scraped_data[normalizedPlatform]
             : {};
@@ -272,22 +318,42 @@
         const status = String(payload.status || "").toLowerCase();
         if (payload.exists === false || NON_EVIDENCE_STATUSES.has(status)) return false;
         if (payload.exists === true) return true;
-        const hasContent = ["posts", "tweets", "replies", "comments", "recent_posts", "profiles", "pages"].some(
+        const hasContent = ["posts", "tweets", "replies", "comments", "recent_posts", "profiles", "pages", "repositories"].some(
             key => Array.isArray(payload[key]) && payload[key].length > 0
         );
         if (hasContent) return true;
 
+        if (isRecord(payload.profile) && Object.keys(payload.profile).length > 0 && payload.success !== false) {
+            return true;
+        }
+
         const hasIdentityMetadata = [
             "full_name", "display_name", "name", "bio", "description",
-            "profile_pic_url", "profile_pic_hd", "profile_url",
-            "follower_count", "member_count", "subscriber_count"
+            "profile_pic_url", "profile_pic_hd", "profile_url", "avatar_url",
+            "follower_count", "member_count", "subscriber_count", "public_repos"
         ].some(key => payload[key] !== undefined && payload[key] !== null && payload[key] !== "");
         return payload.success === true && hasIdentityMetadata;
     }
 
-    function profileEvidenceSourcesFor(response, platform) {
-        if (!isRecord(response)) return [];
+    function profileProviderSourcesFor(response, platform) {
         const normalizedPlatform = String(platform || "").toLowerCase();
+        const social = neutralSocialMap(response);
+        if (social && Object.prototype.hasOwnProperty.call(social, normalizedPlatform)) {
+            const payload = social[normalizedPlatform];
+            if (!isRecord(payload)) return [];
+            if (["instagram", "facebook"].includes(normalizedPlatform)) {
+                return isRecord(payload.profile) ? [payload.profile] : [];
+            }
+            return [payload];
+        }
+
+        if (normalizedPlatform === "github"
+            && isRecord(response.provider_results)
+            && isRecord(response.provider_results.specialized)
+            && isRecord(response.provider_results.specialized.github)) {
+            return [response.provider_results.specialized.github];
+        }
+
         const actors = response.apify_social_results && response.apify_social_results.actors;
         const actorMap = isRecord(actors) ? actors : {};
         const profileActors = {
@@ -296,9 +362,16 @@
             reddit: [actorMap.reddit],
             linkedin: [actorMap.linkedin_profiles],
             facebook: [actorMap.facebook_pages],
+            tiktok: [actorMap.tiktok],
             telegram: [response.apify_social_results && response.apify_social_results.telegram]
         };
-        const sources = [...(profileActors[normalizedPlatform] || [])];
+        return profileActors[normalizedPlatform] || [];
+    }
+
+    function profileEvidenceSourcesFor(response, platform) {
+        if (!isRecord(response)) return [];
+        const normalizedPlatform = String(platform || "").toLowerCase();
+        const sources = [...profileProviderSourcesFor(response, normalizedPlatform)];
         if (isRecord(response.scraped_data) && isRecord(response.scraped_data[normalizedPlatform])) {
             sources.push(response.scraped_data[normalizedPlatform]);
         }
@@ -348,6 +421,15 @@
         if (isRecord(response.apify_social_results) && isRecord(response.apify_social_results.telegram)) {
             candidates.add("telegram");
         }
+        const neutralSocial = neutralSocialMap(response);
+        if (neutralSocial) {
+            Object.keys(neutralSocial).forEach(platform => candidates.add(platform.toLowerCase()));
+        }
+        if (isRecord(response.provider_results)
+            && isRecord(response.provider_results.specialized)
+            && isRecord(response.provider_results.specialized.github)) {
+            candidates.add("github");
+        }
 
         candidates.forEach(platform => {
             const details = getRenderablePlatformData(response, platform);
@@ -383,11 +465,75 @@
 
     function actorItemCount(actor) {
         if (!isRecord(actor)) return 0;
-        const keys = ["posts", "tweets", "replies", "comments", "pages", "profiles", "companies", "reels"];
+        const keys = ["posts", "tweets", "replies", "comments", "pages", "profiles", "companies", "reels", "repositories"];
         const arrayTotal = keys.reduce((total, key) => total + asList(actor[key]).length, 0);
         if (arrayTotal > 0) return arrayTotal;
         const reported = Number(firstDefined(actor.total, actor.result_count, 0));
         return Number.isFinite(reported) ? reported : 0;
+    }
+
+    function resolveSocialCollection(response) {
+        if (!isRecord(response)) {
+            return {
+                source: null,
+                status: "not_returned",
+                mode: "not reported",
+                routing: {},
+                identityNotice: "",
+                entries: [],
+                summary: { total: 0, completed: 0, empty: 0, failed: 0, not_configured: 0 }
+            };
+        }
+
+        const providerResults = isRecord(response.provider_results) ? response.provider_results : {};
+        const neutralSocial = neutralSocialMap(response);
+        const legacy = isRecord(response.apify_social_results) ? response.apify_social_results : {};
+        const entries = [];
+        let source = null;
+
+        if (neutralSocial && Object.keys(neutralSocial).length > 0) {
+            source = "provider_results";
+            Object.entries(neutralSocial).forEach(([platform, payload]) => {
+                if (!isRecord(payload)) return;
+                if (["instagram", "facebook"].includes(platform.toLowerCase())) {
+                    if (isRecord(payload.profile)) entries.push([`${platform}_profile`, payload.profile]);
+                    if (isRecord(payload.posts)) entries.push([`${platform}_posts`, payload.posts]);
+                    if (!isRecord(payload.profile) && !isRecord(payload.posts)) entries.push([platform, payload]);
+                } else {
+                    entries.push([platform, payload]);
+                }
+            });
+        } else {
+            const actors = isRecord(legacy.actors) ? legacy.actors : {};
+            Object.entries(actors).forEach(entry => entries.push(entry));
+            if (isRecord(legacy.telegram)) entries.push(["telegram", legacy.telegram]);
+            if (entries.length > 0 || Object.keys(legacy).length > 0) source = "apify_social_results";
+        }
+
+        const outcomes = entries.map(([, result]) => actorOutcome(result));
+        const computedSummary = {
+            total: entries.length,
+            completed: outcomes.filter(outcome => outcome === "completed").length,
+            empty: outcomes.filter(outcome => outcome === "empty").length,
+            failed: outcomes.filter(outcome => outcome === "failed").length,
+            not_configured: outcomes.filter(outcome => outcome === "not_configured").length
+        };
+        const legacySummary = isRecord(legacy.summary) ? legacy.summary : {};
+        const summary = source === "provider_results"
+            ? computedSummary
+            : { ...computedSummary, ...legacySummary };
+
+        return {
+            source,
+            status: firstDefined(providerResults.status, legacy.status, "not_returned"),
+            mode: firstDefined(legacy.mode, source === "provider_results" ? "capability_routing" : undefined, "not reported"),
+            routing: isRecord(providerResults.routing)
+                ? providerResults.routing
+                : (isRecord(legacy.routing) ? legacy.routing : {}),
+            identityNotice: firstDefined(legacy.identity_notice, ""),
+            entries,
+            summary
+        };
     }
 
     return {
@@ -402,6 +548,7 @@
         hasConfirmedProfileEvidence,
         hasPositivePlatformEvidence,
         mergeUniqueItems,
+        resolveSocialCollection,
         resolveTelegramData
     };
 });

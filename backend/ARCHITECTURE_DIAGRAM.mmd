@@ -1,22 +1,53 @@
 flowchart TB
-    subgraph Frontend[Frontend HTML/JS]
-        Search[Search]
-        Results[Results]
-        ReportView[Report View]
+    Client[Frontend / API client] --> Gateway[FastAPI validation]
+    Gateway --> Cache{Cache mode}
+    Cache -->|fresh hit| Response[Investigation response]
+    Cache -->|miss, refresh, or bypass| Budget[Provider call budget]
+    Budget --> Orchestrator[Investigation orchestrator]
+
+    Orchestrator --> Discovery[Public profile URL probes]
+    Discovery --> SocialSelect[Primary first; max 4 paid social platforms]
+
+    subgraph Social[Capability-routed social collection]
+        Instagram[Instagram -> existing Apify Actors]
+        Twitter[X/Twitter -> existing Apify Actor]
+        LinkedIn[LinkedIn -> Bright Data]
+        Facebook[Facebook -> existing Apify Actors]
+        Reddit[Reddit -> existing Apify Actor]
+        TikTok[TikTok -> configured Apify Actor]
+        Telegram[Telegram -> existing public / MTProto collectors]
     end
 
-    Frontend -->|HTTP/WebSocket| Gateway[API Gateway: FastAPI]
-    Gateway --> Auth[Auth Middleware]
-    Gateway --> RateLimit[Rate Limiting]
-    Gateway --> Validation[Request Validation]
-    Gateway --> Orchestrator[Investigation Orchestrator]
+    SocialSelect --> Instagram
+    SocialSelect --> Twitter
+    SocialSelect --> LinkedIn
+    SocialSelect --> Facebook
+    SocialSelect --> Reddit
+    SocialSelect --> TikTok
+    SocialSelect --> Telegram
 
-    Orchestrator --> Scraper[Scraper Engine]
-    Orchestrator --> AI[AI Correlation Engine]
-    Orchestrator --> Reports[Report Generator]
+    subgraph Specialist[Explicit specialist capabilities]
+        Search[Google search -> SerpAPI only]
+        Web[Web scrape -> Bright Data]
+        Extract[Structured extract -> Firecrawl]
+        GitHub[GitHub -> GitHub REST API]
+        Email[Email -> Hunter.io]
+        Phone[Phone -> Twilio Lookup]
+    end
 
-    Scraper --> Data[(PostgreSQL Primary)]
-    AI --> Data
-    Reports --> Data
-    Orchestrator --> Redis[(Redis Cache)]
-    Reports --> FileStore[(Evidence File Store)]
+    Orchestrator --> Search
+    Orchestrator --> Web
+    Orchestrator --> Extract
+    Orchestrator --> GitHub
+    Orchestrator --> Email
+    Orchestrator --> Phone
+
+    Social --> Normalize[Normalize and preserve provenance]
+    Specialist --> Normalize
+    Normalize --> Correlate[Correlation / risk / reporting]
+    Correlate --> History[(Investigation history)]
+    Correlate --> StoreCache[(In-process TTL/LRU cache)]
+    Correlate --> Response
+
+    NoFallback[No automatic cross-provider fallback] -. policy .-> Social
+    NoFallback -. policy .-> Specialist

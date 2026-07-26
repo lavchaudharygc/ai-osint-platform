@@ -154,6 +154,73 @@ test("Facebook renderer consumes canonical date and engagement fields", () => {
     assert.doesNotMatch(html, /Likes 99/);
 });
 
+test("TikTok renderer exposes canonical profile, video, and engagement fields", () => {
+    const html = renderDetails("tiktok", {
+        success: true,
+        username: "canonical_creator",
+        full_name: "Canonical TikTok Creator",
+        bio: "Public creator biography",
+        follower_count: 1200,
+        following_count: 34,
+        post_count: 9,
+        likes_count: 7654,
+        posts: [{
+            id: "tt-video",
+            text: "Canonical TikTok video caption",
+            created_at: "2026-07-08T10:00:00Z",
+            like_count: 300,
+            view_count: 4321,
+            comment_count: 12,
+            share_count: 8,
+            hashtags: ["osint"]
+        }]
+    });
+
+    assert.match(html, /Canonical TikTok Creator/);
+    assert.match(html, /Public creator biography/);
+    assert.match(html, /Canonical TikTok video caption/);
+    assert.match(html, /Views 4,321/);
+    assert.match(html, /#osint/);
+    assert.match(html, /7,654/);
+});
+
+test("GitHub renderer exposes profile metadata and public repositories", () => {
+    const html = renderDetails("github", {
+        success: true,
+        username: "octocat",
+        profile: {
+            username: "octocat",
+            full_name: "The Octocat",
+            bio: "GitHub mascot and developer",
+            public_repos: 8,
+            followers: 100,
+            following: 2,
+            company: "GitHub",
+            location: "San Francisco"
+        },
+        repositories: [{
+            id: 10,
+            name: "hello-world",
+            full_name: "octocat/hello-world",
+            description: "Canonical repository description",
+            language: "JavaScript",
+            license: "MIT",
+            stars: 80,
+            forks: 9,
+            open_issues: 1,
+            updated_at: "2026-07-07T11:00:00Z"
+        }]
+    });
+
+    assert.match(html, /The Octocat/);
+    assert.match(html, /GitHub mascot and developer/);
+    assert.match(html, /octocat\/hello-world/);
+    assert.match(html, /Canonical repository description/);
+    assert.match(html, /Stars 80/);
+    assert.match(html, /JavaScript/);
+    assert.match(html, /MIT/);
+});
+
 test("collection coverage renders normalized content and actor health consistently", () => {
     const status = fakeElement();
     const results = fakeElement();
@@ -193,6 +260,76 @@ test("collection coverage renders normalized content and actor health consistent
     assert.match(results.innerHTML, /Actor-only visible tweet/);
     assert.match(results.innerHTML, /actor-status-warning/);
     assert.match(results.innerHTML, /No public records returned/);
+});
+
+test("collection coverage prefers provider-neutral results and shows routing, budget, and cache metadata", () => {
+    const status = fakeElement();
+    const results = fakeElement();
+    const app = loadApp({
+        "collection-coverage-status": status,
+        "collection-coverage-results": results
+    });
+
+    app.renderCollectionCoverage({
+        provider_results: {
+            status: "completed_with_warnings",
+            routing: {
+                google_search: "serpapi",
+                linkedin: "bright_data",
+                github: "github_rest_api"
+            },
+            social: {
+                twitter: {
+                    success: true,
+                    status: "completed",
+                    provider: "apify",
+                    tweets: [{ text: "Neutral social result" }]
+                }
+            }
+        },
+        execution_metadata: {
+            cache: { hit: false, mode: "use", ttl_seconds: 3600 },
+            provider_call_budget: {
+                maximum: 8,
+                used: 3,
+                remaining: 5,
+                skipped: [{ capability: "social.facebook", reason: "provider_call_limit_exceeded" }]
+            }
+        },
+        apify_social_results: {
+            actors: {
+                twitter_profile_and_replies: {
+                    success: true,
+                    status: "completed",
+                    tweets: [{ text: "Stale legacy social result" }]
+                }
+            }
+        }
+    });
+
+    assert.equal(status.innerText, "COMPLETED WITH WARNINGS");
+    assert.match(results.innerHTML, /provider-neutral/);
+    assert.match(results.innerHTML, /3\/8 used/);
+    assert.match(results.innerHTML, /miss \(use\)/);
+    assert.match(results.innerHTML, /Capability routing/);
+    assert.match(results.innerHTML, /google search/);
+    assert.match(results.innerHTML, /serpapi/);
+    assert.match(results.innerHTML, /Neutral social result/);
+    assert.doesNotMatch(results.innerHTML, /Stale legacy social result/);
+    assert.match(results.innerHTML, /skipped to stay within/);
+});
+
+test("Google dorking configuration copy names SerpAPI as the only provider", () => {
+    assert.match(appSource, /Configure[\s\S]*SERPAPI_KEY/);
+    assert.match(appSource, /Google search is routed only through SerpAPI/);
+    assert.doesNotMatch(appSource, /BRIGHTDATA_SERP_API_KEY/);
+    assert.doesNotMatch(appSource, /APIFY_API_TOKEN/);
+});
+
+test("primary platform selector includes TikTok and GitHub", () => {
+    const html = fs.readFileSync(path.join(frontendRoot, "index.html"), "utf8");
+    assert.match(html, /<option value="tiktok">TikTok<\/option>/);
+    assert.match(html, /<option value="github">GitHub<\/option>/);
 });
 
 test("Telegram invite details render without requiring or exposing a username/hash", () => {

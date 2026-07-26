@@ -66,7 +66,19 @@ Only first name matches = LOW (<30%)
 Conflicting locations = reduce confidence
 """.strip()
 
-    async def analyze_correlation(self, primary_profile: dict[str, Any], discovered_profiles: list[dict[str, Any]]) -> dict[str, Any]:
+    async def analyze_correlation(
+        self,
+        primary_profile: dict[str, Any],
+        discovered_profiles: list[dict[str, Any]],
+        *,
+        allow_external: bool = True,
+    ) -> dict[str, Any]:
+        if not allow_external:
+            return self._fallback_correlation(
+                primary_profile,
+                discovered_profiles,
+                "per-investigation provider call limit reached",
+            )
         if not self.is_configured():
             return self._fallback_correlation(primary_profile, discovered_profiles, "missing DEEPSEEK_API_KEY or GROQ_API_KEY")
 
@@ -93,7 +105,17 @@ Conflicting locations = reduce confidence
         except httpx.HTTPError as exc:
             return {"success": False, "error": str(exc)}
 
-    async def assess_risk(self, profile_data: dict[str, Any]) -> dict[str, Any]:
+    async def assess_risk(
+        self,
+        profile_data: dict[str, Any],
+        *,
+        allow_external: bool = True,
+    ) -> dict[str, Any]:
+        if not allow_external:
+            return self._fallback_risk(
+                profile_data,
+                "per-investigation provider call limit reached",
+            )
         if not self.is_configured():
             return self._fallback_risk(profile_data, "missing DEEPSEEK_API_KEY or GROQ_API_KEY")
 

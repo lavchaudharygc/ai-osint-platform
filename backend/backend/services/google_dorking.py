@@ -1,12 +1,11 @@
-"""Google dorking discovery service powered by fallback SERP providers."""
+"""Google dorking discovery service powered exclusively by SerpAPI."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import quote_plus, urlparse
-import asyncio
+from urllib.parse import urlparse
 import json
 import re
 
@@ -36,7 +35,7 @@ class DorkingConfig:
 
 @dataclass(frozen=True)
 class SearchProvider:
-    """Configured SERP provider used for fallback search execution."""
+    """Configured provider used for search execution."""
 
     name: str
     kind: str
@@ -174,27 +173,14 @@ class IndianPlatformDorks:
 
 
 class GoogleDorkingService:
-    """Run approved public-search dorks for username discovery.
-
-    Provider order is intentionally strict:
-    1. SerpAPI
-    2. Bright Data SERP API
-    3. Apify Google Search Results Scraper
-    """
-
-    APIFY_SERP_URL = "https://api.apify.com/v2/acts/apify~google-search-scraper/run-sync-get-dataset-items"
-    TRANSIENT_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
+    """Run approved public-search dorks through SerpAPI only."""
 
     def __init__(self) -> None:
         self.config = DorkingConfig()
         self.serpapi_timeout = settings.serpapi_timeout_seconds
-        self.brightdata_timeout = settings.brightdata_serp_timeout_seconds
-        self.brightdata_max_retries = settings.brightdata_serp_max_retries
-        self.brightdata_retry_backoff = settings.brightdata_serp_retry_backoff_seconds
-        self.apify_timeout = settings.apify_serp_timeout_seconds
 
     def is_configured(self) -> bool:
-        return bool(self._provider_chain())
+        return self._serpapi_provider() is not None
 
     def build_queries(
         self,
@@ -229,7 +215,9 @@ class GoogleDorkingService:
                 }
             )
 
-        return queries[: limit or self.config.max_simple_dorks]
+        requested_limit = self.config.max_simple_dorks if limit is None else limit
+        effective_limit = max(0, min(requested_limit, self.config.max_simple_dorks))
+        return queries[:effective_limit]
 
     async def search_username(
         self,
@@ -237,7 +225,7 @@ class GoogleDorkingService:
         full_name: str | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
-        """Run simple dorking through the configured SERP provider fallback chain."""
+        """Run simple dorking through SerpAPI."""
         queries = self.build_queries(username, full_name, limit)
         return await self._search_queries(queries)
 
@@ -260,7 +248,7 @@ class GoogleDorkingService:
         }
 
     async def execute_single_dork(self, dork: dict[str, Any] | str) -> dict[str, Any]:
-        """Run one prepared dork through the same ordered provider chain."""
+        """Run one prepared dork through SerpAPI."""
         if isinstance(dork, str):
             query_text = dork
             platform = "single_dork"
@@ -302,112 +290,54 @@ class GoogleDorkingService:
         }
 
     async def _search_queries(self, queries: list[dict[str, Any]]) -> dict[str, Any]:
-        providers = self._provider_chain()
-        configured_providers = [provider.name for provider in providers]
+        provider = self._serpapi_provider()
+        configured_providers = [provider.name] if provider else []
         disabled_providers = self._disabled_provider_names()
 
-        if not providers:
+        if provider is None:
             return self._not_configured_response(queries, disabled_providers)
 
-        attempted_providers: list[str] = []
-        failed_providers: list[str] = []
-        provider_failures: list[dict[str, str]] = []
-        last_results: list[dict[str, Any]] = []
-
-        for provider in providers:
-            attempted_providers.append(provider.name)
-            attempt = await self._search_with_provider(provider, queries)
-            attempt_results = attempt.get("results", [])
-            attempt_errors = self._normalize_provider_errors(provider, attempt.get("errors", []))
-
-            if attempt.get("failed"):
-                failed_providers.append(provider.name)
-                provider_failures.extend(attempt_errors)
-                last_results = attempt_results
-                if attempt_results:
-                    return self._build_search_response(
-                        provider_name=provider.name,
-                        status="completed_with_errors",
-                        queries=queries,
-                        results=attempt_results,
-                        errors=provider_failures,
-                        configured_providers=configured_providers,
-                        attempted_providers=attempted_providers,
-                        failed_providers=failed_providers,
-                        disabled_providers=disabled_providers,
-                        fallback_used=len(attempted_providers) > 1,
-                        reason=f"{provider.name} returned partial results with provider errors.",
-                    )
-                continue
-
-            return self._build_search_response(
-                provider_name=provider.name,
-                status="completed",
-                queries=queries,
-                results=attempt_results,
-                errors=attempt_errors,
-                configured_providers=configured_providers,
-                attempted_providers=attempted_providers,
-                failed_providers=failed_providers,
-                disabled_providers=disabled_providers,
-                fallback_used=len(attempted_providers) > 1,
+        attempt = await self._search_with_provider(provider, queries)
+        attempt_results = attempt.get("results", [])
+        attempt_errors = self._normalize_provider_errors(provider, attempt.get("errors", []))
+        failed = bool(attempt.get("failed"))
+        status = "completed_with_errors" if failed and attempt_results else "failed" if failed else "completed"
+        reason = None
+        if failed:
+            reason = (
+                "SerpAPI returned partial results with provider errors."
+                if attempt_results
+                else "SerpAPI search failed."
             )
 
         return self._build_search_response(
-            provider_name=attempted_providers[-1] if attempted_providers else "none",
-            status="failed",
+            provider_name=provider.name,
+            status=status,
             queries=queries,
-            results=last_results,
-            errors=provider_failures,
+            results=attempt_results,
+            errors=attempt_errors,
             configured_providers=configured_providers,
-            attempted_providers=attempted_providers,
-            failed_providers=failed_providers,
+            attempted_providers=[provider.name],
+            failed_providers=[provider.name] if failed else [],
             disabled_providers=disabled_providers,
-            fallback_used=len(attempted_providers) > 1,
-            reason="All configured search providers failed.",
+            fallback_used=False,
+            reason=reason,
         )
 
-    def _provider_chain(self) -> list[SearchProvider]:
-        providers: list[SearchProvider] = []
+    def _serpapi_provider(self) -> SearchProvider | None:
         serpapi_key = getattr(settings, "serpapi_key", None)
-        brightdata_key = getattr(settings, "brightdata_serp_api_key", None)
-        apify_token = getattr(settings, "apify_api_token", None)
-
-        if self._has_value(serpapi_key):
-            providers.append(
-                SearchProvider(
-                    name="serpapi",
-                    kind="serpapi",
-                    api_key=str(serpapi_key),
-                    base_url=settings.serpapi_base_url,
-                    priority=1,
-                )
-            )
-        if self._has_value(brightdata_key):
-            providers.append(
-                SearchProvider(
-                    name="brightdata",
-                    kind="brightdata",
-                    api_key=str(brightdata_key),
-                    base_url=settings.brightdata_serp_base_url,
-                    priority=2,
-                )
-            )
-        if self._has_value(apify_token):
-            providers.append(
-                SearchProvider(
-                    name="apify",
-                    kind="apify",
-                    api_key=str(apify_token),
-                    base_url=self.APIFY_SERP_URL,
-                    priority=3,
-                )
-            )
-        return sorted(providers, key=lambda provider: provider.priority)
+        if not self._has_value(serpapi_key):
+            return None
+        return SearchProvider(
+            name="serpapi",
+            kind="serpapi",
+            api_key=str(serpapi_key),
+            base_url=settings.serpapi_base_url,
+            priority=1,
+        )
 
     def _disabled_provider_names(self) -> list[str]:
-        configured = {provider.name for provider in self._provider_chain()}
-        return [name for name in ("serpapi", "brightdata", "apify") if name not in configured]
+        return [] if self._serpapi_provider() else ["serpapi"]
 
     async def _search_with_provider(
         self,
@@ -416,10 +346,6 @@ class GoogleDorkingService:
     ) -> dict[str, Any]:
         if provider.kind == "serpapi":
             return await self._search_serpapi(provider, queries)
-        if provider.kind == "brightdata":
-            return await self._search_brightdata(provider, queries)
-        if provider.kind == "apify":
-            return await self._search_apify(provider, queries)
         return {
             "provider": provider.name,
             "results": [],
@@ -499,248 +425,6 @@ class GoogleDorkingService:
 
         return {"provider": provider.name, "results": results, "errors": errors, "failed": bool(errors)}
 
-    async def _search_brightdata(
-        self,
-        provider: SearchProvider,
-        queries: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        results: list[dict[str, Any]] = []
-        errors: list[dict[str, str]] = []
-        headers = {"Authorization": f"Bearer {provider.api_key}", "Content-Type": "application/json"}
-
-        async with httpx.AsyncClient(timeout=self.brightdata_timeout) as client:
-            for query in queries:
-                query_text = str(query.get("query") or "")
-                payload = {
-                    "zone": settings.brightdata_serp_zone,
-                    "url": self._brightdata_target_url(query_text),
-                    "format": "raw",
-                }
-                response, request_error, attempts = await self._request_brightdata_with_retry(
-                    client=client,
-                    provider=provider,
-                    query=query,
-                    headers=headers,
-                    payload=payload,
-                )
-                if request_error:
-                    errors.append(request_error)
-                    break
-                if response is None:
-                    errors.append(
-                        self._provider_error(
-                            provider,
-                            query,
-                            "request_failed",
-                            "Bright Data request failed without a response.",
-                            attempts=attempts,
-                        )
-                    )
-                    break
-
-                if response.status_code not in (200, 201):
-                    detail = self._response_error_detail(response)
-                    message = f"Bright Data returned status code {response.status_code}"
-                    if detail:
-                        message = f"{message}: {detail}"
-                    errors.append(
-                        self._provider_error(
-                            provider,
-                            query,
-                            response.status_code,
-                            message,
-                            attempts=attempts,
-                            retryable=response.status_code in self.TRANSIENT_HTTP_STATUSES,
-                            request_id=self._response_request_id(response),
-                        )
-                    )
-                    break
-
-                payload_data = self._decode_response(response)
-                if payload_data is None:
-                    errors.append(
-                        self._provider_error(
-                            provider,
-                            query,
-                            "invalid_response",
-                            "Expected structured JSON from Bright Data SERP API",
-                        )
-                    )
-                    break
-
-                provider_error = self._payload_error_message(payload_data)
-                if provider_error:
-                    errors.append(self._provider_error(provider, query, "provider_error", provider_error))
-                    break
-
-                results.extend(
-                    self._normalize_organic_results(
-                        query=query,
-                        organic_results=self._extract_organic_results(payload_data),
-                        provider_name=provider.name,
-                        query_text=query_text,
-                    )
-                )
-
-        return {"provider": provider.name, "results": results, "errors": errors, "failed": bool(errors)}
-
-    async def _request_brightdata_with_retry(
-        self,
-        *,
-        client: httpx.AsyncClient,
-        provider: SearchProvider,
-        query: dict[str, Any],
-        headers: dict[str, str],
-        payload: dict[str, Any],
-    ) -> tuple[httpx.Response | None, dict[str, str] | None, int]:
-        """Retry transient gateway and transport failures with bounded backoff."""
-        max_attempts = self.brightdata_max_retries + 1
-        for attempt in range(1, max_attempts + 1):
-            try:
-                response = await client.post(provider.base_url, headers=headers, json=payload)
-            except httpx.TimeoutException:
-                if attempt < max_attempts:
-                    await asyncio.sleep(self._brightdata_retry_delay(None, attempt))
-                    continue
-                return (
-                    None,
-                    self._provider_error(
-                        provider,
-                        query,
-                        "timeout",
-                        f"Bright Data request timed out after {attempt} attempts.",
-                        attempts=attempt,
-                        retryable=True,
-                    ),
-                    attempt,
-                )
-            except httpx.HTTPError as exc:
-                if attempt < max_attempts:
-                    await asyncio.sleep(self._brightdata_retry_delay(None, attempt))
-                    continue
-                return (
-                    None,
-                    self._provider_error(
-                        provider,
-                        query,
-                        "http_error",
-                        f"Bright Data transport error after {attempt} attempts: {exc}",
-                        attempts=attempt,
-                        retryable=True,
-                    ),
-                    attempt,
-                )
-
-            if response.status_code in self.TRANSIENT_HTTP_STATUSES and attempt < max_attempts:
-                await asyncio.sleep(self._brightdata_retry_delay(response, attempt))
-                continue
-            return response, None, attempt
-
-        return None, None, max_attempts
-
-    def _brightdata_retry_delay(self, response: httpx.Response | None, attempt: int) -> float:
-        if response is not None:
-            retry_after = response.headers.get("Retry-After")
-            if retry_after:
-                try:
-                    return min(30.0, max(0.0, float(retry_after)))
-                except ValueError:
-                    pass
-        return min(30.0, self.brightdata_retry_backoff * (2 ** (attempt - 1)))
-
-    async def _search_apify(
-        self,
-        provider: SearchProvider,
-        queries: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        queries_string = "\n".join(str(query["query"]) for query in queries)
-        payload = {
-            "queries": queries_string,
-            "maxPagesPerQuery": 1,
-            "resultsPerPage": settings.serpapi_results_per_query,
-            "countryCode": "in",
-            "languageCode": "en",
-            "mobileResults": False,
-            "maxConcurrency": 10,
-        }
-        results: list[dict[str, Any]] = []
-        errors: list[dict[str, str]] = []
-
-        try:
-            async with httpx.AsyncClient(timeout=self.apify_timeout) as client:
-                response = await client.post(
-                    provider.base_url,
-                    headers={"Authorization": f"Bearer {provider.api_key}"},
-                    json=payload,
-                )
-        except httpx.TimeoutException:
-            return {
-                "provider": provider.name,
-                "results": [],
-                "errors": [self._provider_error(provider, "all", "timeout", "Apify request timed out")],
-                "failed": True,
-            }
-        except httpx.HTTPError as exc:
-            return {
-                "provider": provider.name,
-                "results": [],
-                "errors": [self._provider_error(provider, "all", "http_error", str(exc))],
-                "failed": True,
-            }
-
-        if response.status_code not in (200, 201):
-            return {
-                "provider": provider.name,
-                "results": [],
-                "errors": [
-                    self._provider_error(
-                        provider,
-                        "all",
-                        response.status_code,
-                        f"Apify returned status code {response.status_code}",
-                    )
-                ],
-                "failed": True,
-            }
-
-        items = self._decode_response(response)
-        if not isinstance(items, list):
-            return {
-                "provider": provider.name,
-                "results": [],
-                "errors": [
-                    self._provider_error(
-                        provider,
-                        "all",
-                        "invalid_response",
-                        "Expected list of dataset items from Apify",
-                    )
-                ],
-                "failed": True,
-            }
-
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            query_term = self._apify_query_term(item)
-            if not query_term:
-                continue
-            matched_query = next((query for query in queries if query.get("query") == query_term), None)
-            if not matched_query:
-                matched_query = next((query for query in queries if query_term in str(query.get("query"))), None)
-            if not matched_query:
-                continue
-            results.extend(
-                self._normalize_organic_results(
-                    query=matched_query,
-                    organic_results=item.get("organicResults") or item.get("organic_results") or [],
-                    provider_name=provider.name,
-                    query_text=query_term,
-                )
-            )
-
-        return {"provider": provider.name, "results": results, "errors": errors, "failed": bool(errors)}
-
     def _build_search_response(
         self,
         *,
@@ -805,10 +489,7 @@ class GoogleDorkingService:
             "ready_for_complex": False,
             "complex_dorking": {
                 "status": "skipped",
-                "reason": (
-                    "Configure SERPAPI_KEY, BRIGHTDATA_SERP_API_KEY, or APIFY_API_TOKEN "
-                    "before Google Dorking can run."
-                ),
+                "reason": "Configure SERPAPI_KEY before Google Dorking can run.",
             },
             "provider_metadata": {
                 "configured_providers": [],
@@ -876,18 +557,6 @@ class GoogleDorkingService:
             if extracted:
                 return extracted
         return []
-
-    def _brightdata_target_url(self, query_text: str) -> str:
-        target_template = settings.brightdata_serp_target_url
-        target = (
-            target_template.format(query=quote_plus(query_text))
-            if "{query}" in target_template
-            else target_template
-        )
-        if "brd_json=" in target:
-            return target
-        separator = "&" if "?" in target else "?"
-        return f"{target}{separator}brd_json=1"
 
     @staticmethod
     def _decode_response(response: httpx.Response) -> Any | None:
@@ -966,27 +635,6 @@ class GoogleDorkingService:
         )
         return error
 
-    @classmethod
-    def _response_error_detail(cls, response: httpx.Response) -> str | None:
-        payload = cls._decode_response(response)
-        detail = cls._payload_error_message(payload)
-        if detail is None and isinstance(payload, dict):
-            candidate = payload.get("message") or payload.get("detail") or payload.get("status")
-            detail = cls._stringify_error(candidate) if candidate else None
-        if detail is None:
-            detail = response.text.strip() or None
-        if not detail:
-            return None
-        return re.sub(r"\s+", " ", detail).strip()[:300]
-
-    @staticmethod
-    def _response_request_id(response: httpx.Response) -> str | None:
-        for header in ("x-request-id", "x-brd-request-id", "x-correlation-id"):
-            value = response.headers.get(header)
-            if value:
-                return value
-        return None
-
     @staticmethod
     def _stringify_error(value: Any) -> str:
         if isinstance(value, (dict, list)):
@@ -994,20 +642,8 @@ class GoogleDorkingService:
         return str(value)
 
     @staticmethod
-    def _apify_query_term(item: dict[str, Any]) -> str | None:
-        search_query = item.get("searchQuery") or item.get("query")
-        if isinstance(search_query, dict):
-            term = search_query.get("term") or search_query.get("query")
-            return str(term) if term else None
-        return str(search_query) if search_query else None
-
-    @staticmethod
     def _provider_env_name(provider_name: str) -> str:
-        return {
-            "serpapi": "SERPAPI_KEY",
-            "brightdata": "BRIGHTDATA_SERP_API_KEY",
-            "apify": "APIFY_API_TOKEN",
-        }.get(provider_name, provider_name)
+        return "SERPAPI_KEY" if provider_name == "serpapi" else provider_name
 
     @staticmethod
     def _is_no_results_error(message: str) -> bool:

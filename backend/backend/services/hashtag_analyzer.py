@@ -1,52 +1,34 @@
-"""Hashtag reverse lookup and connection analysis."""
+"""Offline hashtag summary over evidence already collected by the investigation."""
 
 from typing import Any
 
-import httpx
-
-from backend.core.config import settings
-
 
 class HashtagAnalyzer:
-    """Find related accounts from hashtags using Twitter/X recent search when configured."""
-
-    def __init__(self) -> None:
-        self.twitter_bearer_token = settings.twitter_bearer_token
+    """Describe observed hashtags without issuing another provider request."""
 
     async def analyze_hashtags(self, hashtags: list[str], username: str) -> dict[str, Any]:
-        results: dict[str, Any] = {}
-        for tag in hashtags[:5]:
-            tag_results = await self._search_hashtag_twitter(tag)
-            results[tag] = {
-                "platform": "twitter",
-                "recent_users": tag_results.get("users", []),
-                "total_tweets": tag_results.get("count", 0),
-                "status": tag_results.get("status", "completed"),
-                "error": tag_results.get("error"),
+        observed = list(dict.fromkeys(tag.strip().lstrip("#") for tag in hashtags if tag.strip()))
+        results: dict[str, Any] = {
+            tag: {
+                "platform": "collected_evidence",
+                "recent_users": [],
+                "total_tweets": 0,
+                "status": "local_evidence_only",
+                "reason": (
+                    "No automatic hashtag search was run; X collection is routed "
+                    "only through the selected Apify actor."
+                ),
             }
+            for tag in observed
+        }
         return {
             "original_username": username,
-            "hashtags_analyzed": hashtags,
-            "platforms_checked": ["twitter"],
+            "hashtags_analyzed": observed,
+            "platforms_checked": [],
+            "network_calls": 0,
             "findings": results,
             "potential_connections": self._extract_potential_connections(results),
         }
-
-    async def _search_hashtag_twitter(self, hashtag: str) -> dict[str, Any]:
-        if not self.twitter_bearer_token:
-            return {"status": "not_configured", "error": "TWITTER_BEARER_TOKEN not configured", "users": [], "count": 0}
-        url = "https://api.twitter.com/2/tweets/search/recent"
-        params = {"query": f"#{hashtag} -is:retweet", "max_results": 10, "tweet.fields": "author_id,created_at"}
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(url, headers={"Authorization": f"Bearer {self.twitter_bearer_token}"}, params=params)
-            if response.status_code == 200:
-                data = response.json()
-                users = sorted({tweet.get("author_id") for tweet in data.get("data", []) if tweet.get("author_id")})
-                return {"status": "completed", "users": users, "count": data.get("meta", {}).get("result_count", 0)}
-            return {"status": "error", "error": f"Twitter API returned {response.status_code}", "users": [], "count": 0}
-        except httpx.HTTPError as exc:
-            return {"status": "error", "error": str(exc), "users": [], "count": 0}
 
     def _extract_potential_connections(self, results: dict[str, Any]) -> list[dict[str, Any]]:
         user_frequency: dict[str, dict[str, Any]] = {}

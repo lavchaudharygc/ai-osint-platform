@@ -1,499 +1,273 @@
-# 🔍 AI-OSINT Investigation Engine
+# AI-OSINT Investigation Engine
 
-> **AI-powered Open Source Intelligence platform for cross-platform identity correlation, social media profiling, and digital footprint analysis.**
-> Built for authorized Law Enforcement and Cybersecurity investigations.
+An API and browser interface for authorized public-data investigations, cross-platform username discovery, identity-correlation support, and evidence-oriented reporting.
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![OSINT](https://img.shields.io/badge/Category-OSINT-red.svg)](https://en.wikipedia.org/wiki/Open-source_intelligence)
-[![Status](https://img.shields.io/badge/Status-Active%20Development-orange.svg)]()
+The current architecture is quota-aware: every external capability has one approved provider, automatic cross-provider fallback is disabled, investigations are cached, and paid-provider work is bounded per request.
 
----
+## Provider Architecture
 
-## 📋 Table of Contents
+| Capability | Approved provider |
+|---|---|
+| Google dorking/search | SerpAPI |
+| General public web scraping | Bright Data Web Unlocker |
+| Instagram profiles and posts | Existing Apify Instagram Actors |
+| X/Twitter profiles | Existing Apify X Actor |
+| LinkedIn public profiles | Bright Data Web Unlocker |
+| Facebook public Pages and posts | Existing Apify Facebook Actors |
+| Reddit public data | Existing Apify Reddit Actor |
+| Telegram | Existing public `t.me` and optional read-only MTProto collectors |
+| TikTok public profiles and recent videos | Configurable Apify TikTok Actor |
+| GitHub profiles and repositories | GitHub REST API |
+| Email discovery and verification | Hunter.io |
+| Phone lookup | Twilio Lookup |
+| Structured extraction from explicit URLs | Firecrawl Extract API |
 
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Data Extraction Specification](#data-extraction-specification)
-- [AI Training Datasets](#ai-training-datasets)
-- [Installation](#installation)
-- [Usage](#usage)
-- [API Integration](#api-integration)
-- [UI Enhancement Ideas](#ui-enhancement-ideas)
-- [Safety & Legal Guidelines](#safety--legal-guidelines)
-- [Contributing](#contributing)
-- [License](#license)
+There is no provider loop. A SerpAPI failure does not call Bright Data or Apify; a Bright Data LinkedIn failure does not call an Apify LinkedIn Actor; and a social Actor failure is returned without trying another vendor.
 
----
+`GET /api/v1/providers/status` exposes the active routing and configuration booleans without returning credentials.
 
-## 🎯 Overview
+## Main Capabilities
 
-The **AI-OSINT Investigation Engine** is a comprehensive platform designed to:
+- Public profile discovery across common social, professional, developer, and regional platforms.
+- Capability-routed collection with per-provider provenance and structured partial failures.
+- Instagram, X/Twitter, Reddit, Facebook, and TikTok collection through bounded Apify Actor runs.
+- LinkedIn and general web-page retrieval through Bright Data Web Unlocker.
+- SerpAPI-only Google dorking with exact-username filtering and category grouping.
+- GitHub REST profile and repository enrichment.
+- Hunter.io email discovery, finding, and verification.
+- Twilio phone formatting, validation, and optional intelligence packages.
+- Firecrawl structured extraction from small explicit URL sets.
+- Existing safe Telegram public lookup and optional authorized read-only MTProto preview.
+- Cross-platform correlation assistance, hashtag analysis, local database matching, risk review, and investigation reports.
+- Process-local TTL/LRU caching, concurrent-request deduplication, bounded history, and a per-investigation provider-call budget (including configured AI calls).
 
-- **Scrape and analyze** public Instagram profiles for investigative intelligence
-- **Correlate identities** across multiple social platforms using AI-powered matching
-- **Detect impersonators** and fake celebrity accounts
-- **Extract enriched data** including bios, posts, hashtags, contacts, and cross-platform links
-- **Generate official investigation reports** with confidence scoring
+Same usernames on different platforms are evidence candidates, not proof that accounts belong to the same person. Corroborate with independent public evidence and human review.
 
-### Key Capabilities
+## Quota Protection
 
-| Capability | Description |
-|-----------|-------------|
-| 🔍 **Profile Scraping** | Extract 38+ data points from Instagram profiles |
-| 🤖 **AI Identity Matching** | Cross-platform correlation with confidence scoring |
-| 🏷️ **Hashtag Analysis** | Link accounts via distinctive personal-brand hashtags |
-| 🎭 **Impersonator Detection** | Identify fake accounts using structural red flags |
-| 📊 **Threat Scoring** | Generate risk scores and investigation reports |
-| 📱 **Contact Enrichment** | Discover phone numbers via LinkedIn + SignalHire integration |
+Default policy:
 
----
-
-## ✨ Features
-
-### 1. Instagram Data Extraction (38+ Fields)
-
-Extracts comprehensive profile intelligence including:
-
-- **Basic Identity**: Username, Full Name, Bio, Profile Picture, Verified Status
-- **Engagement Metrics**: Followers, Following, Post Count, Account Type
-- **Contact Info**: Email, Phone, Address (Business accounts), External URLs
-- **Content Analysis**: Last 12 posts, captions, hashtags, timestamps, location tags
-- **Network Mapping**: Tagged users, mentioned users, comments, collab posts
-- **Account History**: Creation date, former usernames, active ads, country/region
-- **Cross-Platform Links**: Linked Facebook, YouTube, GitHub, LinkedIn references
-
-> 📄 **Full specification**: See [`Instagram_OSINT_DataSpec_v2.xlsx`](docs/Instagram_OSINT_DataSpec_v2.xlsx)
-
-### 2. AI-Powered Identity Correlation
-
-Trained on **36+ real-world examples** across 6 confidence tiers:
-
-| Confidence Tier | Range | Example Cases |
-|------------------|-------|---------------|
-| 🔴 **VERY HIGH** | 90-100% | Same username + cross-linked bios + matching content |
-| 🟠 **HIGH** | 75-90% | Similar username + brand anchor + bidirectional bio refs |
-| 🟡 **MEDIUM-HIGH** | 70-85% | Distinctive hashtag patterns + follower count corroboration |
-| 🟢 **MEDIUM** | 50-65% | Founder/company relationship detection |
-| 🔵 **LOW-MEDIUM** | 30-50% | Similar usernames but different demographics |
-| ⚪ **LOW** | 0-20% | No relation — coincidental name/brand overlap |
-
-#### Correlation Categories:
-
-- ✅ **Same Username → Same Person** (e.g., `arkagrawall` across IG/Twitter/GitHub/LinkedIn)
-- ⚠️ **Similar Username → Same Person** (e.g., `jatinjangir` vs `jatinjangir_`)
-- 🚫 **Similar Username → Different Person** (e.g., two different `Sumit Shah`s)
-- 🎭 **Different Username → Same Person** (e.g., `bhuvan.bam22` → `BBKiVines`)
-- 🏢 **Company vs Personal Account** (e.g., `tacsecurity` vs `trishneetarora`)
-- 👻 **Impersonator Detection** (fake `carryminati` accounts)
-- 🏷️ **Hashtag-Based Linking** (e.g., `#dutchosintguy` personal brand)
-
-> 📄 **Training Data**: See [`Sprint_1_OSINT_AI_Training.json`](data/training/Sprint_1_OSINT_AI_Training.json) and [`Sprint_2_OSINT_Hashtags.json`](data/training/Sprint_2_OSINT_Hashtags.json)
-
-### 3. Contact Enrichment via SignalHire
-
-**Idea**: When a LinkedIn profile is discovered during investigation, use **SignalHire** browser extension/API to extract:
-
-- 📞 **Phone numbers** associated with the profile
-- 📧 **Personal/Work email addresses**
-- 💼 **Employment history** and contact details
-
-**Integration Flow:**
-```
-Instagram Profile → Cross-Platform Discovery → LinkedIn Found 
-    → SignalHire API Call → Enriched Contact Data → Investigation Report
+```env
+INVESTIGATION_CACHE_TTL_SECONDS=3600
+INVESTIGATION_CACHE_MAX_ENTRIES=128
+INVESTIGATION_MAX_PROVIDER_CALLS=24
+INVESTIGATION_MAX_DORK_QUERIES=10
+INVESTIGATION_MAX_SOCIAL_PLATFORMS=4
+INVESTIGATION_SOCIAL_RESULT_LIMIT=20
 ```
 
-> 🔑 **API Key**: Store securely in environment variables (see `.env.example`)
+The normal investigation flow prioritizes the requested platform, uses public profile probes to select candidates, and schedules at most four paid social platforms by default. It does not launch an unconditional all-platform Actor fan-out.
 
-### 4. Subject Identity Card (UI Enhancement)
+Request fields can lower the server ceilings:
 
-Proposed **Subject Identity Panel** displaying:
+- `provider_call_limit`: lower logical paid-provider budget.
+- `dork_query_limit`: lower SerpAPI query count; `0` skips search.
+- `cache_mode`: `use`, `refresh`, or `bypass`.
 
-```
-┌─────────────────────────────────────────┐
-│  [PROFILE PIC]  sumit_._shah_           │
-│               ─────────────────         │
-│  Name:        Sumit Shah                │
-│  Location:    Mumbai                    │
-│  Bio:         S/W Dev | Tech Enthusiast │
-│  Followers:   12.5k                     │
-│  Following:   870                       │
-│  Verified:    False                     │
-│  Status:      ACTIVE                    │
-│  Scraped At:  2026-06-30 05:29:29       │
-│  Case ID:     UPP-CASE-2026-088110      │
-└─────────────────────────────────────────┘
-```
+The cache is in-process and is cleared when the backend restarts. Telegram invite previews are always isolated and uncached.
 
-> 🖼️ **UI Mockup**: See [`ui_mockup_subject_identity_card.jpeg`](docs/ui_mockup_subject_identity_card.jpeg)
+## Quick Start
 
----
+Requirements:
 
-## 🏗️ Architecture
+- Python 3.10 or newer.
+- Provider accounts only for the capabilities you plan to call.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    AI-OSINT ENGINE                          │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │  Instagram  │  │   Apify     │  │   SignalHire API    │ │
-│  │  Scraper    │  │   Actors    │  │   (Contact Enrich)  │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘ │
-│         │                │                     │            │
-│         └────────────────┼─────────────────────┘            │
-│                          ▼                                  │
-│              ┌─────────────────────┐                        │
-│              │  Data Normalization │                        │
-│              │  & Feature Extraction│                       │
-│              └──────────┬──────────┘                       │
-│                         ▼                                   │
-│              ┌─────────────────────┐                        │
-│              │  AI Correlation     │                        │
-│              │  Engine (DeepSeek)  │                        │
-│              │  Confidence Scoring │                        │
-│              └──────────┬──────────┘                       │
-│                         ▼                                   │
-│              ┌─────────────────────┐                        │
-│              │  Subject Identity   │                        │
-│              │  Card + Report Gen  │                        │
-│              └─────────────────────┘                        │
-└─────────────────────────────────────────────────────────────┘
+Set up the backend:
+
+```powershell
+Set-Location backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+notepad .env
+python -m backend.main
 ```
 
----
+The code default is `127.0.0.1:8000`; the supplied `.env.example` uses port `8010` to match the frontend. Open:
 
-## 📊 Data Extraction Specification
+- API docs: `http://127.0.0.1:8010/docs`
+- Provider status: `http://127.0.0.1:8010/api/v1/providers/status`
+- Health check: `http://127.0.0.1:8010/health`
 
-### Extractable Data Points (Public Accounts)
+To start both the API and static frontend after creating `backend/.venv`:
 
-| # | Field | Source | Investigation Value |
-|---|-------|--------|---------------------|
-| 1 | Username | Profile page | Primary cross-platform identifier |
-| 2 | Full Name | Below profile pic | Real identity clue |
-| 3 | Bio Text | Below full name | Emails, phones, links, locations |
-| 4 | Profile Picture | Left side | Reverse image search, face match |
-| 5-7 | Followers/Following/Posts | Stats row | Bot detection, influence gauging |
-| 8 | External URL | Bio section | Cross-platform link discovery |
-| 9 | Verified Status | Blue tick badge | Identity confirmation |
-| 10 | Business Category | Business accounts | Profession/industry reveal |
-| 11-12 | Account Creation Date | "About This Account" | Account age = credibility signal |
-| 13-14 | Former Usernames | "About This Account" | Identity change tracking |
-| 15-18 | Last 12 Posts | Profile grid | Behavior patterns, interests, associates |
-| 19-22 | Hashtags, Timestamps, Locations, Tags | Post metadata | Activity mapping, network analysis |
-| 23-26 | Contact Info (Email/Phone/Address) | Business accounts | Direct tracing via Truecaller/police |
-| 27-38 | Pinned Posts, Collabs, Story Highlights, etc. | Various | Priority content, close associates |
+```powershell
+Set-Location ..
+python start_servers.py
+```
 
-### Legend
+The launcher serves the frontend at `http://127.0.0.1:5500` and the API at `http://127.0.0.1:8010`.
 
-| Symbol | Meaning |
-|--------|---------|
-| ✅ | Public — freely extractable via Instaloader or public HTTP |
-| ⚠️ | Partial — depends on privacy settings, login, or API limits |
-| ❌ | Private — requires court order or Meta cooperation |
+## Provider Configuration
 
-> 📄 **Full 38-point spec with extraction methods**: [`Instagram_OSINT_DataSpec_v2.xlsx`](docs/Instagram_OSINT_DataSpec_v2.xlsx)
+Copy `backend/.env.example` to `backend/.env`. Do not commit real secrets.
 
----
+Core provider secrets:
 
-## 🤖 AI Training Datasets
+```env
+# SerpAPI-only search
+SERPAPI_KEY=
 
-### Sprint 1: Cross-Platform Identity Correlation
-**File**: [`Sprint_1_OSINT_AI_Training.json`](data/training/Sprint_1_OSINT_AI_Training.json)
+# General web pages and LinkedIn
+BRIGHTDATA_WEB_API_KEY=
+BRIGHTDATA_WEB_ZONE=web_unlocker1
 
-- **15 real-world examples** (IDs 6-20)
-- Covers: Same username, similar username, different username patterns
-- Includes: Instagram → Twitter/X, LinkedIn, GitHub, YouTube, personal websites
-- **Key lesson**: Common names (e.g., "Sumit Shah") create false positives — demographics and content context are primary identifiers
+# Instagram, X/Twitter, Reddit, Facebook, and TikTok
+APIFY_API_TOKEN=
+APIFY_TIKTOK_ACTOR_ID=clockworks/tiktok-scraper
 
-### Sprint 2: Hashtag-Based Identity Linking
-**File**: [`Sprint_2_OSINT_Hashtags.json`](data/training/Sprint_2_OSINT_Hashtags.json)
+# Email
+HUNTER_API_KEY=
 
-- **21 real-world examples** (IDs 21-36)
-- Covers: Personal-brand hashtags, generic hashtag traps, impersonator detection
-- Includes: Celebrity cases (Bhuvan Bam, CarryMinati, Technical Guruji)
-- **Key lessons**:
-  - Distinctive personal-brand hashtags (`#dutchosintguy`) > generic tags (`#osint`)
-  - Bidirectional bio tagging is gold-standard for identity linking
-  - Founder/company relationships must be modeled separately from personal aliases
-  - Verified badge + follower count disparity = reliable impersonator detection
+# Phone: API key pair preferred
+TWILIO_API_KEY=
+TWILIO_API_KEY_SECRET=
+# Account SID/Auth Token are also supported for local testing
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
 
-### Training Data Structure
+# Structured extraction
+FIRECRAWL_API_KEY=
+
+# GitHub REST
+GITHUB_TOKEN=
+```
+
+The complete URLs, timeouts, Actor IDs, data-package settings, and limits are in [`backend/.env.example`](backend/.env.example).
+
+### Apify Actor Defaults
+
+The approved path keeps the existing social Actors and adds a configurable TikTok Actor:
+
+| Platform | Actor |
+|---|---|
+| Instagram profile | `apify/instagram-profile-scraper` |
+| Instagram posts | `apify/instagram-scraper` |
+| X/Twitter profile | `apidojo/twitter-profile-scraper` |
+| X/Twitter explicit search | `apidojo/tweet-scraper` |
+| Reddit | `automation-lab/reddit-scraper` |
+| Facebook Pages | `apify/facebook-pages-scraper` |
+| Facebook posts | `apify/facebook-posts-scraper` |
+| TikTok | `clockworks/tiktok-scraper`, configurable with `APIFY_TIKTOK_ACTOR_ID` |
+
+LinkedIn is not part of the automatic Apify path; it uses Bright Data.
+
+## Run an Investigation
+
+`POST /api/v1/investigation/username`
+
+Minimal request:
 
 ```json
 {
-  "example_id": 21,
-  "category": "DIFFERENT_USERNAME_SAME_PERSON",
-  "confidence_tier": "HIGH (90-100%)",
-  "input": {
-    "primary_profile": { /* Instagram profile data */ },
-    "discovered_profiles": [ /* Cross-platform matches */ ]
-  },
-  "expected_output": {
-    "platform_matches": [ /* Confidence scores & reasons */ ],
-    "consolidated_identity": { /* Unified profile */ }
-  }
+  "username": "target_user",
+  "platform": "instagram",
+  "case_id": "CASE-001",
+  "correlation_depth": 2,
+  "dork_query_limit": 5,
+  "provider_call_limit": 12,
+  "cache_mode": "use"
 }
 ```
 
----
+Supported primary platforms are `instagram`, `twitter`, `telegram`, `linkedin`, `reddit`, `facebook`, `tiktok`, and `github`.
 
-## 🚀 Installation
+Optional specialist inputs are explicit:
 
-### Prerequisites
-
-```bash
-# Python 3.10+
-python --version
-
-# Install dependencies
-pip install -r requirements.txt
+```json
+{
+  "username": "target_user",
+  "platform": "github",
+  "email": "person@example.com",
+  "phone_number": "+14155552671",
+  "company_domain": "example.com",
+  "web_urls": ["https://example.com/about"],
+  "extract_urls": ["https://example.com/team"],
+  "extraction_prompt": "Extract public names and roles.",
+  "dork_query_limit": 3,
+  "provider_call_limit": 12,
+  "cache_mode": "refresh"
+}
 ```
 
-### Core Dependencies
+The response exposes:
 
-```txt
-fastapi>=0.111
-pydantic-settings>=2.2
-httpx>=0.27
-instaloader>=4.13
-telethon>=1.44,<2
+- `platform_data`: selected primary result.
+- `cross_platform_matches`: lightweight public URL-probe candidates.
+- `provider_results.social`: provider-neutral social results.
+- `provider_results.specialized`: GitHub, Hunter, Twilio, Bright Data web, and Firecrawl outputs.
+- `provider_results.search`: SerpAPI result status and metadata.
+- `execution_metadata`: cache and provider-call budget state.
+- `dorking_results`: normalized SerpAPI search results.
+- `apify_social_results`: backward-compatible envelope with `mode: "capability_routing"`.
+
+## Explicit Provider Routes
+
+Use these routes when a full investigation is unnecessary:
+
+| Method and path | Capability |
+|---|---|
+| `GET /api/v1/providers/status` | Routing and configuration status |
+| `POST /api/v1/providers/search/username` | SerpAPI username dorking |
+| `POST /api/v1/providers/web/scrape` | Bright Data public-page scrape |
+| `POST /api/v1/providers/web/extract` | Firecrawl structured extraction |
+| `POST /api/v1/providers/email/discover` | Hunter domain search |
+| `POST /api/v1/providers/email/find` | Hunter email finder |
+| `POST /api/v1/providers/email/verify` | Hunter email verification |
+| `POST /api/v1/providers/phone/lookup` | Twilio Lookup |
+| `POST /api/v1/providers/github/profile` | GitHub profile and repositories |
+| `POST /api/v1/providers/linkedin/profile` | Bright Data LinkedIn public page |
+| `POST /api/v1/providers/tiktok/profile` | Configured Apify TikTok Actor |
+
+Targeted Apify routes remain under `/api/v1/apify/...` for X, Reddit, and Facebook; each call can create a separately billable Actor run. LinkedIn is exposed only through the approved Bright Data endpoint.
+
+## Telegram Privacy Guard
+
+Telegram remains on its existing collectors. Public `t.me` metadata is the default; an authorized MTProto session can optionally resolve public usernames and preview invite links in read-only mode.
+
+Invite links must be sent with `platform: "telegram"`. The backend redacts the hash, bypasses cache, runs no external fan-out, and skips cross-platform search, databases, AI, and reporting. It never joins the chat or reads messages.
+
+See [`backend/docs/telegram_authorized_lookup.md`](backend/docs/telegram_authorized_lookup.md).
+
+## Repository Layout
+
+```text
+public-osint/
+|-- backend/
+|   |-- backend/
+|   |   |-- api/endpoints/       FastAPI routes
+|   |   |-- services/            provider adapters and analysis services
+|   |   |-- schemas/             request/response validation
+|   |   `-- database/            ORM, SQL, and migrations
+|   |-- docs/                     backend integration notes
+|   |-- tests/                    backend test suite
+|   `-- .env.example             copy-only configuration template
+|-- frontend/                    static browser UI
+|-- docs/                        project data and research artifacts
+`-- start_servers.py             local backend/frontend launcher
 ```
 
-### Environment Setup
+## Tests
 
-```bash
-cp .env.example .env
+From `backend`:
 
-# Edit .env with your credentials:
-# APIFY_API_TOKEN=your_apify_token_here
-# SIGNALHIRE_API_KEY=your_signalhire_key_here
-# RAPIDAPI_KEY=your_rapidapi_key_here
+```powershell
+python -m pytest
 ```
 
----
+Provider adapter tests use mocked HTTP transports and should not consume external API quota.
 
-## 💻 Usage
+## Documentation
 
-### Basic Profile Scan
+- [API reference](backend/API_DOCUMENTATION.md)
+- [Architecture](backend/ARCHITECTURE.md)
+- [Mermaid architecture diagram](backend/ARCHITECTURE_DIAGRAM.mmd)
+- [Local running guide](backend/RUNNING.md)
+- [SerpAPI-only dorking setup](backend/docs/google_dorking_setup.md)
+- [Telegram authorized lookup](backend/docs/telegram_authorized_lookup.md)
 
-```python
-from osint_engine import InstagramScanner, IdentityCorrelator
+## Responsible Use
 
-# Initialize scanner
-scanner = InstagramScanner(
-    apify_token="your_token",
-    rate_limit_delay=3  # seconds between requests
-)
-
-# Scan target profile
-profile = scanner.scan_profile("target_username")
-
-# Correlate across platforms
-correlator = IdentityCorrelator(training_data="data/training/")
-results = correlator.correlate(profile)
-
-# Generate report
-report = correlator.generate_report(results)
-report.export_pdf("investigation_report.pdf")
-```
-
-### One-click cross-platform investigation
-
-One normal username request starts the complete collection workflow. The selected
-`platform` remains the primary profile used for normalization and correlation,
-but it does not limit collection to that platform.
-
-```bash
-curl -X POST http://127.0.0.1:8010/api/v1/investigation/username \
-  -H "Content-Type: application/json" \
-  -d '{"username":"target_user","platform":"instagram","case_id":"CASE-001","correlation_depth":2}'
-```
-
-For a normal username, the backend launches these nine Apify Actor runs
-concurrently: Instagram profile, Instagram posts, Twitter profile and replies,
-Twitter search, Reddit, LinkedIn profile/company, LinkedIn posts, Facebook Pages,
-and Facebook posts. The safe Telegram public/authorized lookup also starts in
-the same workflow. Results are returned under `apify_social_results`. Its
-`actors` object contains nine stable per-Actor entries, `summary` counts their
-outcomes, `telegram` contains the separate Telegram result, and `mode` is
-`automatic_all_actors` for normal usernames. Actor entries include available
-run/dataset provenance. One Actor failure is reported as a partial failure and
-does not discard successful results from the other collectors.
-
-Each Actor can create a separate Apify charge or require a paid Actor
-subscription, and the combined request can take multiple minutes. Apify-backed
-Google dorking uses additional capacity beyond these nine social Actor runs. A matching
-username on another platform is only an identity candidate; corroborate it with
-bios, links, content, location, and other evidence before treating it as the
-same person.
-
-Telegram invite links are the exception. They use `mode: "privacy_guard"`, are
-handled as isolated, read-only previews, and are never sent to Apify,
-cross-platform search, dorking, AI, databases, or reporting providers.
-
-### Using an explicit Apify Actor endpoint
-
-The explicit Actor endpoints remain available when only one targeted collector
-is needed. Calling one of these routes is separate from the one-click workflow
-and can incur an additional Actor run.
-
-```bash
-curl -X POST http://127.0.0.1:8010/api/v1/apify/twitter/profile \
-  -H "Content-Type: application/json" \
-  -d '{"username":"target_user","max_items":50,"get_replies":true}'
-```
-
-### Rate Limiting
-
-> ⚠️ **Max ~200 requests/hour** on Instagram. Add random delays of 2-5 seconds between requests to avoid blocks.
-
----
-
-## 🔌 API Integration
-
-### Supported APIs & Tools
-
-| Service | Purpose | Documentation |
-|---------|---------|---------------|
-| **Apify** | Instagram, Twitter, Reddit, LinkedIn, and Facebook public-data actors | [apify.com](https://apify.com) |
-| **SignalHire** | Contact enrichment (phone/email from LinkedIn) | [signalhire.com](https://signalhire.com) |
-| **RapidAPI** | Fallback Instagram scraper | [rapidapi.com](https://rapidapi.com) |
-| **Instaloader** | Primary Python library for IG extraction | [instaloader.github.io](https://instaloader.github.io) |
-
-### Apify Actor Recommendations
-
-| Actor | Use Case |
-|-------|----------|
-| `apify/instagram-profile-scraper` | Instagram profile metadata extraction |
-| `apify/instagram-scraper` | Instagram post and reel collection |
-| `apify/instagram-hashtag-scraper` | Hashtag-based post discovery |
-| `apidojo/twitter-profile-scraper` | Twitter profile tweets and their replies |
-| `apidojo/tweet-scraper` | Twitter/X post and advanced-query search |
-| `automation-lab/reddit-scraper` | Reddit posts, comments, user history, and search |
-| `bebity/linkedin-premium-actor` | LinkedIn profiles and companies in bulk |
-| `apimaestro/linkedin-posts-search-scraper-no-cookies` | LinkedIn public post search |
-| `apify/facebook-pages-scraper` | Facebook public Page metadata |
-| `apify/facebook-posts-scraper` | Facebook public Page posts |
-| `coderx/instagram-profile-scraper-bio-posts` | Bio + posts combined scrape |
-
----
-
-## 🎨 UI Enhancement Ideas
-
-### Subject Identity Card Panel
-
-Proposed dashboard component showing consolidated subject intelligence:
-
-```
-┌────────────────────────────────────────────────────┐
-│ CASE: UPP-CASE-2026-088110    [Export PDF] [🟢]  │
-├────────────────────────────────────────────────────┤
-│  [📷]  @sumit_._shah_              Score: 65%    │
-│  ───────────────────────────────────────────────   │
-│  📛 Name:        Sumit Shah                        │
-│  📍 Location:    Mumbai                            │
-│  💼 Bio:         S/W Dev | Tech Enthusiast         │
-│  👥 Followers:   12.5k    Following: 870           │
-│  ✅ Verified:    False                             │
-│  🟢 Status:      ACTIVE                            │
-│  🕐 Scraped:     2026-06-30 05:29:29               │
-│  ───────────────────────────────────────────────   │
-│  CROSS-PLATFORM PRESENCE:                          │
-│  [Instagram 🟢] [Twitter 🔴] [LinkedIn 🟡]        │
-│  [Telegram 🟢]  [GitHub 🔴]   [Reddit 🔴]          │
-└────────────────────────────────────────────────────┘
-```
-
-### Features to Implement
-
-- [ ] **Real-time correlation score** with animated gauge
-- [ ] **Platform presence matrix** with HTTP status indicators
-- [ ] **One-click PDF export** for official investigation reports
-- [ ] **Timeline view** of account activity and post history
-- [ ] **Network graph** of tagged/mentioned user relationships
-- [ ] **Dark mode** optimized for extended investigation sessions
-
-> 🖼️ **Mockup Reference**: [`WhatsApp_Image_2026-06-30_UI_Mockup.jpeg`](docs/ui_mockup.jpeg)
-
----
-
-## ⚖️ Safety & Legal Guidelines
-
-### ⚠️ CRITICAL RULES
-
-1. **Authorized Use Only** — This tool is for authorized Law Enforcement and licensed investigators
-2. **Case ID Logging** — Every extraction must be logged with a unique case ID
-3. **Rate Limiting** — Never exceed 200 requests/hour. Use random delays (2-5s)
-4. **Private Accounts** — Most data returns empty/blocked. Respect privacy settings
-5. **No Illegal Access** — Do NOT attempt to access DMs, IPs, or backend Meta data
-6. **Court Orders** — For private data (DMs, device info), proper legal process is required
-
-### Legal Notice
-
-> This tool is for **authorized Law Enforcement use only**. All extractions must be logged with case ID. Unauthorized use may violate platform Terms of Service and applicable privacy laws.
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Please follow these guidelines:
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
-
-### Contribution Areas
-
-- 🌍 Additional platform scrapers (TikTok, Telegram, Discord)
-- 🤖 More AI training examples for edge cases
-- 🎨 UI/UX improvements and dashboard components
-- 📚 Documentation and use-case guides
-- 🔒 Security enhancements and anonymization features
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
-
-> **Disclaimer**: This tool is intended for legal, authorized investigations only. Users are responsible for complying with all applicable laws and platform terms of service.
-
----
-
-## 📎 External Documentation
-
-Additional project documentation and research files:
-
-- 📄 [Google Doc 1 — Project Research & Notes](https://drive.google.com/file/d/1maRJUrxyB2W7unQ0_zSlSy-h17-QZ6mR/view?usp=drive_link)
-- 📄 [Google Doc 2 — Additional Specifications](https://drive.google.com/file/d/1A5RJ_E7vyhq2eB8yfTU3CHlWQkrFVTWt/view?usp=drive_link)
-
-## 🙏 Acknowledgments
-
-- **Apify** for reliable social media scraping infrastructure
-- **SignalHire** for contact enrichment capabilities
-- **Instaloader** community for Instagram extraction tools
-- All contributors to the OSINT and cybersecurity community
-
----
-
-## 📬 Contact
-
-For questions, suggestions, or collaboration:
-
-- 📧 Email: [sumitshahpvt@gmail.com](mailto:sumitshahpvt@gmail.com)
-- 📸 Instagram: [@sumit_._shah_](https://instagram.com/sumit_._shah_)
-- 💼 LinkedIn: [Sumit Shah](https://www.linkedin.com/in/sumit-shah-934386392/)
-
----
-
-<div align="center">
-
-**⭐ Star this repo if you find it useful! ⭐**
-
-*Built with ❤️ for the OSINT community*
-
-</div>
+Use this project only for lawful, authorized investigations. Collect only public or otherwise authorized data, respect platform terms and privacy controls, protect provider credentials, keep case-level audit records, and require human review before identity attribution or enforcement action.

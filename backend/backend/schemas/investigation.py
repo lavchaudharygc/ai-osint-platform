@@ -1,9 +1,11 @@
 """Pydantic models for investigation workflows."""
 
 from datetime import datetime
+import ipaddress
 from typing import Any, Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 SupportedPlatform = Literal[
     "instagram",
@@ -12,6 +14,8 @@ SupportedPlatform = Literal[
     "linkedin",
     "reddit",
     "facebook",
+    "tiktok",
+    "github",
 ]
 
 
@@ -30,6 +34,80 @@ class UsernameInvestigationRequest(BaseModel):
     case_id: str | None = Field(default=None, max_length=50)
     correlation_depth: int = Field(default=2, ge=1, le=5)
     filter_hitek: bool = Field(default=True)
+    email: str | None = Field(
+        default=None,
+        max_length=320,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+        description="Optional email to verify through Hunter.io.",
+    )
+    phone_number: str | None = Field(
+        default=None,
+        min_length=5,
+        max_length=32,
+        description="Optional phone number to enrich through Twilio Lookup.",
+    )
+    company_domain: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=253,
+        description="Optional company domain used for Hunter.io email discovery.",
+    )
+    web_urls: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+        description="Explicit URLs to fetch through Bright Data Web Unlocker.",
+    )
+    extract_urls: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+        description="Explicit URLs to extract through Firecrawl.",
+    )
+    extraction_prompt: str | None = Field(
+        default=None,
+        max_length=2_000,
+        description="Optional structured-extraction instruction for Firecrawl.",
+    )
+    dork_query_limit: int | None = Field(
+        default=None,
+        ge=0,
+        le=50,
+        description="Optional lower per-request SerpAPI query limit.",
+    )
+    provider_call_limit: int | None = Field(
+        default=None,
+        ge=1,
+        le=50,
+        description="Optional lower ceiling for paid provider calls in this request.",
+    )
+    cache_mode: Literal["use", "refresh", "bypass"] = Field(
+        default="use",
+        description="Use cached results, force a refresh, or bypass cache storage entirely.",
+    )
+
+    @field_validator("web_urls", "extract_urls")
+    @classmethod
+    def validate_external_urls(cls, values: list[str]) -> list[str]:
+        """Allow only unique public HTTP(S) targets for third-party fetchers."""
+        normalized: list[str] = []
+        for value in values:
+            candidate = value.strip()
+            parsed = urlparse(candidate)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise ValueError("provider target URLs must use http:// or https://")
+            if parsed.username or parsed.password:
+                raise ValueError("provider target URLs cannot contain credentials")
+            hostname = parsed.hostname.casefold()
+            if hostname == "localhost" or hostname.endswith(".localhost"):
+                raise ValueError("provider target URLs must use a public hostname")
+            try:
+                address = ipaddress.ip_address(hostname)
+            except ValueError:
+                address = None
+            if address and not address.is_global:
+                raise ValueError("provider target URLs cannot use private or reserved IPs")
+            if candidate not in normalized:
+                normalized.append(candidate)
+        return normalized
 
 
 class InvestigationResponse(BaseModel):
@@ -47,12 +125,22 @@ class InvestigationResponse(BaseModel):
     intelligence_report: dict[str, Any] | None = None
     reverse_lookup_results: dict[str, Any] | None = None
     scraped_data: dict[str, Any] | None = None
+    provider_results: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Capability-routed results from SerpAPI, Bright Data, Apify, Hunter.io, "
+            "Twilio Lookup, Firecrawl, GitHub, and the unchanged Telegram collectors."
+        ),
+    )
+    execution_metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Cache and provider-call budget metadata for this investigation.",
+    )
     apify_social_results: dict[str, Any] | None = Field(
         default=None,
         description=(
-            "Automatic one-click results from every configured Apify social Actor, "
-            "plus the concurrent Telegram username lookup. Same-handle results are "
-            "unverified identity candidates."
+            "Backward-compatible social collection envelope. New integrations should "
+            "read provider_results, which is provider-neutral."
         ),
     )
     timestamp: datetime

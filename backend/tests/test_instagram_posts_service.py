@@ -251,6 +251,22 @@ class InstagramPostsServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["posts"][0]["owner_username"], "target_user")
         self.assertEqual(result["posts"][0]["media_type"], "image")
 
+    async def test_fetch_posts_honors_bounded_result_limit(self) -> None:
+        response = httpx.Response(201, json=[])
+        client = FakeAsyncClient(response)
+        self.service.token = "apify-test-token"
+
+        with patch(
+            "backend.services.instagram_posts_service.httpx.AsyncClient",
+            return_value=client,
+        ):
+            await self.service.fetch_posts("target_user", max_items=7)
+
+        self.assertEqual(client.calls[0]["json"]["resultsLimit"], 7)
+
+        with self.assertRaises(ValueError):
+            await self.service.fetch_posts("target_user", max_items=51)
+
 
 if __name__ == "__main__":
     unittest.main()

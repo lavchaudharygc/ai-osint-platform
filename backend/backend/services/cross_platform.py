@@ -19,6 +19,7 @@ class CrossPlatformSearchService:
         "linkedin": "https://www.linkedin.com/in/{username}/",
         "reddit": "https://www.reddit.com/user/{username}",
         "facebook": "https://www.facebook.com/{username}/",
+        "tiktok": "https://www.tiktok.com/@{username}",
         "github": "https://github.com/{username}",
         "youtube": "https://www.youtube.com/@{username}",
         "pinterest": "https://www.pinterest.com/{username}/",

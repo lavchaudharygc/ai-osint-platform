@@ -36,7 +36,6 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
     host: str = Field(default="127.0.0.1", validation_alias="HOST")
     port: int = Field(default=8000, validation_alias="PORT")
-    twitter_bearer_token: str | None = Field(default=None, validation_alias="TWITTER_BEARER_TOKEN")
     deepseek_api_key: str | None = Field(default=None, validation_alias="DEEPSEEK_API_KEY")
     deepseek_api_url: str = Field(default="https://api.deepseek.com/v1/chat/completions", validation_alias="DEEPSEEK_API_URL")
     deepseek_model: str = Field(default="deepseek-chat", validation_alias="DEEPSEEK_MODEL")
@@ -77,6 +76,10 @@ class Settings(BaseSettings):
         default="apify/facebook-posts-scraper",
         validation_alias="APIFY_FACEBOOK_POSTS_ACTOR_ID",
     )
+    apify_tiktok_actor_id: str = Field(
+        default="clockworks/tiktok-scraper",
+        validation_alias="APIFY_TIKTOK_ACTOR_ID",
+    )
     flashapi_host: str = Field(default="flashapi1.p.rapidapi.com", validation_alias="FLASHAPI_HOST")
     flashapi_base_url: str = Field(default="https://flashapi1.p.rapidapi.com", validation_alias="FLASHAPI_BASE_URL")
     flashapi_endpoint_path: str = Field(default="ig/info_username/", validation_alias="FLASHAPI_ENDPOINT_PATH")
@@ -93,16 +96,161 @@ class Settings(BaseSettings):
     serpapi_base_url: str = Field(default="https://serpapi.com/search.json", validation_alias="SERPAPI_BASE_URL")
     serpapi_timeout_seconds: float = Field(default=35.0, validation_alias="SERPAPI_TIMEOUT_SECONDS")
     serpapi_results_per_query: int = Field(default=5, validation_alias="SERPAPI_RESULTS_PER_QUERY")
-    brightdata_serp_api_key: str | None = Field(default=None, validation_alias="BRIGHTDATA_SERP_API_KEY")
-    brightdata_serp_base_url: str = Field(default="https://api.brightdata.com/request", validation_alias="BRIGHTDATA_SERP_BASE_URL")
-    brightdata_serp_zone: str = Field(default="serp_api1", validation_alias="BRIGHTDATA_SERP_ZONE")
-    brightdata_serp_target_url: str = Field(default="https://www.google.com/search?q={query}", validation_alias="BRIGHTDATA_SERP_TARGET_URL")
-    brightdata_serp_timeout_seconds: float = Field(default=90.0, validation_alias="BRIGHTDATA_SERP_TIMEOUT_SECONDS")
-    brightdata_serp_max_retries: int = Field(default=2, ge=0, le=5, validation_alias="BRIGHTDATA_SERP_MAX_RETRIES")
-    brightdata_serp_retry_backoff_seconds: float = Field(default=1.0, ge=0.0, le=30.0, validation_alias="BRIGHTDATA_SERP_RETRY_BACKOFF_SECONDS")
-    apify_serp_timeout_seconds: float = Field(default=120.0, validation_alias="APIFY_SERP_TIMEOUT_SECONDS")
     zerobounce_api_key: str | None = Field(default=None, validation_alias="ZEROBOUNCE_API_KEY")
     hunter_api_key: str | None = Field(default=None, validation_alias="HUNTER_API_KEY")
+    hunter_base_url: str = Field(
+        default="https://api.hunter.io/v2",
+        validation_alias="HUNTER_BASE_URL",
+    )
+    hunter_timeout_seconds: float = Field(
+        default=25.0,
+        ge=5.0,
+        le=60.0,
+        validation_alias="HUNTER_TIMEOUT_SECONDS",
+    )
+    hunter_domain_search_limit: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        validation_alias="HUNTER_DOMAIN_SEARCH_LIMIT",
+    )
+    twilio_api_key: str | None = Field(default=None, validation_alias="TWILIO_API_KEY")
+    twilio_api_key_secret: str | None = Field(
+        default=None,
+        validation_alias="TWILIO_API_KEY_SECRET",
+    )
+    twilio_account_sid: str | None = Field(
+        default=None,
+        validation_alias="TWILIO_ACCOUNT_SID",
+    )
+    twilio_auth_token: str | None = Field(
+        default=None,
+        validation_alias="TWILIO_AUTH_TOKEN",
+    )
+    twilio_lookup_base_url: str = Field(
+        default="https://lookups.twilio.com/v2",
+        validation_alias="TWILIO_LOOKUP_BASE_URL",
+    )
+    twilio_lookup_timeout_seconds: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=60.0,
+        validation_alias="TWILIO_LOOKUP_TIMEOUT_SECONDS",
+    )
+    twilio_lookup_fields: str = Field(
+        default="",
+        validation_alias="TWILIO_LOOKUP_FIELDS",
+    )
+    firecrawl_api_key: str | None = Field(default=None, validation_alias="FIRECRAWL_API_KEY")
+    firecrawl_base_url: str = Field(
+        default="https://api.firecrawl.dev/v2",
+        validation_alias="FIRECRAWL_BASE_URL",
+    )
+    firecrawl_http_timeout_seconds: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=60.0,
+        validation_alias="FIRECRAWL_HTTP_TIMEOUT_SECONDS",
+    )
+    firecrawl_job_timeout_seconds: float = Field(
+        default=120.0,
+        ge=10.0,
+        le=600.0,
+        validation_alias="FIRECRAWL_JOB_TIMEOUT_SECONDS",
+    )
+    firecrawl_poll_interval_seconds: float = Field(
+        default=2.0,
+        ge=0.1,
+        le=10.0,
+        validation_alias="FIRECRAWL_POLL_INTERVAL_SECONDS",
+    )
+    firecrawl_max_urls_per_extract: int = Field(
+        default=5,
+        ge=1,
+        le=25,
+        validation_alias="FIRECRAWL_MAX_URLS_PER_EXTRACT",
+    )
+    github_token: str | None = Field(default=None, validation_alias="GITHUB_TOKEN")
+    github_api_base_url: str = Field(
+        default="https://api.github.com",
+        validation_alias="GITHUB_API_BASE_URL",
+    )
+    github_api_version: str = Field(
+        default="2026-03-10",
+        validation_alias="GITHUB_API_VERSION",
+    )
+    github_timeout_seconds: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=60.0,
+        validation_alias="GITHUB_TIMEOUT_SECONDS",
+    )
+    github_repo_limit: int = Field(
+        default=10,
+        ge=1,
+        le=30,
+        validation_alias="GITHUB_REPO_LIMIT",
+    )
+    brightdata_web_api_key: str | None = Field(
+        default=None,
+        validation_alias="BRIGHTDATA_WEB_API_KEY",
+    )
+    brightdata_web_base_url: str = Field(
+        default="https://api.brightdata.com/request",
+        validation_alias="BRIGHTDATA_WEB_BASE_URL",
+    )
+    brightdata_web_zone: str = Field(
+        default="web_unlocker1",
+        validation_alias="BRIGHTDATA_WEB_ZONE",
+    )
+    brightdata_web_timeout_seconds: float = Field(
+        default=45.0,
+        ge=5.0,
+        le=120.0,
+        validation_alias="BRIGHTDATA_WEB_TIMEOUT_SECONDS",
+    )
+    brightdata_web_max_content_chars: int = Field(
+        default=500_000,
+        ge=1_000,
+        le=5_000_000,
+        validation_alias="BRIGHTDATA_WEB_MAX_CONTENT_CHARS",
+    )
+    investigation_cache_ttl_seconds: int = Field(
+        default=3_600,
+        ge=0,
+        le=86_400,
+        validation_alias="INVESTIGATION_CACHE_TTL_SECONDS",
+    )
+    investigation_cache_max_entries: int = Field(
+        default=128,
+        ge=1,
+        le=10_000,
+        validation_alias="INVESTIGATION_CACHE_MAX_ENTRIES",
+    )
+    investigation_max_provider_calls: int = Field(
+        default=24,
+        ge=1,
+        le=100,
+        validation_alias="INVESTIGATION_MAX_PROVIDER_CALLS",
+    )
+    investigation_max_dork_queries: int = Field(
+        default=10,
+        ge=0,
+        le=50,
+        validation_alias="INVESTIGATION_MAX_DORK_QUERIES",
+    )
+    investigation_max_social_platforms: int = Field(
+        default=4,
+        ge=1,
+        le=7,
+        validation_alias="INVESTIGATION_MAX_SOCIAL_PLATFORMS",
+    )
+    investigation_social_result_limit: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        validation_alias="INVESTIGATION_SOCIAL_RESULT_LIMIT",
+    )
     hibp_api_key: str | None = Field(default=None, validation_alias="HIBP_API_KEY")
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:5500"]
 

@@ -36,89 +36,29 @@ class TwitterApifyService:
         if not self.is_configured():
             return self._not_configured(handle, self.profile_actor_id)
 
-        # Per-actor input schemas (some actors use different key names)
-        def _build_input(actor_id: str) -> dict:
-            if actor_id == "clappi/x-twitter-profile-scraper":
-                return {"profileUrls": [f"https://x.com/{handle}"]}
-            return {
-                "twitterHandles": [handle],
-                "maxItems": max_items,
-                "getReplies": get_replies,
-                "minReplyCount": min_reply_count,
-                "getAboutData": get_about_data,
-                "includeNativeRetweets": False,
-                "onlyImages": False,
-            }
-
-        actors_to_try = [
-            "clappi/x-twitter-profile-scraper",
-            self.profile_actor_id,
-            "apidojo/twitter-scraper-lite",
-            "apidojo/tweet-scraper",
-        ]
-        # Deduplicate preserving order
-        seen: set[str] = set()
-        actors_to_try = [a for a in actors_to_try if not (a in seen or seen.add(a))]
-
-        last_exc = None
-        for actor_id in actors_to_try:
-            try:
-                run = await self.client.run_actor(
-                    actor_id,
-                    _build_input(actor_id),
-                    dataset_limit=max_items,
-                )
-                if actor_id == "clappi/x-twitter-profile-scraper":
-                    res = self._normalize_clappi_profile(handle, run.items)
-                else:
-                    res = self._normalize_profile(handle, run.items, run.as_dict(include_items=False))
-                if res.get("success"):
-                    res["actor_id"] = actor_id
-                    # Clappi returns profile data only (no tweets). Fetch tweets separately.
-                    if actor_id == "clappi/x-twitter-profile-scraper" and not res.get("tweets"):
-                        try:
-                            tweet_run = await self.client.run_actor(
-                                self.tweet_actor_id,
-                                {
-                                    "twitterHandles": [handle],
-                                    "maxItems": max_items,
-                                    "sort": "Latest",
-                                    "includeSearchTerms": False,
-                                },
-                                dataset_limit=max_items,
-                            )
-                            tweets = [self._normalize_tweet(t) for t in tweet_run.items if not self._is_reply(t)]
-                            replies = [self._normalize_tweet(t) for t in tweet_run.items if self._is_reply(t)]
-                            res["tweets"] = tweets
-                            res["replies"] = replies
-                            res["recent_posts"] = tweets
-                            res["total_tweets_fetched"] = len(tweets)
-                            res["total_replies_fetched"] = len(replies)
-                            res["all_hashtags"] = sorted({
-                                h for t in tweets + replies for h in t.get("hashtags", []) if h
-                            })
-                        except ApifyClientError:
-                            pass  # Tweets are bonus; profile data is already good
-                    return res
-            except ApifyClientError as exc:
-                last_exc = exc
-                continue
-
-        if last_exc:
-            return self._error(handle, last_exc)
-
-        return {
-            "success": False,
-            "configured": True,
-            "exists": None,
-            "platform": "twitter",
-            "username": handle,
-            "status": "empty_dataset",
-            "source": "apify",
-            "actor_id": self.profile_actor_id,
-            "tweets": [],
-            "replies": [],
+        run_input = {
+            "twitterHandles": [handle],
+            "maxItems": max_items,
+            "getReplies": get_replies,
+            "minReplyCount": min_reply_count,
+            "getAboutData": get_about_data,
+            "includeNativeRetweets": False,
+            "onlyImages": False,
         }
+        try:
+            run = await self.client.run_actor(
+                self.profile_actor_id,
+                run_input,
+                dataset_limit=max_items,
+            )
+        except ApifyClientError as exc:
+            return self._error(handle, exc)
+
+        return self._normalize_profile(
+            handle,
+            run.items,
+            run.as_dict(include_items=False),
+        )
 
     async def search(
         self,
