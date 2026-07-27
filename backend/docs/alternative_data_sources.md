@@ -1,5 +1,13 @@
 # Alternative Data Sources Research
 
+> **Historical research catalog — non-operational.** The sources and code
+> fragments below are analyst research notes, not enabled adapters, approved
+> fallbacks, or an instruction to bypass access controls. The runtime uses the
+> one-provider-per-capability mapping in `../API_DOCUMENTATION.md` and never
+> switches to these sources automatically after a failure. Any manual use
+> requires separate authorization, current legal/terms review, provenance, and
+> case-level cost/privacy approval.
+
 ## Project Scope
 
 This document evaluates alternative public data sources that can supplement Instagram investigations when direct platform access is unavailable, restricted, or incomplete.

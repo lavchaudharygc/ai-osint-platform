@@ -1,5 +1,11 @@
 # Instagram Platform Behavior — OSINT Data Extraction Reference
 
+> **Historical research — non-operational.** Sections labelled “bypass” are not
+> approved, implemented, or authorized instructions. The current application
+> uses only its configured public-data provider route, does not circumvent
+> authentication or privacy controls, and does not switch providers
+> automatically. See `../../backend/API_DOCUMENTATION.md`.
+
 **Prepared by:** Shubham Jha
 **Date:** 28 June 2026
 **Sprint:** Sprint 1

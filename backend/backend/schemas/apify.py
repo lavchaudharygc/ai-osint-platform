@@ -7,10 +7,10 @@ from pydantic import BaseModel, Field, model_validator
 
 class TwitterProfileRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=50)
-    max_items: int = Field(default=50, ge=1, le=1000)
-    get_replies: bool = True
-    min_reply_count: int = Field(default=1, ge=0)
-    get_about_data: bool = True
+    max_items: int = Field(default=5, ge=1, le=40)
+    get_replies: bool = False
+    min_reply_count: int = Field(default=10, ge=0)
+    get_about_data: bool = False
 
 
 class TwitterSearchRequest(BaseModel):
@@ -18,13 +18,13 @@ class TwitterSearchRequest(BaseModel):
     twitter_handles: list[str] = Field(default_factory=list, max_length=50)
     start_urls: list[str] = Field(default_factory=list, max_length=50)
     conversation_ids: list[str] = Field(default_factory=list, max_length=50)
-    max_items: int = Field(default=50, ge=1, le=1000)
+    max_items: int = Field(default=10, ge=1, le=50)
     tweet_language: str | None = Field(default=None, min_length=2, max_length=10)
     sort: Literal["Top", "Latest", "Latest + Top"] = "Latest"
     author: str | None = Field(default=None, max_length=50)
     in_reply_to: str | None = Field(default=None, max_length=50)
     mentioning: str | None = Field(default=None, max_length=50)
-    include_search_terms: bool = True
+    include_search_terms: bool = False
 
     @model_validator(mode="after")
     def require_target(self) -> "TwitterSearchRequest":

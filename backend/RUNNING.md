@@ -25,14 +25,14 @@ Restart the API after changing `.env`.
 
 ## Configure Capability Providers
 
-The architecture uses one provider for each capability and never switches vendors automatically after a failure.
+The architecture uses one provider for each capability and never switches vendors automatically after a failure. “Global” means bounded, worldwide public-source discovery; it does not mean exhaustive collection or access to private content.
 
 | Capability | Provider | Required secret |
 |---|---|---|
 | Google search | SerpAPI | `SERPAPI_KEY` |
 | General web pages and LinkedIn | Bright Data Web Unlocker | `BRIGHTDATA_WEB_API_KEY` |
 | Instagram, X/Twitter, Reddit, Facebook, TikTok | Apify | `APIFY_API_TOKEN` |
-| Telegram | Existing Telegram collectors | `TELEGRAM_BOT_TOKEN` and/or authorized MTProto settings as needed |
+| Telegram | Public `t.me` plus optional authorized MTProto | No secret for public lookup; `TELEGRAM_API_ID`/`TELEGRAM_API_HASH` and a local session for MTProto |
 | GitHub | GitHub REST API | `GITHUB_TOKEN` |
 | Email | Hunter.io | `HUNTER_API_KEY` |
 | Phone | Twilio Lookup | API key pair or Account SID/Auth Token |
@@ -45,6 +45,7 @@ HOST=127.0.0.1
 PORT=8010
 
 SERPAPI_KEY=
+SERPAPI_COUNTRY_CODE=
 
 BRIGHTDATA_WEB_API_KEY=
 BRIGHTDATA_WEB_BASE_URL=https://api.brightdata.com/request
@@ -63,6 +64,10 @@ TWILIO_AUTH_TOKEN=
 
 FIRECRAWL_API_KEY=
 GITHUB_TOKEN=
+
+# Optional authorized Telegram session. Third-party bot queries stay off.
+TELEGRAM_MTPROTO_ENABLED=false
+TELEGRAM_OSINT_BOT_QUERIES_ENABLED=false
 ```
 
 The complete set of timeouts, URLs, Actor IDs, and limits is documented in `.env.example`. Never commit `backend/.env`.
@@ -88,7 +93,15 @@ Invoke-RestMethod http://127.0.0.1:8010/api/v1/providers/status |
     ConvertTo-Json -Depth 8
 ```
 
-The response should show `automatic_fallback` as `false`, the complete routing map, and booleans indicating which providers are configured. This status request does not call an external provider.
+The response should show `automatic_fallback` as `false`, the complete routing
+map, global or country-biased search scope, active limits, and booleans
+indicating which credential fields are present. This status request does not
+call an external provider.
+
+The status endpoint is not a live health check. `configured: true` does not
+prove credential validity, account entitlement, available credits, quota, or
+provider availability. `live_validation_performed` remains `false` until you
+run an explicit capability request, which may consume provider quota.
 
 ## Run a Bounded Investigation
 
@@ -112,7 +125,7 @@ Invoke-RestMethod `
     -Body $body
 ```
 
-The public URL probe prioritizes the requested platform and selects at most four paid social platforms by default. It no longer starts every available Actor unconditionally. Each selected capability uses only its assigned provider; skipped and budget-denied capabilities are visible in the response and counted by the social `summary.skipped` field.
+The public URL probe prioritizes the requested platform and selects at most four paid social platforms by default. It no longer starts every available Actor unconditionally. Each selected capability uses only its assigned provider; skipped and budget-denied capabilities are visible in the response and counted by the social `summary.skipped` field. HTTP probe responses are unverified URL candidates; only successful collector output is collector-confirmed evidence.
 
 Read these response fields first:
 
@@ -157,10 +170,14 @@ Default quota-protection settings:
 ```env
 INVESTIGATION_CACHE_TTL_SECONDS=3600
 INVESTIGATION_CACHE_MAX_ENTRIES=128
+INVESTIGATION_HISTORY_PERSIST_ENABLED=false
+INVESTIGATION_HISTORY_DB_PATH=./data/investigations.sqlite3
+INVESTIGATION_HISTORY_MAX_ENTRIES=128
 INVESTIGATION_MAX_PROVIDER_CALLS=24
 INVESTIGATION_MAX_DORK_QUERIES=10
 INVESTIGATION_MAX_SOCIAL_PLATFORMS=4
 INVESTIGATION_SOCIAL_RESULT_LIMIT=20
+INVESTIGATION_TWITTER_RESULT_LIMIT=5
 ```
 
 - Set `INVESTIGATION_CACHE_TTL_SECONDS=0` to disable caching.
@@ -168,13 +185,42 @@ INVESTIGATION_SOCIAL_RESULT_LIMIT=20
 - `cache_mode=use` reads and stores; `refresh` skips reads but stores; `bypass` does neither.
 - Cache entries are process-local and disappear on restart.
 - The call count is a logical orchestration budget, not a count of every provider-side HTTP request or polling request.
-- Configured DeepSeek/Groq correlation and risk operations each use one logical unit. When the budget is exhausted, the local rules-based result is used without an AI network call.
+- Automatic identity correlation is deterministic and never calls DeepSeek or Groq. When configured, only the separate AI risk review may reserve one logical unit; without budget, risk remains evidence-constrained and no AI network call is made.
 
 SerpAPI search reserves one budget unit per dork query. If the remaining budget is smaller than the requested search batch, the batch is reduced. A failed provider is reported; there is no Bright Data or Apify SERP fallback.
+
+An empty `SERPAPI_COUNTRY_CODE` gives worldwide, country-unbiased search. Set a
+two-letter country code only for a case that requires regional bias. Results
+remain bounded by query and per-query result limits and by what Google has
+indexed.
+
+## Investigation History
+
+Completed investigations are retained in bounded process memory by default and
+disappear when the backend restarts. Optional local persistence is explicit and
+default-off:
+
+```env
+INVESTIGATION_HISTORY_PERSIST_ENABLED=true
+INVESTIGATION_HISTORY_DB_PATH=./data/investigations.sqlite3
+INVESTIGATION_HISTORY_MAX_ENTRIES=128
+```
+
+The SQLite database stores full investigation response JSON in plaintext. Keep
+it out of source control, restrict filesystem access, use an appropriate
+retention policy, and use encrypted storage or an approved database before
+production deployment. If persistent storage cannot initialize, the backend
+continues with in-memory history and logs a warning.
 
 ## Telegram
 
 Telegram remains on the existing public `t.me` collector with an optional read-only MTProto path. See `docs/telegram_authorized_lookup.md` for authorization setup.
+
+Third-party Telegram bot queries are disabled by default. Enabling
+`TELEGRAM_OSINT_BOT_QUERIES_ENABLED=true` sends the investigated username to
+third-party bots and inspects at most five recent messages per bot dialog for a
+newer response tied to that exact username; enable it only after an explicit
+case-level privacy decision. Invite previews never use this path.
 
 For an invite URL, set `platform` to `telegram`. The backend runs only the isolated read-only preview, redacts the invite hash, bypasses the investigation cache, and does not send the invite to any other provider or analysis stage.
 
@@ -203,7 +249,10 @@ $body = @{ username = "octocat"; repo_limit = 5 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8010/api/v1/providers/github/profile -ContentType "application/json" -Body $body
 ```
 
-Use `GET /api/v1/providers/status` first to avoid calling an unconfigured adapter. An unconfigured adapter normally returns `status: "not_configured"` rather than failing the whole API.
+Use `GET /api/v1/providers/status` first to avoid calling an adapter whose
+credentials are absent. An unconfigured adapter normally returns
+`status: "not_configured"` rather than failing the whole API. Presence is not
+live validation; the smoke-test requests above can consume quota.
 
 ## Training Dataset
 
@@ -224,20 +273,23 @@ exposing the service to untrusted networks.
 
 ## Optional AI and Local Services
 
-For DeepSeek correlation and risk analysis:
+For the optional external AI risk review (identity correlation remains local
+and deterministic):
 
 ```env
 DEEPSEEK_API_KEY=
 DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
 DEEPSEEK_MODEL=deepseek-chat
+
+# Or use Groq when DEEPSEEK_API_KEY is empty:
+GROQ_API_KEY=
+GROQ_API_URL=https://api.groq.com/openai/v1/chat/completions
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
-For the separate X hashtag lookup:
-
-```env
-```
-
-These integrations do not change provider routing or act as social-provider fallbacks.
+Hashtag analysis is local-only and does not require a separate X API secret.
+These integrations do not change provider routing or act as social-provider
+fallbacks.
 
 ## Run Tests
 

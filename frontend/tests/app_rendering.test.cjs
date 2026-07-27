@@ -328,8 +328,119 @@ test("Google dorking configuration copy names SerpAPI as the only provider", () 
 
 test("primary platform selector includes TikTok and GitHub", () => {
     const html = fs.readFileSync(path.join(frontendRoot, "index.html"), "utf8");
+    assert.match(html, /<div class="form-row">\s*<label>Target Platform<\/label>/);
     assert.match(html, /<option value="tiktok">TikTok<\/option>/);
     assert.match(html, /<option value="github">GitHub<\/option>/);
+    assert.doesNotMatch(html, /<div class="form-row" style="display:\s*none;">\s*<label>Target Platform/);
+});
+
+test("advanced provider inputs expose and send every investigation schema field", () => {
+    const withValue = (value) => Object.assign(fakeElement(), { value });
+    const app = loadApp({
+        "filter-hitek": Object.assign(fakeElement(), { checked: false }),
+        "dork-query-limit": withValue("7"),
+        "provider-call-limit": withValue("18"),
+        "provider-email": withValue("analyst@example.com"),
+        "provider-phone": withValue("+919876543210"),
+        "company-domain": withValue("example.com"),
+        "web-urls": withValue("https://example.com/a\nhttps://example.com/b"),
+        "extract-urls": withValue("https://example.org/public, https://example.net/profile"),
+        "extraction-prompt": withValue("Extract public identity attributes."),
+        "cache-mode": withValue("refresh")
+    });
+
+    const request = JSON.parse(JSON.stringify(app.buildInvestigationRequestFromForm({
+        username: "target",
+        platform: "twitter",
+        caseId: "CASE-1",
+        depth: 4
+    })));
+
+    assert.deepEqual(request, {
+        username: "target",
+        platform: "twitter",
+        case_id: "CASE-1",
+        correlation_depth: 4,
+        filter_hitek: false,
+        web_urls: ["https://example.com/a", "https://example.com/b"],
+        extract_urls: ["https://example.org/public", "https://example.net/profile"],
+        cache_mode: "refresh",
+        email: "analyst@example.com",
+        phone_number: "+919876543210",
+        company_domain: "example.com",
+        extraction_prompt: "Extract public identity attributes.",
+        dork_query_limit: 7,
+        provider_call_limit: 18
+    });
+
+    const html = fs.readFileSync(path.join(frontendRoot, "index.html"), "utf8");
+    for (const id of [
+        "advanced-provider-inputs", "dork-query-limit", "provider-call-limit",
+        "provider-email", "provider-phone", "company-domain", "web-urls",
+        "extract-urls", "extraction-prompt", "cache-mode"
+    ]) {
+        assert.match(html, new RegExp(`id="${id}"`));
+    }
+});
+
+test("dork status rendering distinguishes empty success, failure, and budget exhaustion", () => {
+    const count = fakeElement();
+    const results = fakeElement();
+    const app = loadApp();
+
+    const empty = app.getDorkStatusView({
+        status: "completed",
+        queries_run: 3,
+        queries: [{ category: "twitter", query: "site:x.com target" }],
+        results: [],
+        errors: []
+    });
+    assert.equal(empty.kind, "empty");
+    assert.match(empty.label, /Completed successfully - 0 matching hits/);
+
+    app.renderDorkingPanel({
+        status: "failed",
+        provider: "serpapi",
+        reason: "SerpAPI search failed.",
+        queries_run: 1,
+        queries: [{ category: "twitter", query: "site:x.com target" }],
+        results: [],
+        errors: [{ status: "429", message: "Quota exhausted", query: "site:x.com target" }]
+    }, count, results);
+    assert.match(count.innerText, /SerpAPI search failed/);
+    assert.match(results.innerHTML, /Provider errors/);
+    assert.match(results.innerHTML, /Quota exhausted/);
+    assert.match(results.innerHTML, /site:x.com target/);
+    assert.doesNotMatch(results.innerHTML, /0 matching general items/);
+
+    const budget = app.getDorkStatusView({ status: "budget_exhausted", reason: "Call limit reached", results: [] });
+    assert.equal(budget.kind, "budget");
+    assert.match(budget.label, /Search not run/);
+});
+
+test("HTTP probes render as unverified candidates rather than profile matches", () => {
+    const dossier = fakeElement();
+    const app = loadApp({
+        "platform-dossier-container": dossier,
+        "target-username": Object.assign(fakeElement(), { value: "target" })
+    });
+
+    app.renderPlatformDossier({
+        platform_data: { platform: "instagram", username: "target", success: false, status: "provider_error" },
+        cross_platform_matches: [{
+            platform: "twitter",
+            exists: true,
+            status_code: 200,
+            url: "https://x.com/target"
+        }],
+        dorking_results: { status: "completed", results: [] }
+    });
+
+    const rendered = dossier.children.map(child => child.innerHTML).join("\n");
+    assert.match(rendered, /Unverified candidate/);
+    assert.match(rendered, /HTTP 200 URL PROBE/);
+    assert.match(rendered, /does not confirm that a profile exists/);
+    assert.doesNotMatch(rendered, /Profile found/);
 });
 
 test("Telegram invite details render without requiring or exposing a username/hash", () => {
@@ -357,13 +468,20 @@ test("new investigation skeleton clears stale AI result values", () => {
     const summary = Object.assign(fakeElement(), { innerText: "Previous case summary" });
     const collectionStatus = Object.assign(fakeElement(), { innerText: "COMPLETED" });
     const telegramStatus = Object.assign(fakeElement(), { innerText: "Active Account/Channel" });
+    const riskScore = Object.assign(fakeElement(), { innerText: "95%" });
+    const riskBadge = Object.assign(fakeElement(), { innerText: "CRITICAL RISK ASSESSMENT" });
+    const riskNotice = Object.assign(fakeElement(), { innerText: "Previous disagreement", style: { display: "block" } });
     const app = loadApp({
         "ai-confidence": confidence,
         "ai-decision-badge": decision,
         "ai-engine-status": engine,
         "ai-summary": summary,
         "collection-coverage-status": collectionStatus,
-        "telegram-intel-status": telegramStatus
+        "telegram-intel-status": telegramStatus,
+        "risk-score-num": riskScore,
+        "risk-badge": riskBadge,
+        "risk-fill": fakeElement(),
+        "risk-consistency-notice": riskNotice
     });
 
     app.renderSkeletonDossier();
@@ -374,6 +492,10 @@ test("new investigation skeleton clears stale AI result values", () => {
     assert.match(summary.innerText, /Awaiting correlation results/);
     assert.equal(collectionStatus.innerText, "RUNNING");
     assert.equal(telegramStatus.innerText, "Loading");
+    assert.equal(riskScore.innerText, "N/A");
+    assert.equal(riskBadge.innerText, "ASSESSMENT RUNNING");
+    assert.equal(riskNotice.innerText, "");
+    assert.equal(riskNotice.style.display, "none");
 });
 
 test("both HTML entry points begin with honest AI status and mapper load order", () => {
@@ -460,4 +582,233 @@ test("official report does not present a fallback personality as dominant", () =
     assert.match(html, /Classification Status:<\/strong> Insufficient Evidence/);
     assert.match(html, /More public evidence is required/);
     assert.doesNotMatch(html, /Dominant Profile Type/);
+});
+
+test("dashboard preserves backend and AI risk disagreement for human review", () => {
+    const score = fakeElement();
+    const badge = fakeElement();
+    const notice = fakeElement();
+    const app = loadApp({
+        "risk-score-num": score,
+        "risk-badge": badge,
+        "risk-fill": fakeElement(),
+        "risk-consistency-notice": notice,
+        "risk-analysis-text-section": fakeElement(),
+        "risk-analysis-text-content": fakeElement()
+    });
+
+    app.renderInvestigationResults({
+        status: "completed_with_warnings",
+        platform_data: { platform: "twitter", username: "target" },
+        risk_assessment: {
+            level: "critical",
+            score: 95,
+            ai_risk_analysis: {
+                success: true,
+                analysis: "RISK LEVEL: LOW\nRISK SCORE: 20\nINDICATORS FOUND:\n- none"
+            }
+        }
+    });
+
+    assert.equal(score.innerText, "95%");
+    assert.equal(badge.innerText, "CRITICAL RISK ASSESSMENT");
+    assert.match(notice.innerText, /Human review required/);
+    assert.match(notice.innerText, /CRITICAL \(95%\)/);
+    assert.match(notice.innerText, /LOW \(20%\)/);
+});
+
+test("unknown backend risk remains unknown instead of becoming low at zero", () => {
+    const score = fakeElement();
+    const badge = fakeElement();
+    const app = loadApp({
+        "risk-score-num": score,
+        "risk-badge": badge,
+        "risk-fill": fakeElement(),
+        "risk-consistency-notice": fakeElement()
+    });
+
+    app.renderInvestigationResults({
+        status: "completed_with_warnings",
+        platform_data: { platform: "instagram", username: "target" },
+        risk_assessment: {
+            level: "unknown",
+            score: 0,
+            basis: "insufficient_evidence"
+        }
+    });
+
+    assert.equal(score.innerText, "N/A");
+    assert.equal(badge.innerText, "RISK ASSESSMENT UNKNOWN");
+    const consistency = app.getRiskConsistency({ level: "unknown", score: 0, basis: "insufficient_evidence" });
+    assert.equal(consistency.backendLevel, "unknown");
+    assert.equal(consistency.backendScore, null);
+});
+
+test("absent Telegram invite risk renders UNKNOWN and N/A in dashboard and report", () => {
+    const score = fakeElement();
+    const badge = fakeElement();
+    const app = loadApp({
+        "risk-score-num": score,
+        "risk-badge": badge,
+        "risk-fill": fakeElement(),
+        "risk-consistency-notice": fakeElement()
+    });
+    const response = {
+        status: "completed",
+        platform_data: {
+            platform: "telegram",
+            success: true,
+            target_type: "invite_link",
+            invite_hash_redacted: true,
+            full_name: "Private Group Preview"
+        },
+        cross_platform_matches: [],
+        ai_correlation_result: null,
+        risk_assessment: null
+    };
+
+    app.renderInvestigationResults(response);
+
+    assert.equal(score.innerText, "N/A");
+    assert.equal(badge.innerText, "RISK ASSESSMENT UNKNOWN");
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(app.getRiskConsistency(null))),
+        {
+            backendLevel: "unknown",
+            backendScore: null,
+            ai: {
+                available: false,
+                level: null,
+                score: null,
+                analysis: ""
+            },
+            disagrees: false
+        }
+    );
+
+    const html = app.renderOfficialReportTemplate(response, "CASE-TG-INVITE");
+    assert.match(html, /Automated public-source assessment<\/td><td>UNKNOWN<\/td>/);
+    assert.match(html, /automated public-source risk assessment is <strong>UNKNOWN<\/strong>/);
+    assert.doesNotMatch(html, /LOW \(0%\)/);
+});
+
+test("official report separates collector evidence, URL candidates, dork failures, and risk signals", () => {
+    const app = loadApp();
+    const html = app.renderOfficialReportTemplate({
+        status: "completed_with_warnings",
+        platform_data: { platform: "instagram", username: "target", success: true, full_name: "Target" },
+        scraped_data: {
+            instagram: { platform: "instagram", username: "target", success: true, status: "completed", full_name: "Target" }
+        },
+        cross_platform_matches: [{
+            platform: "twitter",
+            exists: true,
+            status_code: 200,
+            url: "https://x.com/target"
+        }],
+        dorking_results: {
+            status: "failed",
+            provider: "serpapi",
+            reason: "SerpAPI search failed.",
+            queries_run: 1,
+            queries: [{ category: "twitter", query: "site:x.com target" }],
+            results: [],
+            errors: [{ status: "429", message: "Quota exhausted", query: "site:x.com target" }]
+        },
+        risk_assessment: {
+            level: "critical",
+            score: 95,
+            factors: ["cross_platform_presence"],
+            ai_risk_analysis: { success: true, analysis: "RISK LEVEL: LOW\nRISK SCORE: 20\nRECOMMENDATIONS:\n- Ask ISP for subscriber records" }
+        },
+        ai_correlation_result: {
+            summary: "Advisory model output.",
+            confidence: 0.4,
+            parsed: { decision: "POSSIBLY SAME", reasons: ["Username overlap"], next_steps: ["Request legal intercepts on active handles", "Ask ISP for subscriber records", "Compare profile photos"] }
+        }
+    }, "CASE-INTEGRITY");
+
+    assert.match(html, /COLLECTOR CONFIRMED/);
+    assert.match(html, /UNVERIFIED CANDIDATE/);
+    assert.match(html, /URL reachability does not prove profile existence or ownership/);
+    assert.match(html, /SerpAPI search failed/);
+    assert.match(html, /Quota exhausted/);
+    assert.match(html, /site:x.com target/);
+    assert.match(html, /Human review required/);
+    assert.match(html, /CRITICAL \(95%\)/);
+    assert.match(html, /LOW \(20%\)/);
+    assert.match(html, /KEY FINDINGS &amp; LIMITATIONS/);
+    assert.doesNotMatch(html, /85%/);
+    assert.doesNotMatch(html, /CRITICAL DISCOVERIES/);
+    assert.doesNotMatch(html, /Request legal intercepts/);
+    assert.doesNotMatch(html, /Ask ISP for subscriber records/i);
+});
+
+test("official report preserves candidate, collector-only, corroborated, and confirmed identity tiers", () => {
+    const app = loadApp();
+    const html = app.renderOfficialReportTemplate({
+        status: "completed_with_warnings",
+        platform_data: {
+            platform: "instagram",
+            username: "target",
+            success: true,
+            full_name: "Target Person"
+        },
+        scraped_data: {
+            instagram: { platform: "instagram", username: "target", success: true, full_name: "Target Person" },
+            linkedin: { platform: "linkedin", username: "target", success: true, full_name: "Target Person" },
+            reddit: { platform: "reddit", username: "target", success: true, full_name: "Target Person" },
+            github: { platform: "github", username: "target", success: true, full_name: "Target Person" }
+        },
+        cross_platform_matches: [
+            { platform: "twitter", exists: true, status_code: 200, url: "https://x.com/target" },
+            { platform: "linkedin", exists: true, status_code: 200, url: "https://linkedin.com/in/target" },
+            { platform: "reddit", exists: true, status_code: 200, url: "https://reddit.com/user/target" },
+            { platform: "github", exists: true, status_code: 200, url: "https://github.com/target" }
+        ],
+        ai_correlation_result: {
+            candidate_platforms: ["twitter", "linkedin", "reddit", "github"],
+            collector_confirmed_platforms: ["instagram", "linkedin", "reddit", "github"],
+            matching_platforms: ["reddit", "github"],
+            identity_corroborated_platforms: ["reddit"],
+            identity_confirmed_platforms: ["github"]
+        },
+        risk_assessment: {
+            level: "unknown",
+            score: 0,
+            basis: "insufficient_evidence"
+        }
+    }, "CASE-TIERS");
+
+    assert.match(html, /<td>GITHUB<\/td>\s*<td>target<\/td>\s*<td class="finding-confirmed">IDENTITY CONFIRMED<\/td>/);
+    assert.match(html, /<td>REDDIT<\/td>\s*<td>target<\/td>\s*<td class="finding-confirmed">IDENTITY CORROBORATED<\/td>/);
+    assert.match(html, /<td>LINKEDIN<\/td>\s*<td>target<\/td>\s*<td class="finding-confirmed">COLLECTOR CONFIRMED<\/td>/);
+    assert.match(html, /<td>TWITTER<\/td>\s*<td>target<\/td>\s*<td class="finding-candidate">UNVERIFIED CANDIDATE<\/td>/);
+    assert.match(html, /1 identity-confirmed profile, 1 identity-corroborated profile, 2 collector-only profiles, 1 HTTP-only candidate/);
+    assert.match(html, /Identity-confirmed public profile correlation/);
+    assert.match(html, /Identity-corroborated public profile correlation/);
+    assert.match(html, /Collector-only public profile payload/);
+});
+
+test("AI platform capsules distinguish candidates from stronger evidence", () => {
+    const platforms = fakeElement();
+    const app = loadApp({ "ai-associated-platforms": platforms });
+
+    app.renderInvestigationResults({
+        status: "completed",
+        platform_data: { platform: "instagram", username: "target", success: true },
+        scraped_data: {
+            instagram: { platform: "instagram", username: "target", success: true, status: "completed" }
+        },
+        ai_correlation_result: {
+            candidate_platforms: ["twitter"],
+            collector_confirmed_platforms: ["instagram"],
+            identity_corroborated_platforms: ["github"]
+        }
+    });
+
+    const capsuleHTML = platforms.children.map(child => child.innerHTML).join("\n");
+    assert.match(capsuleHTML, /UNVERIFIED CANDIDATE/);
+    assert.match(capsuleHTML, /COLLECTOR CONFIRMED/);
+    assert.match(capsuleHTML, /IDENTITY CORROBORATED/);
 });

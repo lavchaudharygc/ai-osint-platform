@@ -173,6 +173,7 @@ class TwilioLookupService:
     ) -> dict[str, Any]:
         return {
             **self._base(success=False, configured=True, status=code),
+            "credential_type": self.credential_type,
             "query": {"phone_number": phone_number},
             "phone": None,
             "error": {

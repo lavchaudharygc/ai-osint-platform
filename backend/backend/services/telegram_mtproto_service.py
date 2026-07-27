@@ -25,7 +25,7 @@ _SESSION_LOCK = asyncio.Lock()
 
 
 class TelegramMTProtoService:
-    """Resolve accessible Telegram entities without joining or reading messages."""
+    """Resolve entities without joining or reading target-chat message history."""
 
     INVITE_PATH_PATTERN = re.compile(r"^(?:joinchat/|\+)([A-Za-z0-9_-]+)$", re.IGNORECASE)
 
@@ -37,6 +37,7 @@ class TelegramMTProtoService:
         api_hash: str | None = None,
         session_path: str | None = None,
         timeout: float | None = None,
+        bot_queries_enabled: bool | None = None,
         client_factory: Callable[..., Any] | None = None,
     ) -> None:
         self.enabled = settings.telegram_mtproto_enabled if enabled is None else enabled
@@ -44,8 +45,28 @@ class TelegramMTProtoService:
         self.api_hash = settings.telegram_api_hash if api_hash is None else api_hash
         self.session_path = session_path or settings.telegram_session_path
         self.timeout = timeout or settings.telegram_mtproto_timeout_seconds
+        self.bot_queries_enabled = (
+            settings.telegram_osint_bot_queries_enabled
+            if bot_queries_enabled is None
+            else bot_queries_enabled
+        )
         self.dependency_available = TELETHON_AVAILABLE or client_factory is not None
         self.client_factory = client_factory or TelegramClient
+        self._reset_bot_query_audit()
+
+    def _reset_bot_query_audit(self) -> None:
+        self._bot_query_audit = {"attempted": 0, "sent": 0, "fetched": 0, "read": 0}
+
+    def _bot_query_audit_fields(self) -> dict[str, Any]:
+        return {
+            "third_party_bot_queries_enabled": self.bot_queries_enabled,
+            "third_party_bot_queries_attempted": self._bot_query_audit["attempted"],
+            "third_party_bot_queries_performed": self._bot_query_audit["sent"] > 0,
+            "third_party_bot_queries_succeeded": self._bot_query_audit["read"],
+            "bot_dialog_messages_fetched": self._bot_query_audit["fetched"],
+            "bot_response_messages_read": self._bot_query_audit["read"] > 0,
+            "target_message_history_accessed": False,
+        }
 
     def status(self) -> dict[str, Any]:
         return {
@@ -56,10 +77,16 @@ class TelegramMTProtoService:
             "access_mode": "authorized_user_session_read_only",
             "auto_join": False,
             "message_history": False,
+            "target_message_history": False,
+            "third_party_bot_queries_enabled": self.bot_queries_enabled,
+            "bot_response_reading_enabled": self.bot_queries_enabled,
+            "bot_dialog_fetch_limit_per_query": 5 if self.bot_queries_enabled else 0,
+            "bot_response_messages_read": False,
             "phone_and_contacts": False,
         }
 
     async def lookup(self, target: str) -> dict[str, Any]:
+        self._reset_bot_query_audit()
         scraped_at = datetime.now(UTC).isoformat()
         invite_hash = self.extract_invite_hash(target)
         normalized_username = self.normalize_username(target) if invite_hash is None else None
@@ -165,18 +192,37 @@ class TelegramMTProtoService:
             status="found_with_authorized_session",
         )
 
-        # Dispatch queries to Telegram OSINT bots via the active Telethon session
-        bot_queries = []
-        for bot_name in ["@userinfobot", "@SangMataInfo_bot"]:
-            try:
-                bot_resp = await self.query_osint_bot(client, bot_name, username, max_wait_seconds=2.0)
-                if bot_resp:
-                    bot_queries.append(bot_resp)
-            except Exception:
-                pass
+        bot_queries: list[dict[str, Any]] = []
+        bot_query_diagnostics: list[dict[str, Any]] = []
+        if self.bot_queries_enabled:
+            # Explicit opt-in: this sends the target username to third-party
+            # bots and reads only those bots' response messages.
+            for bot_name in ["@userinfobot", "@SangMataInfo_bot"]:
+                try:
+                    bot_resp = await self.query_osint_bot(
+                        client,
+                        bot_name,
+                        username,
+                        max_wait_seconds=2.0,
+                    )
+                    if bot_resp:
+                        bot_query_diagnostics.append(
+                            {
+                                key: value
+                                for key, value in bot_resp.items()
+                                if key != "response_text"
+                            }
+                        )
+                    if bot_resp and bot_resp.get("response_message_read"):
+                        bot_queries.append(bot_resp)
+                except Exception:
+                    pass
 
         if bot_queries:
             res["bot_responses"] = bot_queries
+        if bot_query_diagnostics:
+            res["bot_query_diagnostics"] = bot_query_diagnostics
+        res.update(self._bot_query_audit_fields())
 
         return res
 
@@ -229,21 +275,93 @@ class TelegramMTProtoService:
         max_wait_seconds: float = 2.5,
     ) -> dict[str, Any] | None:
         """Query a Telegram OSINT bot (e.g. @userinfobot) and read the bot's response message."""
+        if not self.bot_queries_enabled:
+            return {
+                "bot": bot_username,
+                "query_attempted": False,
+                "query_sent": False,
+                "response_message_read": False,
+                "status": "disabled_by_policy",
+            }
+        self._bot_query_audit["attempted"] += 1
+        result: dict[str, Any] = {
+            "bot": bot_username,
+            "query_attempted": True,
+            "query_sent": False,
+            "response_message_read": False,
+        }
         try:
             bot_entity = await client.get_entity(bot_username)
-            await client.send_message(bot_entity, target_username)
+            sent_at = datetime.now(UTC)
+            outbound = await client.send_message(bot_entity, target_username)
+            result["query_sent"] = True
+            self._bot_query_audit["sent"] += 1
+            outbound_id = getattr(outbound, "id", None)
+            if outbound_id is not None:
+                result["outbound_message_id"] = outbound_id
             await asyncio.sleep(max_wait_seconds)
-            messages = await client.get_messages(bot_entity, limit=2)
-            if messages:
-                latest = messages[0]
-                return {
-                    "bot": bot_username,
-                    "response_text": latest.text or "",
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
+            messages = await client.get_messages(bot_entity, limit=5)
+            self._bot_query_audit["fetched"] += len(messages or [])
+            for message in messages or []:
+                response_text = str(getattr(message, "text", None) or "").strip()
+                if not response_text or bool(getattr(message, "out", False)):
+                    continue
+                message_id = getattr(message, "id", None)
+                message_date = getattr(message, "date", None)
+                reply_to_id = getattr(message, "reply_to_msg_id", None)
+                reply_header = getattr(message, "reply_to", None)
+                if reply_to_id is None and reply_header is not None:
+                    reply_to_id = getattr(reply_header, "reply_to_msg_id", None)
+
+                tied_to_request = bool(
+                    outbound_id is not None
+                    and reply_to_id is not None
+                    and reply_to_id == outbound_id
+                )
+                newer_id = bool(
+                    outbound_id is not None
+                    and message_id is not None
+                    and message_id > outbound_id
+                )
+                newer_time = False
+                if isinstance(message_date, datetime):
+                    comparable_date = (
+                        message_date.replace(tzinfo=UTC)
+                        if message_date.tzinfo is None
+                        else message_date.astimezone(UTC)
+                    )
+                    newer_time = comparable_date >= sent_at
+                normalized_target = target_username.strip().lstrip("@").casefold()
+                mentions_target = bool(
+                    normalized_target
+                    and re.search(
+                        rf"(?<![a-z0-9_])@?{re.escape(normalized_target)}(?![a-z0-9_])",
+                        response_text,
+                        flags=re.IGNORECASE,
+                    )
+                )
+
+                # Fail closed when Telegram does not provide enough ordering
+                # metadata. This prevents a prior target's response from being
+                # attached to the current investigation.
+                if not tied_to_request and not (
+                    mentions_target and (newer_id or (outbound_id is None and newer_time))
+                ):
+                    continue
+                result.update(
+                    {
+                        "response_message_read": True,
+                        "response_message_id": message_id,
+                        "response_text": response_text,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                )
+                self._bot_query_audit["read"] += 1
+                return result
+            result["status"] = "no_new_response_before_timeout"
         except Exception as exc:
-            return {"bot": bot_username, "error": str(exc)}
-        return None
+            result.update({"status": "query_error", "error": str(exc)})
+        return result
 
     def _entity_response(
         self,
@@ -395,6 +513,7 @@ class TelegramMTProtoService:
             "sensitive_fields_omitted": ["phone", "contacts", "access_hash"],
             "limitations": self._limitations(),
         }
+        response.update(self._bot_query_audit_fields())
         response.update({key: value for key, value in extra.items() if value is not None})
         return response
 
@@ -470,6 +589,10 @@ class TelegramMTProtoService:
         return [
             "The authenticated Telegram account's privacy and membership permissions are enforced.",
             "Invite links are previewed only; the service never joins a group or channel.",
-            "Messages, contacts, phone numbers, and private content are not collected.",
+            "Target-chat messages, contacts, phone numbers, and private content are not collected.",
+            (
+                "When third-party bot queries are explicitly enabled, up to five recent messages "
+                "from each queried bot dialog are fetched only to identify a new response."
+            ),
             "Telegram may rate-limit or deny entity resolution and expanded profile fields.",
         ]

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.api.endpoints.investigation import _INVESTIGATION_STORE
+from backend.api.endpoints.investigation import _get_stored_investigation
 from backend.schemas.reports import ReportFormat, ReportGenerationResponse
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
@@ -15,7 +15,7 @@ async def generate_report(
     investigation_id: str,
     format: ReportFormat = Query(default="pdf"),
 ) -> ReportGenerationResponse:
-    if investigation_id not in _INVESTIGATION_STORE:
+    if _get_stored_investigation(investigation_id) is None:
         raise HTTPException(status_code=404, detail="Investigation not found")
     extension = "html" if format == "html" else "pdf"
     return ReportGenerationResponse(

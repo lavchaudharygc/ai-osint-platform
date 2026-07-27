@@ -109,3 +109,21 @@ class SearchUsernameRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=200)
     full_name: str | None = Field(default=None, max_length=200)
     limit: int = Field(default=10, ge=0, le=50)
+    preferred_platform: Literal[
+        "instagram",
+        "twitter",
+        "x",
+        "telegram",
+        "linkedin",
+        "reddit",
+        "facebook",
+        "tiktok",
+        "github",
+    ] | None = None
+    country_code: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=2,
+        pattern=r"^[A-Za-z]{2}$",
+        description="Optional country bias; omit for global SerpAPI results.",
+    )

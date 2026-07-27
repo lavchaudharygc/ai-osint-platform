@@ -1,7 +1,7 @@
 import unittest
 from typing import Any
 
-from backend.services.apify_client import ApifyActorRun
+from backend.services.apify_client import ApifyActorRun, ApifyClientError
 from backend.services.facebook_apify_service import FacebookApifyService
 from backend.services.linkedin_apify_service import LinkedInApifyService
 from backend.services.reddit_apify_service import RedditApifyService
@@ -55,6 +55,31 @@ class RecordingActorClient:
             started_at="2026-07-11T10:00:00.000Z",
             finished_at="2026-07-11T10:00:01.000Z",
             fetched_at="2026-07-11T10:00:01+00:00",
+        )
+
+
+class FailingActorClient(RecordingActorClient):
+    async def run_actor(
+        self,
+        actor_id: str,
+        run_input: dict[str, Any],
+        *,
+        dataset_limit: int,
+    ) -> ApifyActorRun:
+        self.calls.append(
+            {
+                "actor_id": actor_id,
+                "run_input": run_input,
+                "dataset_limit": dataset_limit,
+            }
+        )
+        raise ApifyClientError(
+            "Actor access is forbidden",
+            actor_id=actor_id,
+            code="start_failed",
+            status_code=403,
+            run_id="failed-run",
+            run_status="FAILED",
         )
 
 
@@ -256,6 +281,153 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["total"], 1)
         self.assertEqual(result["tweets"][0]["id"], "tweet-2")
         self.assertEqual(result["tweets"][0]["author"]["username"], "alice")
+
+    async def test_profile_defaults_are_cost_safe_and_profile_only_output_is_supported(self) -> None:
+        profile = {
+            "type": "profile",
+            "status": "available",
+            "username": "alice",
+            "name": "Alice Analyst",
+            "bio": "Public research account",
+            "avatar_url": "https://cdn.test/alice.jpg",
+            "followers": 0,
+            "following": 12,
+            "tweets_count": 34,
+            "created_at": "2020-01-01T00:00:00Z",
+        }
+        client = RecordingActorClient([[profile]])
+        service = twitter_service(client)
+
+        result = await service.get_profile("@alice")
+
+        self.assertEqual(
+            client.calls,
+            [
+                {
+                    "actor_id": TWITTER_PROFILE_ACTOR,
+                    "run_input": {
+                        "twitterHandles": ["alice"],
+                        "maxItems": 5,
+                        "getReplies": False,
+                        "getAboutData": False,
+                        "includeNativeRetweets": False,
+                        "onlyImages": False,
+                    },
+                    "dataset_limit": 5,
+                }
+            ],
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["username"], "alice")
+        self.assertEqual(result["follower_count"], 0)
+        self.assertEqual(result["tweets"], [])
+        self.assertEqual(result["run"]["run_id"], "run-1")
+        self.assertFalse(result["collection_options"]["get_replies"])
+        self.assertFalse(result["collection_options"]["get_about_data"])
+
+    async def test_explicit_paid_features_are_preserved_with_a_hard_item_cap(self) -> None:
+        client = RecordingActorClient([[]])
+        service = twitter_service(client)
+
+        result = await service.get_profile(
+            "alice",
+            max_items=1000,
+            get_replies=True,
+            min_reply_count=25,
+            get_about_data=True,
+        )
+
+        call = client.calls[0]
+        self.assertEqual(call["dataset_limit"], 40)
+        self.assertEqual(call["run_input"]["maxItems"], 40)
+        self.assertTrue(call["run_input"]["getReplies"])
+        self.assertEqual(call["run_input"]["minReplyCount"], 25)
+        self.assertTrue(call["run_input"]["getAboutData"])
+        self.assertEqual(result["collection_options"]["requested_max_items"], 1000)
+        self.assertEqual(result["collection_options"]["max_items"], 40)
+
+    async def test_actor_error_dataset_item_is_not_treated_as_a_profile(self) -> None:
+        client = RecordingActorClient(
+            [[{"type": "error", "status": "failed", "error": {"message": "Access denied"}}]]
+        )
+        service = twitter_service(client)
+
+        result = await service.get_profile("alice")
+
+        self.assertEqual(len(client.calls), 1)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "provider_error")
+        self.assertEqual(result["reason"], "Access denied")
+        self.assertEqual(result["reason_detail"]["code"], "actor_output_error")
+        self.assertEqual(result["run"]["run_id"], "run-1")
+        self.assertEqual(result["actor_diagnostics"][0]["code"], "failed")
+
+    async def test_actor_not_found_dataset_item_is_structured(self) -> None:
+        client = RecordingActorClient(
+            [[{"status": "not_found", "username": "missing", "message": "User not found"}]]
+        )
+        service = twitter_service(client)
+
+        result = await service.get_profile("missing")
+
+        self.assertFalse(result["success"])
+        self.assertFalse(result["exists"])
+        self.assertEqual(result["status"], "not_found")
+        self.assertEqual(result["reason_detail"]["code"], "target_not_found")
+        self.assertEqual(result["run"]["run_status"], "SUCCEEDED")
+
+    async def test_actor_demo_placeholders_report_plan_restriction(self) -> None:
+        client = RecordingActorClient([[{"demo": True}, {"demo": True}]])
+        service = twitter_service(client)
+
+        result = await service.get_profile("alice")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "provider_error")
+        self.assertEqual(result["reason_detail"]["code"], "provider_plan_required")
+        self.assertEqual(
+            result["actor_diagnostics"][0]["classification"],
+            "provider_plan_restricted",
+        )
+        self.assertIn("paid access", result["reason"])
+
+    async def test_tweet_actor_demo_placeholders_report_plan_restriction(self) -> None:
+        client = RecordingActorClient([[{"demo": True}]])
+        service = twitter_service(client)
+
+        result = await service.search(search_terms=["from:alice"])
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "provider_error")
+        self.assertEqual(result["reason_detail"]["code"], "provider_plan_required")
+
+    async def test_actor_run_exception_preserves_run_metadata_without_fallback(self) -> None:
+        client = FailingActorClient()
+        service = twitter_service(client)
+
+        result = await service.get_profile("alice")
+
+        self.assertEqual(len(client.calls), 1)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "provider_error")
+        self.assertEqual(result["reason_detail"]["status_code"], 403)
+        self.assertEqual(result["run"]["run_id"], "failed-run")
+        self.assertEqual(result["run"]["run_status"], "FAILED")
+
+    async def test_empty_search_has_reason_run_metadata_and_safe_defaults(self) -> None:
+        client = RecordingActorClient([[]])
+        service = twitter_service(client)
+
+        result = await service.search(search_terms=["from:alice"])
+
+        self.assertEqual(client.calls[0]["run_input"]["maxItems"], 10)
+        self.assertFalse(client.calls[0]["run_input"]["includeSearchTerms"])
+        self.assertEqual(client.calls[0]["dataset_limit"], 10)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "empty_dataset")
+        self.assertEqual(result["reason_detail"]["code"], "empty_dataset")
+        self.assertEqual(result["run"]["run_id"], "run-1")
 
 
 class RedditApifyServiceTests(unittest.IsolatedAsyncioTestCase):

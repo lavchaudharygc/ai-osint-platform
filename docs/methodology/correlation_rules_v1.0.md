@@ -1,4 +1,13 @@
 # OSINT Identity Correlation Rules v1.0
+
+> **SUPERSEDED — DO NOT USE FOR CURRENT SCORING OR AUTOMATED DECISIONS.**
+> This historical ruleset overstates the meaning of exact username, name,
+> email, phone, and profile-presence matches and can conflate identity
+> correlation with threat risk. It is retained only for audit history. Use
+> [`correlation_rules_v2.0.md`](correlation_rules_v2.0.md) and the current
+> runtime evidence contract. No identity or enforcement decision may be made
+> from this v1 score alone.
+
 ## AI-Assisted OSINT Platform for Indian LEAs
 
 ---

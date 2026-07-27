@@ -1,5 +1,6 @@
 """FastAPI application entry point for the AI-OSINT Platform."""
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from fastapi import FastAPI
@@ -9,10 +10,18 @@ from fastapi.responses import JSONResponse, Response
 from backend.api.endpoints import apify, investigation, providers, reports, training
 from backend.core.config import settings
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    investigation.initialize_persistent_investigation_store()
+    yield
+
+
 app = FastAPI(
     title=settings.app_name,
     description="Law Enforcement OSINT Investigation Tool",
     version=settings.app_version,
+    lifespan=lifespan,
 )
 
 app.add_middleware(

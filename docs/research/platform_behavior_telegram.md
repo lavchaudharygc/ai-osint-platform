@@ -1,5 +1,11 @@
 # Telegram Platform Behavior — OSINT Data Extraction Reference
 
+> **Historical research — non-operational.** Sections labelled “bypass” are not
+> approved, implemented, or authorized instructions. The current application
+> uses public `t.me` metadata and an optional authorized, read-only MTProto
+> session subject to Telegram permissions. Third-party bot queries are explicit
+> opt-in and default-off. See `../../backend/docs/telegram_authorized_lookup.md`.
+
 **Prepared by:** Shubham Jha
 **Date:** 30 june 2026
 **Sprint:** Sprint 1

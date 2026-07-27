@@ -43,44 +43,70 @@ class CrossPlatformSearchService:
 
         probe_url = url
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
         }
-        
         if platform == "reddit":
             probe_url = f"https://old.reddit.com/user/{username}"
         elif platform == "pinterest":
-            probe_url = f"https://www.pinterest.com/oembed.json?url=https://www.pinterest.com/{username}/"
+            probe_url = (
+                "https://www.pinterest.com/oembed.json?url="
+                f"https://www.pinterest.com/{username}/"
+            )
 
         try:
             async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
                 response = await client.get(probe_url, headers=headers)
             status_code = response.status_code
-            if platform == "pinterest":
-                exists = (status_code == 200)
-            elif platform == "reddit":
-                exists = (status_code == 200)
-            elif platform == "linkedin" and status_code == 999:
-                # LinkedIn returns 999 as an anti-bot block — inconclusive, not absent
-                return {
-                    "platform": platform,
-                    "url": url,
-                    "exists": None,
-                    "status_code": status_code,
-                    "status": "blocked_by_platform",
-                    "note": "LinkedIn blocks direct HTTP checks (HTTP 999). Use the scraper for accurate results.",
-                    "checked_at": datetime.now(UTC).isoformat(),
-                }
-            else:
-                exists = status_code < 400
         except httpx.HTTPError as exc:
+            return {
+                "platform": platform,
+                "url": url,
+                "exists": None,
+                "probe_reachable": None,
+                "status": "probe_error",
+                "status_code": None,
+                "check_method": "public_url_http_probe",
+                "identity_evidence": False,
+                "error": str(exc),
+            }
+
+        if status_code in {401, 403, 429, 999}:
+            exists: bool | None = None
+            status = "blocked_by_platform"
+            note = (
+                "The platform blocked or rate-limited the URL probe. "
+                "Use the assigned collector for a profile determination."
+            )
+        elif status_code in {404, 410}:
             exists = False
-            status_code = None
-            return {"platform": platform, "url": url, "exists": exists, "error": str(exc)}
+            status = "not_found"
+            note = "The public URL returned a not-found response."
+        elif 200 <= status_code < 400:
+            exists = True
+            status = "candidate_url_reachable"
+            note = (
+                "URL reachability is a collection candidate only and does not "
+                "confirm that the profile exists or belongs to the target."
+            )
+        else:
+            exists = None
+            status = "inconclusive"
+            note = "The HTTP response was inconclusive; use the assigned collector."
+
         return {
             "platform": platform,
             "url": url,
             "exists": exists,
+            "probe_reachable": exists if exists is not None else None,
             "status_code": status_code,
+            "status": status,
+            "check_method": "public_url_http_probe",
+            "identity_evidence": False,
+            "note": note,
             "checked_at": datetime.now(UTC).isoformat(),
         }
 

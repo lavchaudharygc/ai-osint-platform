@@ -32,14 +32,14 @@ There is no provider loop. A SerpAPI failure does not call Bright Data or Apify;
 - Capability-routed collection with per-provider provenance and structured partial failures.
 - Instagram, X/Twitter, Reddit, Facebook, and TikTok collection through bounded Apify Actor runs.
 - LinkedIn and general web-page retrieval through Bright Data Web Unlocker.
-- SerpAPI-only Google dorking with exact-username filtering and category grouping.
+- Global-first SerpAPI-only Google dorking with requested-platform priority, category-balanced queries, exact-username filtering, and optional country bias.
 - GitHub REST profile and repository enrichment.
 - Hunter.io email discovery, finding, and verification.
 - Twilio phone formatting, validation, and optional intelligence packages.
 - Firecrawl structured extraction from small explicit URL sets.
 - Existing safe Telegram public lookup and optional authorized read-only MTProto preview.
 - Cross-platform correlation assistance, hashtag analysis, local database matching, risk review, and investigation reports.
-- Process-local TTL/LRU caching, concurrent-request deduplication, bounded history, and a per-investigation provider-call budget (including configured AI calls).
+- Process-local TTL/LRU caching, concurrent-request deduplication, bounded in-memory history, optional local SQLite history, and a per-investigation provider-call budget (including at most one configured AI risk call; identity correlation is deterministic).
 
 Same usernames on different platforms are evidence candidates, not proof that accounts belong to the same person. Corroborate with independent public evidence and human review.
 
@@ -54,6 +54,9 @@ INVESTIGATION_MAX_PROVIDER_CALLS=24
 INVESTIGATION_MAX_DORK_QUERIES=10
 INVESTIGATION_MAX_SOCIAL_PLATFORMS=4
 INVESTIGATION_SOCIAL_RESULT_LIMIT=20
+INVESTIGATION_TWITTER_RESULT_LIMIT=5
+INVESTIGATION_HISTORY_PERSIST_ENABLED=false
+INVESTIGATION_HISTORY_MAX_ENTRIES=128
 ```
 
 The normal investigation flow prioritizes the requested platform, uses public profile probes to select candidates, and schedules at most four paid social platforms by default. It does not launch an unconditional all-platform Actor fan-out.
@@ -64,7 +67,9 @@ Request fields can lower the server ceilings:
 - `dork_query_limit`: lower SerpAPI query count; `0` skips search.
 - `cache_mode`: `use`, `refresh`, or `bypass`.
 
-The cache is in-process and is cleared when the backend restarts. Telegram invite previews are always isolated and uncached.
+The result cache is in-process and is cleared when the backend restarts. Durable history is a separate, default-off SQLite option because it stores investigation responses locally in plaintext. Enable it only on a protected loopback/private deployment. Telegram invite previews are always isolated and uncached.
+
+“Global” means worldwide public-source discovery without a default country bias. It does not mean exhaustive or unbounded collection: a normal scan still honors the paid-platform, query, item, URL, cache, and provider-call ceilings above.
 
 ## Quick Start
 
@@ -109,6 +114,7 @@ Core provider secrets:
 ```env
 # SerpAPI-only search
 SERPAPI_KEY=
+SERPAPI_COUNTRY_CODE=
 
 # General web pages and LinkedIn
 BRIGHTDATA_WEB_API_KEY=
@@ -133,6 +139,10 @@ FIRECRAWL_API_KEY=
 
 # GitHub REST
 GITHUB_TOKEN=
+
+# Optional durable local history (plaintext; default off)
+INVESTIGATION_HISTORY_PERSIST_ENABLED=false
+INVESTIGATION_HISTORY_DB_PATH=./data/investigations.sqlite3
 ```
 
 The complete URLs, timeouts, Actor IDs, data-package settings, and limits are in [`backend/.env.example`](backend/.env.example).
@@ -153,6 +163,8 @@ The approved path keeps the existing social Actors and adds a configurable TikTo
 | TikTok | `clockworks/tiktok-scraper`, configurable with `APIFY_TIKTOK_ACTOR_ID` |
 
 LinkedIn is not part of the automatic Apify path; it uses Bright Data.
+
+Automatic X profile collection requests five items and leaves separately billable Replies and About queries off. The explicit X endpoint can opt into those features within hard caps.
 
 ## Run an Investigation
 
@@ -196,6 +208,9 @@ The response exposes:
 
 - `platform_data`: selected primary result.
 - `cross_platform_matches`: lightweight public URL-probe candidates.
+- `ai_correlation_result.candidate_platforms`: reachable URL candidates only.
+- `ai_correlation_result.collector_confirmed_platforms`: profiles actually returned by assigned collectors.
+- `ai_correlation_result.identity_confirmed_platforms` and `identity_corroborated_platforms`: evidence-based identity tiers; HTTP 200 and username reuse alone never enter these lists.
 - `provider_results.social`: provider-neutral social results.
 - `provider_results.specialized`: GitHub, Hunter, Twilio, Bright Data web, and Firecrawl outputs.
 - `provider_results.search`: SerpAPI result status and metadata.
@@ -226,6 +241,8 @@ Targeted Apify routes remain under `/api/v1/apify/...` for X, Reddit, and Facebo
 ## Telegram Privacy Guard
 
 Telegram remains on its existing collectors. Public `t.me` metadata is the default; an authorized MTProto session can optionally resolve public usernames and preview invite links in read-only mode.
+
+Third-party Telegram OSINT-bot queries are disabled by default. Setting `TELEGRAM_OSINT_BOT_QUERIES_ENABLED=true` explicitly sends the investigated username to the built-in third-party bot list and inspects at most five recent messages per bot dialog for a newer exact-target response; attempted sends, fetched bot messages, accepted responses, and target-chat access are disclosed separately.
 
 Invite links must be sent with `platform: "telegram"`. The backend redacts the hash, bypasses cache, runs no external fan-out, and skips cross-platform search, databases, AI, and reporting. It never joins the chat or reads messages.
 

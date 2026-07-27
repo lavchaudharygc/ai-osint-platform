@@ -69,6 +69,11 @@ class GoogleDorkingSingleProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["provider"], "serpapi")
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["queries_run"], 1)
+        self.assertEqual(result["queries_prepared"], 1)
+        self.assertEqual(result["queries_completed"], 1)
+        self.assertEqual(result["query_counts"], {"prepared": 1, "attempted": 1, "completed": 1, "failed": 0})
+        self.assertEqual(result["queries"][0]["platform"], "General Exact Username")
+        self.assertEqual(result["error_count"], 0)
         self.assertEqual(result["result_count"], 1)
         self.assertEqual(result["results"][0]["serp_provider"], "serpapi")
         self.assertEqual(result["results"][0]["source"], "google_serpapi")
@@ -94,6 +99,9 @@ class GoogleDorkingSingleProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["provider_metadata"]["attempted_providers"], [])
         self.assertEqual(result["provider_metadata"]["disabled_providers"], ["serpapi"])
         self.assertIn("SERPAPI_KEY", result["reason"])
+        self.assertEqual(result["queries_run"], 0)
+        self.assertEqual(result["queries_prepared"], 1)
+        self.assertEqual(result["error_count"], 0)
 
     async def test_serpapi_error_fails_without_calling_another_provider(self) -> None:
         self._configure_keys(serpapi="serp-key", brightdata="bright-key", apify="apify-token")
@@ -113,6 +121,9 @@ class GoogleDorkingSingleProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["errors"][0]["provider"], "serpapi")
         self.assertEqual(result["errors"][0]["status"], "429")
         self.assertEqual(result["reason"], "SerpAPI search failed.")
+        self.assertEqual(result["queries_run"], 1)
+        self.assertEqual(result["queries_completed"], 0)
+        self.assertEqual(result["query_counts"]["failed"], 1)
 
     async def test_requested_limit_cannot_exceed_configured_call_ceiling(self) -> None:
         self._configure_keys(serpapi="serp-key", brightdata=None, apify=None)
@@ -126,6 +137,77 @@ class GoogleDorkingSingleProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.calls), 2)
         self.assertEqual(result["queries_run"], 2)
         self.assertEqual(len(service.build_queries("targetuser", limit=0)), 0)
+
+    def test_ten_query_plan_is_global_core_first_and_category_balanced(self) -> None:
+        queries = GoogleDorkingService().build_queries("elonmusk", limit=10)
+
+        self.assertEqual(len(queries), 10)
+        self.assertEqual(queries[0]["platform"], "General Exact Username")
+        self.assertEqual(queries[0]["query"], '"elonmusk"')
+        platforms = {str(query["platform"]) for query in queries}
+        self.assertTrue(
+            {"General Exact Username", "Instagram", "Twitter/X", "GitHub"}.issubset(platforms)
+        )
+        categories = {str(query["category"]) for query in queries}
+        self.assertGreaterEqual(len(categories), 5)
+        self.assertLessEqual(
+            sum(query["category"] == "professional" for query in queries),
+            1,
+        )
+
+    def test_preferred_platform_is_second_even_with_small_limit(self) -> None:
+        queries = GoogleDorkingService().build_queries(
+            "elonmusk",
+            limit=2,
+            preferred_platform="x",
+        )
+
+        self.assertEqual(
+            [query["platform"] for query in queries],
+            ["General Exact Username", "Twitter/X"],
+        )
+
+    async def test_global_search_omits_country_bias_unless_explicitly_requested(self) -> None:
+        self._configure_keys(serpapi="serp-key", brightdata=None, apify=None)
+        global_client = FakeAsyncClient([httpx.Response(200, json={"organic_results": []})])
+
+        with patch("backend.services.google_dorking.httpx.AsyncClient", return_value=global_client):
+            await GoogleDorkingService().search_username("elonmusk", limit=1)
+
+        global_params = global_client.calls[0][1]["params"]
+        self.assertNotIn("gl", global_params)
+
+        country_client = FakeAsyncClient([httpx.Response(200, json={"organic_results": []})])
+        with patch("backend.services.google_dorking.httpx.AsyncClient", return_value=country_client):
+            await GoogleDorkingService().search_username("elonmusk", limit=1, country_code="US")
+
+        country_params = country_client.calls[0][1]["params"]
+        self.assertEqual(country_params["gl"], "us")
+
+    async def test_exact_username_path_is_accepted_without_title_or_snippet_match(self) -> None:
+        self._configure_keys(serpapi="serp-key", brightdata=None, apify=None)
+        client = FakeAsyncClient(
+            [
+                httpx.Response(
+                    200,
+                    json={
+                        "organic_results": [
+                            {
+                                "title": "A public profile",
+                                "link": "https://x.com/elonmusk?lang=en",
+                                "snippet": "Profile page",
+                            }
+                        ]
+                    },
+                )
+            ]
+        )
+
+        with patch("backend.services.google_dorking.httpx.AsyncClient", return_value=client):
+            result = await GoogleDorkingService().search_username("elonmusk", limit=1)
+
+        self.assertEqual(result["result_count"], 1)
+        self.assertEqual(result["results"][0]["url"], "https://x.com/elonmusk?lang=en")
 
 
 if __name__ == "__main__":

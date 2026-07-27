@@ -1,5 +1,12 @@
 # Email Verification Methods for OSINT
 
+> **Historical research — non-operational.** “Stealth” mailbox-enumeration,
+> signup-availability, cookie, and breach-service probes in this document are
+> not approved runtime behavior and must not be used to bypass provider or
+> privacy controls. The supported application verifies explicitly supplied
+> addresses through Hunter.io only, with bounded calls and no automatic
+> fallback. Keep this file only as a record of earlier research.
+
 ## Overview
 Methods to verify if guessed email addresses actually exist — WITHOUT sending emails or violating legal compliance (Indian IT Act).
 

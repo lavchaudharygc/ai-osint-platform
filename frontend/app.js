@@ -70,6 +70,401 @@ function getPersonalityClassification(profileType = {}) {
     };
 }
 
+function normalizeRiskLevel(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return ["low", "medium", "high", "critical", "unknown"].includes(normalized)
+        ? normalized
+        : null;
+}
+
+function riskLevelFromScore(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const score = Number(value);
+    if (!Number.isFinite(score)) return null;
+    if (score >= 90) return "critical";
+    if (score >= 70) return "high";
+    if (score >= 40) return "medium";
+    return "low";
+}
+
+function getAIRiskSignal(risk = {}) {
+    const aiRisk = risk && typeof risk.ai_risk_analysis === "object"
+        ? risk.ai_risk_analysis
+        : {};
+    const parsed = aiRisk.parsed && typeof aiRisk.parsed === "object"
+        ? aiRisk.parsed
+        : {};
+    const analysis = String(aiRisk.analysis || aiRisk.raw_response || "").trim();
+    const textLevel = analysis.match(/RISK\s*LEVEL\s*:\s*(LOW|MEDIUM|HIGH|CRITICAL)/i);
+    const textScore = analysis.match(/RISK\s*SCORE\s*:\s*(\d{1,3})/i);
+    const parsedScore = Number(parsed.risk_score);
+    const canUseParsedSignal = aiRisk.success !== false;
+    const score = canUseParsedSignal && Number.isFinite(parsedScore) && parsed.risk_score !== undefined
+        ? Math.max(0, Math.min(100, parsedScore))
+        : (textScore ? Math.max(0, Math.min(100, Number(textScore[1]))) : null);
+    const level = (canUseParsedSignal ? normalizeRiskLevel(parsed.risk_level) : null)
+        || (textLevel ? normalizeRiskLevel(textLevel[1]) : null)
+        || riskLevelFromScore(score);
+
+    return {
+        available: Boolean(level || score !== null),
+        level,
+        score,
+        analysis,
+        success: aiRisk.success
+    };
+}
+
+function getRiskConsistency(risk = {}) {
+    const assessment = risk && typeof risk === "object" ? risk : {};
+    const declaredBackendLevel = normalizeRiskLevel(assessment.level);
+    const hasBackendScore = assessment.score !== undefined
+        && assessment.score !== null
+        && Number.isFinite(Number(assessment.score));
+    const insufficientEvidence = (!declaredBackendLevel && !hasBackendScore)
+        || declaredBackendLevel === "unknown"
+        || String(assessment.basis || "").toLowerCase() === "insufficient_evidence";
+    const backendLevel = insufficientEvidence
+        ? "unknown"
+        : (declaredBackendLevel || riskLevelFromScore(assessment.score));
+    const backendScore = !insufficientEvidence && hasBackendScore
+        ? Math.max(0, Math.min(100, Number(assessment.score)))
+        : null;
+    const ai = getAIRiskSignal(assessment);
+    const scoreDisagrees = backendScore !== null && ai.score !== null
+        ? Math.abs(backendScore - ai.score) >= 25
+        : false;
+    const levelDisagrees = Boolean(backendLevel && backendLevel !== "unknown" && ai.level && backendLevel !== ai.level);
+
+    return {
+        backendLevel,
+        backendScore,
+        ai,
+        disagrees: scoreDisagrees || levelDisagrees
+    };
+}
+
+function buildPlatformEvidenceMap(data = {}, evidenceEntries = null) {
+    const ai = data && data.ai_correlation_result && typeof data.ai_correlation_result === "object"
+        ? data.ai_correlation_result
+        : {};
+    const entries = Array.isArray(evidenceEntries)
+        ? evidenceEntries
+        : DataMappers.buildPlatformEntries(data);
+    const evidenceRank = {
+        "UNVERIFIED CANDIDATE": 1,
+        "COLLECTOR CONFIRMED": 2,
+        "IDENTITY CORROBORATED": 3,
+        "IDENTITY CONFIRMED": 4
+    };
+    const platformEvidence = new Map();
+    const addPlatforms = (platforms, label) => {
+        (Array.isArray(platforms) ? platforms : []).forEach(platform => {
+            const key = String(platform || "").toLowerCase();
+            if (!key) return;
+            const current = platformEvidence.get(key);
+            if (!current || evidenceRank[label] > evidenceRank[current]) {
+                platformEvidence.set(key, label);
+            }
+        });
+    };
+
+    addPlatforms(ai.candidate_platforms, "UNVERIFIED CANDIDATE");
+    addPlatforms(ai.collector_confirmed_platforms, "COLLECTOR CONFIRMED");
+    // Kept as a collector-level compatibility signal for older responses. The
+    // explicit identity arrays below always override it when available.
+    addPlatforms(ai.matching_platforms, "COLLECTOR CONFIRMED");
+    addPlatforms(ai.identity_corroborated_platforms, "IDENTITY CORROBORATED");
+    addPlatforms(ai.identity_confirmed_platforms, "IDENTITY CONFIRMED");
+    entries.forEach(entry => {
+        if (entry.scraper_confirmed) {
+            addPlatforms([entry.platform], "COLLECTOR CONFIRMED");
+        } else if (entry.exists === true) {
+            addPlatforms([entry.platform], "UNVERIFIED CANDIDATE");
+        }
+    });
+
+    return platformEvidence;
+}
+
+function isIntrusiveRecommendation(value) {
+    const text = String(value || "").toLowerCase();
+    return /\bintercepts?\b|\bisp\b|coordinate\s+trace|\bwarrants?\b|\bsubpoenas?\b|court\s+order/i.test(text);
+}
+
+function safeReviewSteps(steps) {
+    return (Array.isArray(steps) ? steps : [])
+        .filter(step => step && !isIntrusiveRecommendation(step));
+}
+
+function sanitizePublicSourceNarrative(value) {
+    return String(value || "")
+        .split(/\r?\n/)
+        .filter(line => !isIntrusiveRecommendation(line))
+        .join("\n")
+        .trim();
+}
+
+function parseProviderUrlList(rawValue, label = "Provider URLs") {
+    const values = String(rawValue || "")
+        .split(/[\n,]+/)
+        .map(value => value.trim())
+        .filter(Boolean);
+    const unique = [...new Set(values)];
+    if (unique.length > 5) {
+        throw new Error(`${label} accepts at most 5 URLs.`);
+    }
+    unique.forEach(value => {
+        if (!safeExternalUrl(value)) {
+            throw new Error(`${label} must contain complete http:// or https:// URLs.`);
+        }
+    });
+    return unique;
+}
+
+function optionalBoundedInteger(elementId, minimum, maximum, label) {
+    const element = document.getElementById(elementId);
+    const rawValue = element ? String(element.value || "").trim() : "";
+    if (!rawValue) return null;
+    const parsed = Number(rawValue);
+    if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+        throw new Error(`${label} must be a whole number from ${minimum} to ${maximum}.`);
+    }
+    return parsed;
+}
+
+function buildInvestigationRequestFromForm({ username, platform, caseId, depth }) {
+    const valueOf = (id) => {
+        const element = document.getElementById(id);
+        return element ? String(element.value || "").trim() : "";
+    };
+    const filterElement = document.getElementById("filter-hitek");
+    const webUrls = parseProviderUrlList(valueOf("web-urls"), "Bright Data web URLs");
+    const extractUrls = parseProviderUrlList(valueOf("extract-urls"), "Firecrawl extract URLs");
+    const dorkQueryLimit = optionalBoundedInteger("dork-query-limit", 0, 50, "SerpAPI query limit");
+    const providerCallLimit = optionalBoundedInteger("provider-call-limit", 1, 50, "Provider call limit");
+    const email = valueOf("provider-email");
+    const phoneNumber = valueOf("provider-phone");
+    const companyDomain = valueOf("company-domain");
+    const extractionPrompt = valueOf("extraction-prompt");
+    const cacheMode = valueOf("cache-mode") || "use";
+
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        throw new Error("Hunter email must be a complete email address.");
+    }
+    if (phoneNumber && (phoneNumber.length < 5 || phoneNumber.length > 32)) {
+        throw new Error("Twilio phone number must contain 5 to 32 characters, preferably in E.164 format.");
+    }
+    if (!["use", "refresh", "bypass"].includes(cacheMode)) {
+        throw new Error("Cache mode is invalid.");
+    }
+
+    const request = {
+        username,
+        platform,
+        case_id: caseId,
+        correlation_depth: depth,
+        filter_hitek: filterElement ? filterElement.checked : true,
+        web_urls: webUrls,
+        extract_urls: extractUrls,
+        cache_mode: cacheMode
+    };
+    if (email) request.email = email;
+    if (phoneNumber) request.phone_number = phoneNumber;
+    if (companyDomain) request.company_domain = companyDomain;
+    if (extractionPrompt) request.extraction_prompt = extractionPrompt;
+    if (dorkQueryLimit !== null) request.dork_query_limit = dorkQueryLimit;
+    if (providerCallLimit !== null) request.provider_call_limit = providerCallLimit;
+    return request;
+}
+
+function getDorkStatusView(dorking = {}) {
+    const status = String(dorking.status || "unknown").toLowerCase();
+    const results = Array.isArray(dorking.results) ? dorking.results : [];
+    const errors = Array.isArray(dorking.errors) ? dorking.errors : [];
+    const queries = Array.isArray(dorking.queries) ? dorking.queries : [];
+    const rawQueriesRun = Number(dorking.queries_run);
+    const queriesRun = Number.isFinite(rawQueriesRun)
+        ? rawQueriesRun
+        : (status === "not_configured" || status === "budget_exhausted" || status === "skipped" ? 0 : queries.length);
+    const reason = String(dorking.reason || "").trim();
+    const failedStatuses = new Set(["failed", "error", "provider_error", "timeout", "timed_out"]);
+
+    if (status === "not_configured") {
+        return { status, kind: "not_configured", label: "SerpAPI not configured", detail: reason || "SERPAPI_KEY is missing.", results, errors, queries, queriesRun };
+    }
+    if (status === "budget_exhausted") {
+        return { status, kind: "budget", label: "Search not run - provider budget exhausted", detail: reason || "No SerpAPI query was sent.", results, errors, queries, queriesRun };
+    }
+    if (status === "skipped") {
+        return { status, kind: "skipped", label: "Search skipped", detail: reason || "No SerpAPI query was requested.", results, errors, queries, queriesRun };
+    }
+    if (failedStatuses.has(status)) {
+        return { status, kind: "failed", label: "SerpAPI search failed", detail: reason || "The provider did not complete the search.", results, errors, queries, queriesRun };
+    }
+    if (status === "completed_with_errors") {
+        return { status, kind: "partial", label: `Partially completed - ${results.length} hit${results.length === 1 ? "" : "s"}`, detail: reason || "Some SerpAPI queries failed.", results, errors, queries, queriesRun };
+    }
+    if (status === "completed") {
+        return {
+            status,
+            kind: results.length ? "completed" : "empty",
+            label: results.length
+                ? `Completed - ${results.length} hit${results.length === 1 ? "" : "s"}`
+                : "Completed successfully - 0 matching hits",
+            detail: results.length
+                ? "SerpAPI completed the requested query batch."
+                : "SerpAPI completed normally; zero exact matching organic results were retained.",
+            results,
+            errors,
+            queries,
+            queriesRun
+        };
+    }
+    return { status, kind: "unknown", label: "Search status unavailable", detail: reason || "The backend did not return a recognized dorking status.", results, errors, queries, queriesRun };
+}
+
+function getDorkQueryDetails(dorking = {}) {
+    const view = getDorkStatusView(dorking);
+    const errorByQuery = new Map(
+        view.errors
+            .filter(error => error && error.query)
+            .map(error => [String(error.query), error])
+    );
+    const byQuery = new Map();
+    view.queries.forEach((queryEntry, index) => {
+        const query = typeof queryEntry === "string"
+            ? queryEntry
+            : String((queryEntry && queryEntry.query) || "");
+        if (!query || byQuery.has(query)) return;
+        const error = errorByQuery.get(query);
+        byQuery.set(query, {
+            query,
+            category: typeof queryEntry === "object" && queryEntry
+                ? String(queryEntry.category || "uncategorized")
+                : "uncategorized",
+            state: error ? "failed" : (index < view.queriesRun ? "executed" : "not_run"),
+            error
+        });
+    });
+    view.results.forEach(result => {
+        const query = String((result && result.query) || "");
+        if (query && !byQuery.has(query)) {
+            byQuery.set(query, {
+                query,
+                category: String(result.category || "uncategorized"),
+                state: "executed",
+                error: null
+            });
+        }
+    });
+    view.errors.forEach(error => {
+        const query = String((error && error.query) || "");
+        if (query && !byQuery.has(query)) {
+            byQuery.set(query, {
+                query,
+                category: "uncategorized",
+                state: "failed",
+                error
+            });
+        }
+    });
+    return [...byQuery.values()];
+}
+
+function renderDorkingPanel(dorking, countElement, containerElement) {
+    const view = getDorkStatusView(dorking);
+    const queryDetails = getDorkQueryDetails(dorking);
+    const isFailure = ["failed", "not_configured"].includes(view.kind);
+    const isWarning = ["partial", "budget", "skipped", "unknown"].includes(view.kind);
+    const statusColor = isFailure
+        ? "var(--accent-crimson)"
+        : (isWarning ? "var(--accent-gold)" : "var(--accent-blue)");
+    const statusBorder = isFailure
+        ? "rgba(255,51,102,0.3)"
+        : (isWarning ? "rgba(255,215,0,0.28)" : "rgba(0,188,212,0.25)");
+
+    if (countElement) {
+        countElement.innerText = `${view.label} · ${view.queriesRun} queries`;
+        countElement.style.color = statusColor;
+    }
+
+    let html = `
+        <div style="background:rgba(255,255,255,0.025); border:1px solid ${statusBorder}; padding:10px 12px; border-radius:6px; line-height:1.45;">
+            <div style="font-size:0.78rem; font-weight:700; color:${statusColor};">${escapeHTML(view.label)}</div>
+            <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:3px;">${escapeHTML(view.detail)}</div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:7px; font-family:'Share Tech Mono',monospace; font-size:0.65rem; color:var(--text-secondary);">
+                <span>Provider: ${escapeHTML(dorking.provider || "serpapi")}</span>
+                <span>Queries attempted: ${view.queriesRun}</span>
+                <span>Results retained: ${view.results.length}</span>
+                <span>Errors: ${view.errors.length}</span>
+            </div>
+        </div>`;
+
+    if (view.kind === "not_configured") {
+        html += `<div style="font-size:0.72rem; color:var(--text-secondary);">Configure <code>SERPAPI_KEY</code>. Google search is routed only through SerpAPI and automatic provider fallback is disabled.</div>`;
+    }
+
+    if (view.errors.length > 0) {
+        html += `
+            <details open style="border:1px solid rgba(255,51,102,0.22); border-radius:6px; padding:7px 9px;">
+                <summary style="cursor:pointer; color:var(--accent-crimson); font-size:0.72rem; font-weight:700;">Provider errors (${view.errors.length})</summary>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:7px;">
+                    ${view.errors.map(error => `
+                        <div style="font-size:0.68rem; color:var(--text-secondary); word-break:break-word;">
+                            <strong style="color:var(--accent-crimson);">${escapeHTML(error.status || "error")}</strong>
+                            ${escapeHTML(error.message || error.error || "Provider query failed")}
+                            ${error.query ? `<div style="font-family:monospace; color:var(--accent-gold); margin-top:2px;">${escapeHTML(error.query)}</div>` : ""}
+                        </div>`).join("")}
+                </div>
+            </details>`;
+    }
+
+    if (queryDetails.length > 0) {
+        html += `
+            <details style="border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:7px 9px;">
+                <summary style="cursor:pointer; color:var(--text-primary); font-size:0.72rem; font-weight:700;">Prepared and executed queries (${queryDetails.length})</summary>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:7px;">
+                    ${queryDetails.map(query => {
+                        const stateColor = query.state === "failed"
+                            ? "var(--accent-crimson)"
+                            : (query.state === "executed" ? "#00ff66" : "var(--text-secondary)");
+                        return `<div style="background:rgba(255,255,255,0.02); padding:6px 8px; border-radius:4px; font-size:0.66rem; word-break:break-word;">
+                            <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:2px;">
+                                <span style="text-transform:uppercase; color:var(--text-secondary);">${escapeHTML(query.category.replace(/_/g, " "))}</span>
+                                <span style="color:${stateColor}; text-transform:uppercase;">${escapeHTML(query.state.replace(/_/g, " "))}</span>
+                            </div>
+                            <div style="font-family:monospace; color:var(--accent-gold);">${escapeHTML(query.query)}</div>
+                        </div>`;
+                    }).join("")}
+                </div>
+            </details>`;
+    }
+
+    if (view.results.length > 0) {
+        const grouped = {};
+        view.results.forEach(result => {
+            const category = String(result.category || "general");
+            if (!grouped[category]) grouped[category] = [];
+            grouped[category].push(result);
+        });
+        Object.entries(grouped).forEach(([category, results]) => {
+            html += `<div style="font-size:0.72rem; text-transform:uppercase; color:var(--text-secondary); font-weight:700; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:4px;">${escapeHTML(category.replace(/_/g, " "))} · ${results.length} hits</div>`;
+            results.forEach(result => {
+                const url = safeExternalUrl(result.url);
+                html += `
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:10px 12px; border-radius:6px; display:flex; flex-direction:column; gap:4px;">
+                        ${url ? `<a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer" style="font-size:0.82rem; font-weight:700; color:var(--accent-blue); text-decoration:none;">${escapeHTML(result.title || "Search result")}</a>` : `<div style="font-size:0.82rem; font-weight:700;">${escapeHTML(result.title || "Search result")}</div>`}
+                        <div style="font-size:0.72rem; color:var(--text-primary); line-height:1.4;">${escapeHTML(result.snippet || "No description returned.")}</div>
+                        <div style="font-size:0.64rem; color:var(--text-secondary); font-family:monospace; word-break:break-word;"><strong>Query:</strong> ${escapeHTML(result.query || "not reported")}${result.position ? ` · Rank #${escapeHTML(result.position)}` : ""}</div>
+                    </div>`;
+            });
+        });
+    }
+
+    containerElement.innerHTML = html;
+}
+
 function contentItemText(item) {
     if (!item || typeof item !== "object") return "";
     return DataMappers.firstDefined(
@@ -197,7 +592,7 @@ function runPreloaderSequence() {
     const preloaderStatus = document.getElementById("preloader-status-text");
     const loadingSteps = [
         { time: 400, text: "CONNECTING TO SECURE UP POLICE GATEWAY..." },
-        { time: 800, text: "ESTABLISHING INTERCEPT HANDSHAKE..." },
+        { time: 800, text: "ESTABLISHING PUBLIC-SOURCE COLLECTION SESSION..." },
         { time: 1200, text: "VERIFYING SECURITY AUTHORIZATIONS..." },
         { time: 1600, text: "CHECKING BACKEND API SERVICE HEALTH..." },
     ];
@@ -224,7 +619,7 @@ function runPreloaderSequence() {
                     diagConnection.style.color = "#00ff66";
                 }
                 if (diagVersion) diagVersion.innerText = data.version || "0.1.0";
-                if (preloaderStatus) preloaderStatus.innerText = "API OPERATIONAL. DISPATCHING SECURE GATEWAY...";
+                if (preloaderStatus) preloaderStatus.innerText = "API OPERATIONAL. PUBLIC-SOURCE COLLECTORS READY...";
                 
                 // Initialize Hi-Tek Diagnostics status
                 updateHiTekDiagnostics();
@@ -373,6 +768,19 @@ async function triggerInvestigation() {
         currentCaseId = customCase;
     }
 
+    let requestPayload;
+    try {
+        requestPayload = buildInvestigationRequestFromForm({
+            username,
+            platform,
+            caseId: currentCaseId,
+            depth
+        });
+    } catch (validationError) {
+        alert(validationError.message);
+        return;
+    }
+
     // Immediately hide empty standby state & show skeleton workspace grid on button click
     const emptyState = document.getElementById("results-empty-state");
     const grid = document.getElementById("results-workspace-grid");
@@ -405,7 +813,7 @@ async function triggerInvestigation() {
 
     // Simulated terminal logs
     await logLine(`[SYS] OSINT ENGAGE FOR TARGET SUBJECT: ${username}`, 50);
-    await logLine(`[NET] ESTABLISHING INTERCEPT HOOK ON PLATFORM PORTAL: ${platform.toUpperCase()}`, 150);
+    await logLine(`[NET] SELECTED PRIMARY COLLECTION PLATFORM: ${platform.toUpperCase()}`, 150);
     await logLine(`[SYS] INTEGRATING PROFILE DEPTH ENVELOPE: ${depth}`, 100);
     await logLine(`[NET] INITIATING DIRECTORIES SEARCH ENRICHMENTS...`, 150);
 
@@ -437,19 +845,24 @@ async function triggerInvestigation() {
             headers: {
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({
-                username: username,
-                platform: platform,
-                case_id: currentCaseId,
-                correlation_depth: depth,
-                filter_hitek: document.getElementById("filter-hitek") ? document.getElementById("filter-hitek").checked : true
-            })
+            body: JSON.stringify(requestPayload)
         });
 
         clearInterval(heartbeatInterval);
 
         if (!response.ok) {
-            throw new Error(`Endpoint error: ${response.status}`);
+            let detail = "";
+            try {
+                const errorPayload = await response.json();
+                detail = typeof errorPayload.detail === "string"
+                    ? errorPayload.detail
+                    : (Array.isArray(errorPayload.detail)
+                        ? errorPayload.detail.map(item => item.msg || JSON.stringify(item)).join("; ")
+                        : "");
+            } catch (_) {
+                detail = "";
+            }
+            throw new Error(`Endpoint error: ${response.status}${detail ? ` - ${detail}` : ""}`);
         }
 
         const data = await response.json();
@@ -489,31 +902,40 @@ function renderInvestigationResults(data) {
 
     // Legcay Subject Profile details elements have been removed from the HTML as they are now rendered dynamically inside platform dossier cards
 
-    // Threat Gauge Circle Progress
-    const risk = data.risk_assessment || { score: 0, level: "low" };
+    // Automated public-source risk gauge
+    const risk = data.risk_assessment || {};
     const fillCircle = document.getElementById("risk-fill");
     const scoreNum = document.getElementById("risk-score-num");
     const riskBadge = document.getElementById("risk-badge");
 
-    const score = risk.score !== undefined ? risk.score : 0;
-    const offset = 377 - (377 * score) / 100;
+    const score = Number.isFinite(Number(risk.score))
+        ? Math.max(0, Math.min(100, Number(risk.score)))
+        : 0;
+    const riskConsistency = getRiskConsistency(risk);
+    const backendRiskUnknown = riskConsistency.backendLevel === "unknown";
+    const offset = backendRiskUnknown ? 377 : 377 - (377 * score) / 100;
     
     if (fillCircle) fillCircle.style.strokeDashoffset = offset;
-    if (scoreNum) scoreNum.innerText = `${score}%`;
+    if (scoreNum) scoreNum.innerText = backendRiskUnknown ? "N/A" : `${score}%`;
 
     if (riskBadge) {
+        const systemRiskLevel = riskConsistency.backendLevel || "unknown";
         riskBadge.className = "risk-indicator-badge";
-        if (risk.level === "low") {
+        if (backendRiskUnknown) {
+            riskBadge.classList.add("actor-status-neutral");
+            riskBadge.innerText = "RISK ASSESSMENT UNKNOWN";
+            if (fillCircle) fillCircle.style.stroke = "#7c8798";
+        } else if (systemRiskLevel === "low") {
             riskBadge.classList.add("risk-low");
-            riskBadge.innerText = "LOW THREAT";
+            riskBadge.innerText = "LOW RISK ASSESSMENT";
             if (fillCircle) fillCircle.style.stroke = "#00ff66";
-        } else if (risk.level === "high") {
+        } else if (systemRiskLevel === "high" || systemRiskLevel === "critical") {
             riskBadge.classList.add("risk-high");
-            riskBadge.innerText = "HIGH THREAT";
+            riskBadge.innerText = systemRiskLevel === "critical" ? "CRITICAL RISK ASSESSMENT" : "HIGH RISK ASSESSMENT";
             if (fillCircle) fillCircle.style.stroke = "#ff3366";
         } else {
             riskBadge.classList.add("risk-medium");
-            riskBadge.innerText = "MEDIUM THREAT";
+            riskBadge.innerText = "MEDIUM RISK ASSESSMENT";
             if (fillCircle) fillCircle.style.stroke = "#ffd700";
         }
     }
@@ -523,6 +945,33 @@ function renderInvestigationResults(data) {
     const riskAnalysisContent = document.getElementById("risk-analysis-text-content");
     const riskErrorNotice = document.getElementById("risk-error-notice");
     const riskErrorMessage = document.getElementById("risk-error-message");
+    const riskConsistencyNotice = document.getElementById("risk-consistency-notice");
+
+    if (riskConsistencyNotice) {
+        if (riskConsistency.ai.available) {
+            const backendLabel = `${String(riskConsistency.backendLevel || "unknown").toUpperCase()}${riskConsistency.backendScore !== null ? ` (${riskConsistency.backendScore}%)` : ""}`;
+            const aiLabel = `${String(riskConsistency.ai.level || "unknown").toUpperCase()}${riskConsistency.ai.score !== null ? ` (${riskConsistency.ai.score}%)` : ""}`;
+            riskConsistencyNotice.innerText = riskConsistency.disagrees
+                ? `Human review required: the automated public-source assessment is ${backendLabel}, while the separate AI narrative signal is ${aiLabel}. Neither result has been hidden or automatically preferred.`
+                : `Automated public-source assessment requiring human review: ${backendLabel}. The separate AI narrative signal (${aiLabel}) is consistent.`;
+            riskConsistencyNotice.style.display = "block";
+            riskConsistencyNotice.style.borderColor = riskConsistency.disagrees
+                ? "rgba(255,51,102,0.45)"
+                : "rgba(0,255,102,0.3)";
+            riskConsistencyNotice.style.background = riskConsistency.disagrees
+                ? "rgba(255,51,102,0.08)"
+                : "rgba(0,255,102,0.06)";
+            riskConsistencyNotice.style.color = riskConsistency.disagrees
+                ? "var(--accent-crimson)"
+                : "var(--text-secondary)";
+        } else {
+            riskConsistencyNotice.innerText = "Automated public-source assessment requiring human review. AI narrative risk was unavailable, so the gauge shows only the backend assessment signal.";
+            riskConsistencyNotice.style.display = "block";
+            riskConsistencyNotice.style.borderColor = "var(--border-glow)";
+            riskConsistencyNotice.style.background = "rgba(255,255,255,0.025)";
+            riskConsistencyNotice.style.color = "var(--text-secondary)";
+        }
+    }
 
     if (risk.ai_risk_analysis) {
         const riskSuccess = risk.ai_risk_analysis.success;
@@ -534,7 +983,7 @@ function renderInvestigationResults(data) {
             if (riskAnalysisSection) riskAnalysisSection.style.display = "none";
         } else {
             if (riskErrorNotice) riskErrorNotice.style.display = "none";
-            const textAnalysis = risk.ai_risk_analysis.analysis;
+            const textAnalysis = sanitizePublicSourceNarrative(risk.ai_risk_analysis.analysis);
             if (textAnalysis && textAnalysis.trim() && textAnalysis !== "Configure GROQ_API_KEY for AI risk assessment.") {
                 if (riskAnalysisSection && riskAnalysisContent) {
                     riskAnalysisContent.innerText = textAnalysis.trim();
@@ -620,16 +1069,17 @@ function renderInvestigationResults(data) {
 
     if (parsedAI && parsedAI.reasons && parsedAI.reasons.length > 0) {
         if (aiReasonsSection && aiReasonsList) {
-            aiReasonsList.innerHTML = parsedAI.reasons.map(r => `<li>${r}</li>`).join("");
+            aiReasonsList.innerHTML = parsedAI.reasons.map(r => `<li>${escapeHTML(r)}</li>`).join("");
             aiReasonsSection.style.display = "block";
         }
     } else {
         if (aiReasonsSection) aiReasonsSection.style.display = "none";
     }
 
-    if (parsedAI && parsedAI.next_steps && parsedAI.next_steps.length > 0) {
+    const reviewedNextSteps = parsedAI ? safeReviewSteps(parsedAI.next_steps) : [];
+    if (reviewedNextSteps.length > 0) {
         if (aiStepsSection && aiStepsList) {
-            aiStepsList.innerHTML = parsedAI.next_steps.map(s => `<li>${s}</li>`).join("");
+            aiStepsList.innerHTML = reviewedNextSteps.map(s => `<li>${escapeHTML(s)}</li>`).join("");
             aiStepsSection.style.display = "block";
         }
     } else {
@@ -638,19 +1088,23 @@ function renderInvestigationResults(data) {
 
     if (aiPlatforms) {
         aiPlatforms.innerHTML = "";
-        const plats = [...(ai.matching_platforms || [])];
-        
-        // Ensure Telegram handle is included if Telegram intelligence shows account exists
+        const evidenceEntries = DataMappers.buildPlatformEntries(data);
+        const platformEvidence = buildPlatformEvidenceMap(data, evidenceEntries);
+
         const tgData = DataMappers.resolveTelegramData(data);
         const hasTg = tgData.username || tgData.exists || (data.cross_platform_matches && data.cross_platform_matches.some(m => m.platform.toLowerCase() === "telegram" && m.exists));
-        if (hasTg && !plats.some(p => p.toLowerCase() === "telegram")) {
-            plats.push("telegram");
+        if (hasTg && !platformEvidence.has("telegram")) {
+            const telegramEntry = evidenceEntries.find(entry => String(entry.platform || "").toLowerCase() === "telegram");
+            platformEvidence.set("telegram", telegramEntry && telegramEntry.scraper_confirmed ? "COLLECTOR CONFIRMED" : "UNVERIFIED CANDIDATE");
         }
+        const plats = [...platformEvidence.keys()];
 
         if (plats.length > 0) {
             plats.forEach(plat => {
                 const platLower = plat.toLowerCase();
                 const platData = DataMappers.getRenderablePlatformData(data, platLower);
+                const evidenceLabel = platformEvidence.get(platLower) || "UNVERIFIED CANDIDATE";
+                const evidenceColor = evidenceLabel === "UNVERIFIED CANDIDATE" ? "var(--accent-gold)" : "#00ff66";
                 let profilePic = null;
                 if (platData) {
                     profilePic = platData.profile_pic_hd || platData.profile_pic_url || (platData.profile && (platData.profile.profile_pic_hd || platData.profile.profile_pic_url));
@@ -663,7 +1117,7 @@ function renderInvestigationResults(data) {
                 const handleUsername = (platData && platData.username) || (platLower === "telegram" && tgData.username ? tgData.username : null);
                 
                 const capsule = document.createElement("a");
-                capsule.href = platData?.url || (data.cross_platform_matches?.find(m => m.platform.toLowerCase() === platLower)?.url) || (platLower === "telegram" && handleUsername ? `https://t.me/${handleUsername}` : "#");
+                capsule.href = safeExternalUrl(platData?.url || (data.cross_platform_matches?.find(m => m.platform.toLowerCase() === platLower)?.url) || (platLower === "telegram" && handleUsername ? `https://t.me/${handleUsername}` : "")) || "#";
                 capsule.target = "_blank";
                 capsule.className = "profile-capsule";
                 capsule.style.cssText = "display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-glow); border-radius: 20px; color: var(--text-primary); text-decoration: none; font-size: 0.75rem; transition: all 0.2s; cursor: pointer; margin-right: 6px; margin-bottom: 6px;";
@@ -683,8 +1137,9 @@ function renderInvestigationResults(data) {
                 
                 capsule.innerHTML = `
                     ${imgHtml}
-                    <span style="font-weight: 600; text-transform: uppercase;">${plat}</span>
-                    ${handleUsername ? `<span style="font-size:0.7rem; color:var(--accent-blue); font-family:'Share Tech Mono',monospace;">@${handleUsername}</span>` : ""}
+                    <span style="font-weight: 600; text-transform: uppercase;">${escapeHTML(plat)}</span>
+                    ${handleUsername ? `<span style="font-size:0.7rem; color:var(--accent-blue); font-family:'Share Tech Mono',monospace;">@${escapeHTML(handleUsername)}</span>` : ""}
+                    <span style="font-size:0.55rem; color:${evidenceColor};">${evidenceLabel}</span>
                 `;
                 aiPlatforms.appendChild(capsule);
             });
@@ -849,160 +1304,9 @@ function renderInvestigationResults(data) {
     const dorkContainerEl = document.getElementById("dorking-results-container");
 
     if (dorkContainerEl) {
-        dorkContainerEl.innerHTML = "";
-        
-        if (dorking.status === "not_configured") {
-            if (dorkCountEl) {
-                dorkCountEl.innerText = "SerpAPI Not Configured";
-                dorkCountEl.style.color = "var(--accent-crimson)";
-            }
-            
-            // Build prepared queries view
-            const warningEl = document.createElement("div");
-            warningEl.style.cssText = "background:rgba(255, 51, 102, 0.08); border:1px solid rgba(255, 51, 102, 0.2); padding:10px 12px; border-radius:6px; font-size:0.8rem; color:var(--text-primary); line-height:1.4;";
-            warningEl.innerHTML = `
-                <div style="font-weight:600; color:var(--accent-crimson); margin-bottom:4px; display:flex; align-items:center; gap:6px;">
-                    <span>⚠️ Google Dorking Service Offline</span>
-                </div>
-                <div style="font-size:0.75rem; color:var(--text-secondary);">
-                    Configure <code style="font-family:monospace; background:rgba(255,255,255,0.05); padding:1px 3px; border-radius:3px;">SERPAPI_KEY</code>, or manually run these prepared dork queries in Google. Google search is routed only through SerpAPI; automatic provider fallback is disabled.
-                </div>
-            `;
-            dorkContainerEl.appendChild(warningEl);
-            
-            const queriesList = dorking.queries || [];
-            if (queriesList.length > 0) {
-                const queriesContainer = document.createElement("div");
-                queriesContainer.style.cssText = "display:flex; flex-direction:column; gap:6px; margin-top:8px;";
-                
-                queriesList.forEach(q => {
-                    const row = document.createElement("div");
-                    row.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:6px 10px; border-radius:4px; font-size:0.75rem; font-family:'Share Tech Mono', monospace;";
-                    
-                    const catBadge = document.createElement("span");
-                    catBadge.className = "tag-pill";
-                    catBadge.style.cssText = "font-size:0.6rem; padding:1px 5px; text-transform:uppercase;";
-                    catBadge.innerText = q.category.replace(/_/g, ' ');
-                    
-                    const queryText = document.createElement("span");
-                    queryText.style.cssText = "flex:1; margin-left:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--accent-gold);";
-                    queryText.innerText = q.query;
-                    
-                    const btnCopy = document.createElement("button");
-                    btnCopy.style.cssText = "background:transparent; border:1px solid rgba(255,215,0,0.3); color:var(--accent-gold); font-size:0.65rem; padding:2px 6px; border-radius:3px; cursor:pointer;";
-                    btnCopy.innerText = "COPY";
-                    btnCopy.onclick = () => {
-                        navigator.clipboard.writeText(q.query);
-                        btnCopy.innerText = "COPIED!";
-                        setTimeout(() => { btnCopy.innerText = "COPY"; }, 1500);
-                    };
-                    
-                    row.appendChild(catBadge);
-                    row.appendChild(queryText);
-                    row.appendChild(btnCopy);
-                    queriesContainer.appendChild(row);
-                });
-                dorkContainerEl.appendChild(queriesContainer);
-            }
-        } else {
-            const results = dorking.results || [];
-            
-            // Filter out social platform dorks from the general discovery card
-            const socialDomains = ["instagram.com", "twitter.com", "x.com", "t.me", "telegram.me", "linkedin.com", "reddit.com", "facebook.com", "tiktok.com", "github.com", "youtube.com", "pinterest.com"];
-            const generalResults = results.filter(r => {
-                const url = (r.url || "").toLowerCase();
-                return !socialDomains.some(d => url.includes(d));
-            });
-
-            if (dorkCountEl) {
-                dorkCountEl.innerText = `Results: ${generalResults.length} General Hits`;
-                dorkCountEl.style.color = "var(--accent-blue)";
-            }
-            
-            if (generalResults.length === 0) {
-                dorkContainerEl.innerHTML = `<div style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px 15px;">Google search indexing returned 0 matching general items.</div>`;
-                
-                const queriesList = dorking.queries || [];
-                if (queriesList.length > 0) {
-                    const manualDorksDiv = document.createElement("div");
-                    manualDorksDiv.style.cssText = "margin-top:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:10px;";
-                    manualDorksDiv.innerHTML = `<div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:8px;">You can manually search these prepared dork queries in Google:</div>`;
-                    const queriesContainer = document.createElement("div");
-                    queriesContainer.style.cssText = "display:flex; flex-direction:column; gap:6px;";
-                    
-                    queriesList.forEach(q => {
-                        const row = document.createElement("div");
-                        row.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:6px 10px; border-radius:4px; font-size:0.75rem; font-family:'Share Tech Mono', monospace;";
-                        
-                        const catBadge = document.createElement("span");
-                        catBadge.className = "tag-pill";
-                        catBadge.style.cssText = "font-size:0.6rem; padding:1px 5px; text-transform:uppercase;";
-                        catBadge.innerText = q.category.replace(/_/g, ' ');
-                        
-                        const queryText = document.createElement("span");
-                        queryText.style.cssText = "flex:1; margin-left:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--accent-gold);";
-                        queryText.innerText = q.query;
-                        
-                        const btnCopy = document.createElement("button");
-                        btnCopy.style.cssText = "background:transparent; border:1px solid rgba(255,215,0,0.3); color:var(--accent-gold); font-size:0.65rem; padding:2px 6px; border-radius:3px; cursor:pointer;";
-                        btnCopy.innerText = "COPY";
-                        btnCopy.onclick = () => {
-                            navigator.clipboard.writeText(q.query);
-                            btnCopy.innerText = "COPIED!";
-                            setTimeout(() => { btnCopy.innerText = "COPY"; }, 1500);
-                        };
-                        
-                        row.appendChild(catBadge);
-                        row.appendChild(queryText);
-                        row.appendChild(btnCopy);
-                        queriesContainer.appendChild(row);
-                    });
-                    manualDorksDiv.appendChild(queriesContainer);
-                    dorkContainerEl.appendChild(manualDorksDiv);
-                }
-            } else {
-                // Group general results by category
-                const generalGrouped = {};
-                generalResults.forEach(r => {
-                    const cat = r.category || "general";
-                    if (!generalGrouped[cat]) generalGrouped[cat] = [];
-                    generalGrouped[cat].push(r);
-                });
-                
-                Object.keys(generalGrouped).forEach(cat => {
-                    const catResults = generalGrouped[cat] || [];
-                    if (catResults.length === 0) return;
-                    
-                    const catHeader = document.createElement("div");
-                    catHeader.style.cssText = "font-size:0.75rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:4px; margin-top:8px; display:flex; justify-content:space-between;";
-                    catHeader.innerHTML = `<span>📂 Category: ${cat.replace(/_/g, ' ')}</span> <span class="mono blue-text" style="font-size:0.7rem;">${catResults.length} hits</span>`;
-                    dorkContainerEl.appendChild(catHeader);
-                    
-                    catResults.forEach(r => {
-                        const card = document.createElement("div");
-                        card.style.cssText = "background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:10px 12px; border-radius:6px; display:flex; flex-direction:column; gap:4px;";
-                        
-                        card.innerHTML = `
-                            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-                                <a href="${r.url}" target="_blank" style="font-size:0.85rem; font-weight:600; color:var(--accent-blue); text-decoration:none; line-height:1.3; hover:text-decoration:underline;">
-                                    ${r.title || "No Title"}
-                                </a>
-                                <span class="system-badge" style="font-size:0.6rem; padding:1px 5px; flex-shrink:0; background:rgba(0,180,255,0.08); border-color:rgba(0,180,255,0.2); color:var(--accent-blue);">${r.domain}</span>
-                            </div>
-                            <div style="font-size:0.75rem; color:var(--text-primary); line-height:1.4; margin-top:2px;">
-                                ${r.snippet || "No description cached."}
-                            </div>
-                            <div style="font-size:0.65rem; color:var(--text-secondary); font-family:monospace; margin-top:4px; display:flex; gap:10px;">
-                                <span><strong>Query:</strong> ${r.query}</span>
-                                ${r.position ? `<span><strong>Rank:</strong> #${r.position}</span>` : ""}
-                            </div>
-                        `;
-                        dorkContainerEl.appendChild(card);
-                    });
-                });
-            }
-        }
+        renderDorkingPanel(dorking, dorkCountEl, dorkContainerEl);
     }
+
 
     // 1. Associated Accounts rendering
     const assocCountEl = document.getElementById("associated-accounts-count");
@@ -1060,14 +1364,8 @@ function renderInvestigationResults(data) {
             warning.innerHTML = `⚠️ <strong>Unverified</strong> — algorithmically guessed from username pattern. Not confirmed real addresses.`;
             secretResultsEl.appendChild(warning);
 
-            guessedEmails.forEach((email, i) => {
-                const confidence = Math.max(95 - i * 10, 40); // descending: 95, 85, 75…
-                let badgeStyle = "background:rgba(255,165,0,0.08); border-color:rgba(255,165,0,0.25); color:#ffa500;";
-                if (confidence >= 85) {
-                    badgeStyle = "background:rgba(0,255,100,0.08); border-color:rgba(0,255,100,0.25); color:#00ff66;";
-                } else if (confidence >= 65) {
-                    badgeStyle = "background:rgba(255,215,0,0.08); border-color:rgba(255,215,0,0.25); color:var(--accent-gold);";
-                }
+            guessedEmails.forEach((email) => {
+                const badgeStyle = "background:rgba(255,165,0,0.08); border-color:rgba(255,165,0,0.25); color:#ffa500;";
                 const card = document.createElement("div");
                 card.style.cssText = "background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:10px 12px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;";
                 card.innerHTML = `
@@ -1076,7 +1374,7 @@ function renderInvestigationResults(data) {
                         <span style="font-family:'Share Tech Mono',monospace; font-size:0.82rem; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${email}</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                        <span class="system-badge" style="${badgeStyle} font-size:0.65rem;">${confidence}% guess</span>
+                        <span class="system-badge" style="${badgeStyle} font-size:0.65rem;">UNVERIFIED PATTERN</span>
                         <button onclick="navigator.clipboard.writeText('${email}').then(()=>{this.textContent='✓ Copied';setTimeout(()=>{this.textContent='📋 Copy'},1500)})" style="background:rgba(0,188,212,0.1); border:1px solid rgba(0,188,212,0.25); color:var(--accent-blue); padding:3px 8px; border-radius:4px; font-size:0.7rem; cursor:pointer;">📋 Copy</button>
                     </div>
                 `;
@@ -1633,10 +1931,41 @@ function renderOfficialReportTemplate(data, caseId) {
     if (profilePic && !profilePic.startsWith("data:")) {
         profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
     }
-    const risk = data.risk_assessment || { level: "low", score: 0, factors: [] };
-    const score = risk.score !== undefined ? risk.score : 0;
+    const risk = data.risk_assessment || {};
+    const riskConsistency = getRiskConsistency(risk);
     const ai = data.ai_correlation_result || {};
-    const matches = data.cross_platform_matches || [];
+    const matches = DataMappers.buildPlatformEntries(data);
+    const platformEvidence = buildPlatformEvidenceMap(data, matches);
+    platformEvidence.forEach((status, platform) => {
+        if (matches.some(match => String(match.platform || "").toLowerCase() === platform)) return;
+        matches.push({
+            platform,
+            exists: true,
+            scraper_confirmed: status !== "UNVERIFIED CANDIDATE"
+        });
+    });
+    const evidenceStatusFor = (match) => {
+        const platform = String(match.platform || "").toLowerCase();
+        return platformEvidence.get(platform)
+            || (match.scraper_confirmed === true
+                ? "COLLECTOR CONFIRMED"
+                : (match.exists === true ? "UNVERIFIED CANDIDATE" : null));
+    };
+    const identityConfirmedMatches = matches.filter(match => evidenceStatusFor(match) === "IDENTITY CONFIRMED");
+    const identityCorroboratedMatches = matches.filter(match => evidenceStatusFor(match) === "IDENTITY CORROBORATED");
+    const collectorOnlyMatches = matches.filter(match => evidenceStatusFor(match) === "COLLECTOR CONFIRMED");
+    const unverifiedCandidates = matches.filter(match => evidenceStatusFor(match) === "UNVERIFIED CANDIDATE");
+    const collectedEvidenceMatches = [
+        ...identityConfirmedMatches,
+        ...identityCorroboratedMatches,
+        ...collectorOnlyMatches
+    ];
+    const evidenceTierSummary = [
+        `${identityConfirmedMatches.length} identity-confirmed profile${identityConfirmedMatches.length === 1 ? "" : "s"}`,
+        `${identityCorroboratedMatches.length} identity-corroborated profile${identityCorroboratedMatches.length === 1 ? "" : "s"}`,
+        `${collectorOnlyMatches.length} collector-only profile${collectorOnlyMatches.length === 1 ? "" : "s"}`,
+        `${unverifiedCandidates.length} HTTP-only candidate${unverifiedCandidates.length === 1 ? "" : "s"}`
+    ].join(", ");
     
     const currentDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const timeStr = pData.scraped_at || data.timestamp || new Date().toISOString();
@@ -1709,25 +2038,29 @@ function renderOfficialReportTemplate(data, caseId) {
 
     // Dorking Results
     const dorking = data.dorking_results || {};
+    const dorkView = getDorkStatusView(dorking);
+    const dorkQueryDetails = getDorkQueryDetails(dorking);
     let dorkingRows = "";
-    if (dorking.status === "not_configured") {
-        dorkingRows = `<tr><td colspan="4" style="text-align: center; color: #555;">Google Dorking search providers were not configured during run.</td></tr>`;
+    if (dorkView.results.length > 0) {
+        dorkView.results.forEach(result => {
+            const resultUrl = safeExternalUrl(result.url);
+            dorkingRows += `
+            <tr>
+                <td><strong>${escapeHTML(String(result.category || "general").toUpperCase().replace(/_/g, " "))}</strong></td>
+                <td>${resultUrl ? `<a href="${escapeHTML(resultUrl)}" target="_blank" rel="noopener noreferrer" style="color:#004d80; text-decoration:underline;">${escapeHTML(result.title || "Link")}</a>` : escapeHTML(result.title || "Link")}<br><span style="font-size:0.75rem; color:#666;">${escapeHTML(result.domain || "")}</span></td>
+                <td style="font-size:0.8rem; line-height:1.3;">${escapeHTML(result.snippet || "")}</td>
+                <td style="font-family:monospace; font-size:0.75rem;">${escapeHTML(result.query || "Not reported")}</td>
+            </tr>`;
+        });
     } else {
-        const dResults = dorking.results || [];
-        if (dResults.length > 0) {
-            dResults.forEach(r => {
-                dorkingRows += `
-                <tr>
-                    <td><strong>${r.category.toUpperCase().replace(/_/g, ' ')}</strong></td>
-                    <td><a href="${r.url}" target="_blank" style="color: #004d80; text-decoration: underline;">${r.title || "Link"}</a><br><span style="font-size: 0.75rem; color: #666;">${r.domain}</span></td>
-                    <td style="font-size: 0.8rem; line-height: 1.3;">${r.snippet || ""}</td>
-                    <td style="font-family: monospace; font-size: 0.75rem;">${r.query}</td>
-                </tr>`;
-            });
-        } else {
-            dorkingRows = `<tr><td colspan="4" style="text-align: center; color: #555;">No organic results resolved via Google Dorking.</td></tr>`;
-        }
+        dorkingRows = `<tr><td colspan="4" style="text-align:center; color:#555;"><strong>${escapeHTML(dorkView.label)}</strong><br>${escapeHTML(dorkView.detail)}</td></tr>`;
     }
+    const dorkErrorsHTML = dorkView.errors.length
+        ? `<h5>Provider Errors</h5><ul>${dorkView.errors.map(error => `<li><strong>${escapeHTML(error.status || "error")}</strong>: ${escapeHTML(error.message || error.error || "Provider query failed")}${error.query ? ` — <span style="font-family:monospace;">${escapeHTML(error.query)}</span>` : ""}</li>`).join("")}</ul>`
+        : "<p>No provider errors reported.</p>";
+    const dorkQueriesHTML = dorkQueryDetails.length
+        ? `<h5>Prepared / Executed Queries</h5><table><tr><th>Category</th><th>Execution</th><th>Query</th></tr>${dorkQueryDetails.map(query => `<tr><td>${escapeHTML(query.category.replace(/_/g, " "))}</td><td>${escapeHTML(query.state.replace(/_/g, " ").toUpperCase())}</td><td style="font-family:monospace; font-size:9pt;">${escapeHTML(query.query)}</td></tr>`).join("")}</table>`
+        : "<p>No query text was returned by the backend.</p>";
 
     // 1. Associated Accounts Rows
     const assocAccounts = (data.reverse_lookup_results && data.reverse_lookup_results.associated_accounts) || [];
@@ -1828,16 +2161,26 @@ function renderOfficialReportTemplate(data, caseId) {
     let aiDecisionText = parsedAI ? (parsedAI.decision || "UNKNOWN") : "UNKNOWN";
     const aiConfidencePercent = DataMappers.confidencePercent(ai);
     const aiConfidenceLabel = aiConfidencePercent === null ? "Not available" : `${aiConfidencePercent}%`;
+    const aiRiskLabel = riskConsistency.ai.available
+        ? `${String(riskConsistency.ai.level || "unknown").toUpperCase()}${riskConsistency.ai.score !== null ? ` (${riskConsistency.ai.score}%)` : ""}`
+        : "Not available";
+    const backendRiskLabel = `${String(riskConsistency.backendLevel || "unknown").toUpperCase()}${riskConsistency.backendScore !== null ? ` (${riskConsistency.backendScore}%)` : ""}`;
+    const riskConsistencyHTML = riskConsistency.disagrees
+        ? `<div class="risk-disagreement"><strong>Human review required:</strong> the automated public-source assessment is ${escapeHTML(backendRiskLabel)}, while the separate AI narrative signal is ${escapeHTML(aiRiskLabel)}. Both are preserved; neither automatically overrides the other.</div>`
+        : (riskConsistency.ai.available
+            ? `<p><strong>Automated public-source assessment requiring human review:</strong> ${escapeHTML(backendRiskLabel)}. The separate AI narrative signal (${escapeHTML(aiRiskLabel)}) is consistent.</p>`
+            : `<p><strong>Automated public-source assessment requiring human review:</strong> ${escapeHTML(backendRiskLabel)}. AI narrative risk was unavailable.</p>`);
     
     let aiReasonsHTML = "";
     let aiStepsHTML = "";
     if (parsedAI && parsedAI.reasons && parsedAI.reasons.length > 0) {
-        aiReasonsHTML = parsedAI.reasons.map(r => `<li>${r}</li>`).join("");
+        aiReasonsHTML = parsedAI.reasons.map(reason => `<li>${escapeHTML(reason)}</li>`).join("");
     } else {
         aiReasonsHTML = "<li>No AI correlation reasons were returned.</li>";
     }
-    if (parsedAI && parsedAI.next_steps && parsedAI.next_steps.length > 0) {
-        aiStepsHTML = parsedAI.next_steps.map(s => `<li>${s}</li>`).join("");
+    const reviewedAIReportSteps = parsedAI ? safeReviewSteps(parsedAI.next_steps) : [];
+    if (reviewedAIReportSteps.length > 0) {
+        aiStepsHTML = reviewedAIReportSteps.map(step => `<li>${escapeHTML(step)}</li>`).join("");
     } else {
         aiStepsHTML = "<li>Manually verify other account attributes, matching photos, and locations.</li>";
     }
@@ -1845,22 +2188,43 @@ function renderOfficialReportTemplate(data, caseId) {
     // Generate table rows for cross platform matches
     let matchesRows = "";
     matches.forEach(m => {
-        const conf = m.exists === true ? 85 : m.exists === null ? 0 : 5;
-        const confClass = m.exists === true ? "finding-high" : m.exists === null ? "" : "";
-        const evidenceStr = m.exists === true
-            ? `MATCH IDENTIFIED. Active profile URL resolved status ${m.status_code}. Path: ${m.url}`
+        const tierStatus = evidenceStatusFor(m);
+        const collectorConfirmed = [
+            "COLLECTOR CONFIRMED",
+            "IDENTITY CORROBORATED",
+            "IDENTITY CONFIRMED"
+        ].includes(tierStatus);
+        const unverifiedCandidate = tierStatus === "UNVERIFIED CANDIDATE";
+        const evidenceStatus = tierStatus
+            || (m.exists === null ? "INCONCLUSIVE" : "NOT OBSERVED");
+        const evidenceClass = collectorConfirmed
+            ? "finding-confirmed"
+            : (unverifiedCandidate ? "finding-candidate" : "");
+        const profileData = DataMappers.getRenderablePlatformData(data, String(m.platform || "").toLowerCase());
+        const providerName = profileData && (profileData.provider || profileData.source || profileData.collector);
+        const evidenceStr = evidenceStatus === "IDENTITY CONFIRMED"
+            ? "Collector-confirmed profile data was linked by a direct independent identifier. Human verification is still required."
+            : evidenceStatus === "IDENTITY CORROBORATED"
+            ? "Collector-confirmed profile data was corroborated by multiple independent public attributes, without a direct identifier. Human verification is still required."
+            : evidenceStatus === "COLLECTOR CONFIRMED"
+            ? `A mapped collector returned positive public profile data${providerName ? ` via ${providerName}` : ""}. No independent identity link was established.`
+            : unverifiedCandidate
+            ? `A lightweight HTTP URL probe returned ${m.status_code || "a reachable response"} for ${m.url || "the candidate URL"}. URL reachability does not prove profile existence or ownership.`
             : m.exists === null
-            ? `INCONCLUSIVE. ${m.note || 'Platform blocked automated check (HTTP ' + m.status_code + ')'}. Manual verification required.`
-            : `ABSENT. Profile resolution returned status ${m.status_code || "Timeout"}.`;
+            ? `${m.note || `The URL probe was blocked or inconclusive${m.status_code ? ` (HTTP ${m.status_code})` : ""}`}. Manual verification may be required.`
+            : `No public profile was observed by the available check${m.status_code ? ` (HTTP ${m.status_code})` : ""}.`;
 
         matchesRows += `
         <tr>
-            <td>${m.platform.toUpperCase()}</td>
-            <td>${pData.username}</td>
-            <td class="${confClass}">${m.exists === null ? 'N/A' : conf + '%'}</td>
-            <td>${evidenceStr}</td>
+            <td>${escapeHTML(String(m.platform || "unknown").toUpperCase())}</td>
+            <td>${escapeHTML(pData.username || "N/A")}</td>
+            <td class="${evidenceClass}">${evidenceStatus}</td>
+            <td>${escapeHTML(evidenceStr)}</td>
         </tr>`;
     });
+    if (!matchesRows) {
+        matchesRows = `<tr><td colspan="4" style="text-align:center; color:#555;">No platform evidence or URL candidates were returned.</td></tr>`;
+    }
 
     // Generate indicators list items
     let indicatorsItems = "";
@@ -1873,53 +2237,62 @@ function renderOfficialReportTemplate(data, caseId) {
         indicatorsItems += `<li>Standard baseline cyber threat scanning. No flags observed.</li>`;
     }
 
-    // Critical discoveries
-    let discoveriesItems = "";
-    const activeMatchesList = matches.filter(m => m.exists).map(m => m.platform);
-    if (activeMatchesList.length > 0) {
-        discoveriesItems += `<p class="finding-critical">⚠ CRITICAL: Subject presence identified on active social indexes: ${activeMatchesList.join(", ").toUpperCase()}</p>`;
-    } else {
-        discoveriesItems += `<p>No immediate critical discoveries noted.</p>`;
-    }
+    // Findings and limitations. URL probes are leads, never identity evidence.
+    const identityConfirmedPlatformNames = identityConfirmedMatches.map(match => String(match.platform || "unknown").toUpperCase());
+    const identityCorroboratedPlatformNames = identityCorroboratedMatches.map(match => String(match.platform || "unknown").toUpperCase());
+    const collectorOnlyPlatformNames = collectorOnlyMatches.map(match => String(match.platform || "unknown").toUpperCase());
+    const candidatePlatformNames = unverifiedCandidates.map(match => String(match.platform || "unknown").toUpperCase());
+    let discoveriesItems = identityConfirmedPlatformNames.length
+        ? `<p><strong>Identity-confirmed public profiles:</strong> ${escapeHTML(identityConfirmedPlatformNames.join(", "))}. The backend found a direct independent identifier; human verification remains required.</p>`
+        : `<p>No identity-confirmed public profile was returned.</p>`;
+    discoveriesItems += identityCorroboratedPlatformNames.length
+        ? `<p><strong>Identity-corroborated public profiles:</strong> ${escapeHTML(identityCorroboratedPlatformNames.join(", "))}. Multiple independent public attributes supported the link, but no direct identifier was found.</p>`
+        : `<p>No identity-corroborated public profile was returned.</p>`;
+    discoveriesItems += collectorOnlyPlatformNames.length
+        ? `<p><strong>Collector-only public profiles:</strong> ${escapeHTML(collectorOnlyPlatformNames.join(", "))}. A collector returned public profile data, but independent identity correlation was not established.</p>`
+        : `<p>No collector-only public profile was returned.</p>`;
+    discoveriesItems += candidatePlatformNames.length
+        ? `<p class="finding-candidate"><strong>Unverified URL candidates:</strong> ${escapeHTML(candidatePlatformNames.join(", "))}. These are investigative leads only and must not be treated as identity matches.</p>`
+        : `<p>No additional HTTP-only URL candidates were returned.</p>`;
 
     // Evidence summary list
     let evidenceRows = "";
-    if (pData.username) {
+    let evidenceIndex = 0;
+    [
+        [identityConfirmedMatches, "Identity-confirmed public profile correlation"],
+        [identityCorroboratedMatches, "Identity-corroborated public profile correlation"],
+        [collectorOnlyMatches, "Collector-only public profile payload"]
+    ].forEach(([tierMatches, evidenceType]) => {
+        tierMatches.forEach(match => {
+            evidenceIndex += 1;
+            evidenceRows += `
+            <tr>
+                <td>EV-${String(evidenceIndex).padStart(3, "0")}</td>
+                <td>${evidenceType}</td>
+                <td>${escapeHTML(String(match.platform || "unknown").toUpperCase())} public-source collector</td>
+                <td>${formattedScrapeDate}</td>
+            </tr>`;
+        });
+    });
+    unverifiedCandidates.forEach((match, index) => {
         evidenceRows += `
         <tr>
-            <td>EV-001</td>
-            <td>Primary Target Profile</td>
-            <td>${pData.platform.toUpperCase()} Index</td>
-            <td>${formattedScrapeDate}</td>
-        </tr>`;
-    }
-    activeMatchesList.forEach((plat, index) => {
-        evidenceRows += `
-        <tr>
-            <td>EV-00${index + 2}</td>
-            <td>Correlated Profile Link</td>
-            <td>${plat.toUpperCase()} Index</td>
+            <td>LEAD-${String(index + 1).padStart(3, "0")}</td>
+            <td>Unverified URL candidate (not evidence of identity)</td>
+            <td>${escapeHTML(String(match.platform || "unknown").toUpperCase())} HTTP probe</td>
             <td>${currentDate}</td>
         </tr>`;
     });
+    if (collectedEvidenceMatches.length === 0 && unverifiedCandidates.length === 0) {
+        evidenceRows = `<tr><td colspan="4" style="text-align:center; color:#555;">No collector-confirmed profile evidence or URL candidates were returned.</td></tr>`;
+    }
 
     // Recommendations list
-    let recommendationsItems = "";
-    if (risk.level === "high") {
-        recommendationsItems += `
-        <li>Request legal intercepts on active handles: ${activeMatchesList.join(", ").toUpperCase()}</li>
-        <li>Deploy active digital monitoring and log forensic indicators</li>
-        <li>Initiate direct ISP coordinate trace requests</li>`;
-    } else if (risk.level === "medium") {
-        recommendationsItems += `
-        <li>Monitor cross-platform handles for identity updates</li>
-        <li>Consolidate intelligence logs with state cyber database register</li>
-        <li>Conduct routine check after 72 hours</li>`;
-    } else {
-        recommendationsItems += `
-        <li>Maintain archive state for intelligence record</li>
-        <li>Close current OSINT file</li>`;
-    }
+    const recommendationsItems = `
+        <li>Manually compare independent public attributes such as display name, biography, profile image, linked domains, and posting history before asserting common ownership.</li>
+        <li>Review collector errors and budget-skipped calls; rerun only the specifically required provider to conserve quota.</li>
+        <li>Treat HTTP-only URL candidates and pattern-generated emails as unverified leads.</li>
+        <li>Preserve the provider status, query list, errors, timestamps, and report limitations for human review.</li>`;
 
     // Return the prefilled template conforming exactly to official_investigation_report.html
     return `
@@ -1964,13 +2337,20 @@ function renderOfficialReportTemplate(data, caseId) {
             background: #f5f5f5;
             margin: 10px 0;
         }
-        .finding-critical {
-            color: red;
+        .finding-confirmed {
+            color: #176b2c;
             font-weight: bold;
         }
-        .finding-high {
-            color: orange;
+        .finding-candidate {
+            color: #856404;
             font-weight: bold;
+        }
+        .risk-disagreement {
+            color: #721c24;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 8px 10px;
+            margin: 10px 0;
         }
         table {
             width: 100%;
@@ -2006,10 +2386,10 @@ function renderOfficialReportTemplate(data, caseId) {
     </div>
     
     <h2>CASE BRIEF</h2>
-    <p>Target identity scan report resolved for subject handle <strong>${pData.username}</strong> on ${pData.platform.toUpperCase()} network. Analysis compiled using state security OSINT correlation engines.</p>
+    <p>Open-source collection report for handle <strong>${escapeHTML(pData.username || "N/A")}</strong> on the selected ${escapeHTML(String(pData.platform || "unknown").toUpperCase())} network. Collector-confirmed evidence and unverified candidates are separated throughout this report.</p>
     
     <h3>SUBJECT INFO</h3>
-    <p>Target Profile Alias: <strong>${pData.username}</strong> (Source: ${pData.platform.toUpperCase()})</p>
+    <p>Target Profile Alias: <strong>${escapeHTML(pData.username || "N/A")}</strong> (Selected source: ${escapeHTML(String(pData.platform || "unknown").toUpperCase())})</p>
     
     <h3>CASE DETAILS</h3>
     <table>
@@ -2021,10 +2401,10 @@ function renderOfficialReportTemplate(data, caseId) {
     </table>
     
     <div class="section-title">1. EXECUTIVE SUMMARY</div>
-    <p>This document files the open-source intelligence findings gathered regarding online handle alias <strong>${pData.username}</strong>. Scans resolved active profiles across online grids with a consolidated threat rating of <strong>${risk.level.toUpperCase()}</strong>. Detailed evidence and platform parameters are cataloged in section 4.</p>
+    <p>This document records public-source findings for online handle alias <strong>${escapeHTML(pData.username || "N/A")}</strong>. The run returned ${escapeHTML(evidenceTierSummary)}. The automated public-source risk assessment is <strong>${escapeHTML(backendRiskLabel)}</strong>; the separate AI narrative signal is <strong>${escapeHTML(aiRiskLabel)}</strong>. Both require human review. Detailed limitations are cataloged below.</p>
     
     <div class="section-title">2. INCIDENT OVERVIEW</div>
-    <p>An automated reconnaissance protocol was instantiated on ${currentDate} under active request reference case ${caseId}. The objective was to search, map, and assess online footprint correlations for the subject handle to check for risk indices, impersonations, or illegal activity.</p>
+    <p>An automated public-source collection was initiated on ${currentDate} under case reference ${escapeHTML(caseId)}. Its purpose was to collect available public profile data and produce leads for human verification. A matching username or reachable URL alone is not proof of common ownership or unlawful activity.</p>
     
     <div class="section-title">3. PROFILE ANALYSIS</div>
     <h4>3.1 Primary Profile - ${pData.platform.toUpperCase()}</h4>
@@ -2040,7 +2420,7 @@ function renderOfficialReportTemplate(data, caseId) {
     </table>
     
     <h4>3.2 Content Analysis</h4>
-    <p>No anomalous content flags or illegal activity alerts observed on target timeline. Secondary posts examination is pending legal warrant verification.</p>
+    <p>Only public content returned by the configured collectors was reviewed. Absence of returned content is not proof that content does not exist, and this automated report does not make a legal or intent determination.</p>
 
     <h4>3.2a Guessed Email Addresses (UNVERIFIED — Pattern-Generated, NOT Confirmed)</h4>
     <p style="background:#fff3cd; border:1px solid #ffc107; padding:6px 10px; font-size:10pt; border-radius:4px;">⚠️ The following email addresses were algorithmically generated from the username pattern. They have <strong>NOT been verified</strong> and may not be real. Do not use as confirmed contact data.</p>
@@ -2071,7 +2451,7 @@ function renderOfficialReportTemplate(data, caseId) {
         <tr>
             <th>Platform</th>
             <th>Username</th>
-            <th>Confidence</th>
+            <th>Evidence Status</th>
             <th>Key Evidence</th>
         </tr>
         ${matchesRows}
@@ -2093,6 +2473,14 @@ function renderOfficialReportTemplate(data, caseId) {
     </table>
 
     <h4>4.3 Google Dorking Discovery Results</h4>
+    <div class="evidence-box">
+        <strong>Status:</strong> ${escapeHTML(dorkView.label)}<br>
+        <strong>Provider:</strong> ${escapeHTML(dorking.provider || "serpapi")}<br>
+        <strong>Queries Attempted:</strong> ${dorkView.queriesRun}<br>
+        <strong>Results Retained:</strong> ${dorkView.results.length}<br>
+        <strong>Provider Errors:</strong> ${dorkView.errors.length}<br>
+        <strong>Explanation:</strong> ${escapeHTML(dorkView.detail)}
+    </div>
     <table>
         <thead>
             <tr>
@@ -2106,6 +2494,8 @@ function renderOfficialReportTemplate(data, caseId) {
             ${dorkingRows}
         </tbody>
     </table>
+    ${dorkErrorsHTML}
+    ${dorkQueriesHTML}
     
     <h4>4.4 Associated Accounts Discovery</h4>
     <table>
@@ -2146,6 +2536,7 @@ function renderOfficialReportTemplate(data, caseId) {
     <div class="section-title">5. AI CORRELATION ANALYSIS</div>
     <div class="evidence-box">
         <strong>Correlation Decision:</strong> <span style="font-weight:bold; color:red;">${aiDecisionText}</span> (AI Confidence: ${aiConfidenceLabel})<br><br>
+        <p><strong>Advisory limitation:</strong> AI output is not identity confirmation. Any input derived only from an HTTP URL probe remains an unverified candidate.</p>
         <strong>Identity Consolidation:</strong>
         <p>${ai.summary || "No AI correlation result was returned for this investigation."}</p>
         
@@ -2161,11 +2552,16 @@ function renderOfficialReportTemplate(data, caseId) {
     </div>
     
     <div class="section-title">6. RISK ASSESSMENT</div>
-    <p><strong>Risk Level:</strong> <span class="finding-${risk.level}">${risk.level.toUpperCase()}</span> (Threat Score: ${score}%)</p>
+    <table>
+        <tr><th>Signal</th><th>Result</th><th>Interpretation</th></tr>
+        <tr><td>Automated public-source assessment</td><td>${escapeHTML(backendRiskLabel)}</td><td>Derived by backend rules and returned evidence; requires human review and is subject to data-quality limitations.</td></tr>
+        <tr><td>AI narrative risk signal</td><td>${escapeHTML(aiRiskLabel)}</td><td>Separate model output; advisory and not automatically authoritative.</td></tr>
+    </table>
+    ${riskConsistencyHTML}
     
     <div class="evidence-box">
         <strong>AI Risk Analysis Narrative:</strong>
-        <p style="white-space: pre-wrap; font-family: monospace; font-size: 10pt;">${risk.ai_risk_analysis?.analysis || "Configure GROQ_API_KEY to enable narrative risk report details."}</p>
+        <p style="white-space: pre-wrap; font-family: monospace; font-size: 10pt;">${escapeHTML(sanitizePublicSourceNarrative(risk.ai_risk_analysis?.analysis) || "AI narrative risk analysis was not available for this run.")}</p>
     </div>
 
     <p><strong>Indicators Found:</strong></p>
@@ -2173,7 +2569,7 @@ function renderOfficialReportTemplate(data, caseId) {
         ${indicatorsItems}
     </ul>
     
-    <div class="section-title">7. CRITICAL DISCOVERIES</div>
+    <div class="section-title">7. KEY FINDINGS &amp; LIMITATIONS</div>
     ${discoveriesItems}
     
     <div class="section-title">8. EVIDENCE SUMMARY</div>
@@ -2188,7 +2584,7 @@ function renderOfficialReportTemplate(data, caseId) {
     </ol>
     
     <div class="section-title">10. CONCLUSION</div>
-    <p>Based on the open-source investigation results, subject <strong>${pData.username}</strong> exhibits presence patterns indicating a <strong>${risk.level.toUpperCase()}</strong> threat status. It is recommended to proceed in accordance with standard operating guidelines outlined in Section 9.</p>
+    <p>This public-source run returned ${escapeHTML(evidenceTierSummary)} for handle <strong>${escapeHTML(pData.username || "N/A")}</strong>. These results do not by themselves establish intent, criminality, or a legal basis for intrusive action. Human review of independent attributes and provider limitations is required.</p>
     
     <div style="margin-top: 50px;">
         <p>Report Generated by: AI-OSINT Platform v0.1</p>
@@ -2326,15 +2722,21 @@ function renderPlatformDossier(data) {
         const isPrimary = matchPlatform === primaryPlatform;
         const preScraped = DataMappers.getRenderablePlatformData(data, matchPlatform);
         const exists = match.exists;
+        const collectorConfirmed = match.scraper_confirmed === true;
+        const unverifiedCandidate = exists === true && !collectorConfirmed;
         const card = document.createElement("div");
-        card.className = `platform-intel-card ${isPrimary ? 'status-primary' : (exists === true ? 'status-found' : exists === null ? 'status-inconclusive' : 'status-absent')}`;
+        card.className = `platform-intel-card ${isPrimary && collectorConfirmed ? 'status-primary' : (collectorConfirmed ? 'status-found' : (unverifiedCandidate || exists === null) ? 'status-inconclusive' : 'status-absent')}`;
 
         const svgIcon = getPlatformSVG(matchPlatform);
-        const badgeText = exists === true ? "Profile found" : exists === null ? "Inconclusive" : "Profile absent";
-        const badgeClass = exists === true ? "match-badge match-found" : exists === null ? "match-badge match-inconclusive" : "match-badge match-absent";
-        const codeText = match.scraper_confirmed
+        const badgeText = collectorConfirmed
+            ? "Collector confirmed"
+            : (unverifiedCandidate ? "Unverified candidate" : exists === null ? "Inconclusive" : "Not observed");
+        const badgeClass = collectorConfirmed
+            ? "match-badge match-found"
+            : ((unverifiedCandidate || exists === null) ? "match-badge match-inconclusive" : "match-badge match-absent");
+        const codeText = collectorConfirmed
             ? "SCRAPER CONFIRMED"
-            : (match.status_code ? `HTTP ${match.status_code}` : (exists === true ? "RESOLVED" : exists === null ? "BLOCKED" : "TIMEOUT"));
+            : (match.status_code ? `HTTP ${match.status_code} URL PROBE` : (unverifiedCandidate ? "URL CANDIDATE" : exists === null ? "BLOCKED" : "NO COLLECTOR EVIDENCE"));
 
         // Filter dorks and posts
         const platformDorks = getPlatformDorks(matchPlatform);
@@ -2342,12 +2744,12 @@ function renderPlatformDossier(data) {
         const collapsibleId = `collapse-${matchPlatform.replace(/[^a-z0-9_-]/g, "-") || "unknown"}`;
         
         const activeProfileData = preScraped;
-        const isExpandedByDefault = exists === true && activeProfileData && activeProfileData.success !== false && activeProfileData.status !== "error" && !activeProfileData.error;
+        const isExpandedByDefault = collectorConfirmed && activeProfileData && activeProfileData.success !== false && activeProfileData.status !== "error" && !activeProfileData.error;
         
         const isInstagramWithPosts = matchPlatform === "instagram" && data.instagram_posts && data.instagram_posts.posts && data.instagram_posts.posts.length > 0;
         const isScrapable = ["twitter", "reddit", "linkedin", "facebook", "telegram", "tiktok", "github"].includes(matchPlatform);
         
-        if (exists === true && (isPrimary || platformDorks.length > 0 || isInstagramWithPosts || isScrapable)) {
+        if (collectorConfirmed && (isPrimary || platformDorks.length > 0 || isInstagramWithPosts || isScrapable)) {
             hasExtraContent = true;
         }
 
@@ -2376,7 +2778,7 @@ function renderPlatformDossier(data) {
             </div>
         `;
 
-        if (exists === true) {
+        if (collectorConfirmed) {
             let profileHTML = "";
             
             // Build the card body matching the screenshot layout
@@ -2445,7 +2847,6 @@ function renderPlatformDossier(data) {
                     </div>
                 `;
             } else {
-                // Secondary found profile with URL (not scraped yet)
                 profileHTML = `
                     <div class="scraped-profile-row placeholder-row" style="display: flex; gap: 15px; margin-top: 15px; align-items: center;">
                         <div class="scraped-profile-avatar-container" style="width: 70px; height: 70px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.15); flex-shrink: 0;">
@@ -2455,7 +2856,7 @@ function renderPlatformDossier(data) {
                             <div class="scraped-profile-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 5px;">
                                 <span class="display-name">@${escapeHTML(searchedUsername)}</span>
                             </div>
-                            <div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary);">Public profile found. Scrape details to load bio, stats, and timeline.</div>
+                            <div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary);">Collector-confirmed profile. Detailed public metadata was not returned in this response.</div>
                             <div style="font-size: 0.78rem; display: flex; gap: 10px; align-items: center; margin-top: 2px;">
                                 ${matchUrl ? `<a href="${escapeHTML(matchUrl)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-blue); text-decoration: none; font-weight: 600;">Open Profile ↗</a>` : ""}
                             </div>
@@ -2531,11 +2932,25 @@ function renderPlatformDossier(data) {
                     </div>
                 `;
             }
+        } else if (unverifiedCandidate) {
+            html += `
+                <div class="scraped-profile-row placeholder-row" style="display:flex; gap:15px; margin-top:15px; align-items:center;">
+                    <div class="scraped-profile-avatar-container" style="width:70px; height:70px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(255,215,0,0.035); border:1px dashed rgba(255,215,0,0.3); flex-shrink:0;">
+                        <span style="font-size:1.2rem; color:var(--accent-gold); font-weight:600;">?</span>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:5px;">
+                        <div style="font-size:0.82rem; font-weight:700; color:var(--accent-gold);">Unverified URL candidate</div>
+                        <div style="font-size:0.75rem; color:var(--text-secondary); line-height:1.45;">The lightweight HTTP probe found a reachable URL. This does not confirm that a profile exists or that it belongs to the target. Collector evidence or manual attribute comparison is required.</div>
+                        ${matchUrl ? `<a href="${escapeHTML(matchUrl)}" target="_blank" rel="noopener noreferrer" style="font-size:0.75rem; color:var(--accent-blue); text-decoration:none;">Open candidate URL</a>` : ""}
+                    </div>
+                </div>`;
         } else {
-            // Absent profile state
+            // Absent or inconclusive profile state
             html += `
                 <div style="font-size:0.8rem; color:var(--text-secondary); font-style:italic; margin-top:10px;">
-                    No public footprint detected on ${safePlatformLabel} for username "${escapeHTML(searchedUsername)}".
+                    ${exists === null
+                        ? `The URL probe was inconclusive for ${safePlatformLabel}. No collector-confirmed identity evidence was returned.`
+                        : `No public profile was observed on ${safePlatformLabel} for username "${escapeHTML(searchedUsername)}".`}
                 </div>
             `;
         }
@@ -2609,6 +3024,28 @@ function triggerDeepScanFor(platform, username) {
 
 // Render pulsing skeleton cards in results workspace
 function renderSkeletonDossier() {
+    const riskScore = document.getElementById("risk-score-num");
+    const riskBadge = document.getElementById("risk-badge");
+    const riskFill = document.getElementById("risk-fill");
+    const riskConsistency = document.getElementById("risk-consistency-notice");
+    if (riskScore) riskScore.innerText = "N/A";
+    if (riskBadge) {
+        riskBadge.innerText = "ASSESSMENT RUNNING";
+        riskBadge.className = "risk-indicator-badge actor-status-running";
+    }
+    if (riskFill) {
+        riskFill.style.strokeDashoffset = 377;
+        riskFill.style.stroke = "#7c8798";
+    }
+    if (riskConsistency) {
+        riskConsistency.innerText = "";
+        riskConsistency.style.display = "none";
+    }
+    ["risk-analysis-text-section", "risk-error-notice"].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.style.display = "none";
+    });
+
     const aiConfidence = document.getElementById("ai-confidence");
     const aiDecision = document.getElementById("ai-decision-badge");
     const aiEngine = document.getElementById("ai-engine-status");

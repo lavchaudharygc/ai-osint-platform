@@ -79,17 +79,15 @@ class HunterServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dict(requests[0].url.params), {
             "domain": "example.com",
             "limit": "5",
-            "api_key": "hunter-secret",
         })
         self.assertEqual(dict(requests[1].url.params), {
             "domain": "example.com",
             "full_name": "Alice Analyst",
-            "api_key": "hunter-secret",
         })
         self.assertEqual(dict(requests[2].url.params), {
             "email": "alice@example.com",
-            "api_key": "hunter-secret",
         })
+        self.assertTrue(all(request.headers["X-API-KEY"] == "hunter-secret" for request in requests))
         self.assertEqual(discovery["emails"][0]["email"], "alice@example.com")
         self.assertEqual(discovery["total"], 1)
         self.assertEqual(finder["email"]["confidence_score"], 96)
@@ -189,6 +187,24 @@ class TwilioLookupServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result["configured"])
         self.assertEqual(result["status"], "not_configured")
+
+    async def test_twilio_error_identifies_the_selected_credential_mode(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(401, json={"message": "Authentication failed"})
+
+        result = await TwilioLookupService(
+            api_key="SK123",
+            api_key_secret="wrong-secret",
+            account_sid="AC123",
+            auth_token="legacy-token",
+            base_url="https://lookups.test/v2",
+            default_fields="",
+            transport=httpx.MockTransport(handler),
+        ).lookup_phone("+14155550100")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "provider_error")
+        self.assertEqual(result["credential_type"], "api_key")
 
     def test_twilio_rejects_unknown_paid_field(self) -> None:
         with self.assertRaises(ValueError):

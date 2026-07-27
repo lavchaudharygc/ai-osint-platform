@@ -1,7 +1,10 @@
+import asyncio
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from backend.services.telegram_mtproto_service import TelegramMTProtoService
 
@@ -19,6 +22,9 @@ class FakeTelegramClient:
         self.session = SimpleNamespace(save_entities=True)
         self.connected = False
         self.requests: list[str] = []
+        self.sent_messages: list[tuple[object, str]] = []
+        self._outbound_message_id = 99
+        self.bot_lookup_error = False
 
     async def connect(self) -> None:
         self.connected = True
@@ -33,9 +39,28 @@ class FakeTelegramClient:
         return self.authorized
 
     async def get_entity(self, username: str):
+        if self.bot_lookup_error and str(username).startswith("@"):
+            raise RuntimeError("bot unavailable")
         if self.entity is None:
             raise ValueError("entity unavailable")
         return self.entity
+
+    async def send_message(self, entity, message: str):
+        self._outbound_message_id += 2
+        self.sent_messages.append((entity, message))
+        return SimpleNamespace(id=self._outbound_message_id, date=datetime.now(UTC))
+
+    async def get_messages(self, entity, limit: int = 2):
+        target = self.sent_messages[-1][1]
+        return [
+            SimpleNamespace(
+                text=f"Public bot response for {target}",
+                id=self._outbound_message_id + 1,
+                date=datetime.now(UTC),
+                out=False,
+                reply_to_msg_id=self._outbound_message_id,
+            )
+        ]
 
     async def __call__(self, request):
         request_name = request.__class__.__name__
@@ -50,7 +75,15 @@ class FakeTelegramClient:
 
 
 class TelegramMTProtoServiceTests(unittest.IsolatedAsyncioTestCase):
-    def _service(self, temp_dir: str, client: FakeTelegramClient, *, enabled=True):
+    def _service(
+        self,
+        temp_dir: str,
+        client: FakeTelegramClient,
+        *,
+        enabled=True,
+        bot_queries_enabled=False,
+        timeout=5,
+    ):
         session_path = Path(temp_dir) / "authorized.session"
         session_path.touch()
         return TelegramMTProtoService(
@@ -58,7 +91,8 @@ class TelegramMTProtoServiceTests(unittest.IsolatedAsyncioTestCase):
             api_id=12345,
             api_hash="test-api-hash",
             session_path=str(session_path),
-            timeout=5,
+            timeout=timeout,
+            bot_queries_enabled=bot_queries_enabled,
             client_factory=lambda *args, **kwargs: client,
         )
 
@@ -126,9 +160,176 @@ class TelegramMTProtoServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["activity_status"], "recently")
         self.assertNotIn("phone", result)
         self.assertFalse(result["message_history_accessed"])
+        self.assertFalse(result["third_party_bot_queries_performed"])
+        self.assertFalse(result["bot_response_messages_read"])
+        self.assertEqual(client.sent_messages, [])
         self.assertFalse(result["join_performed"])
         self.assertFalse(client.session.save_entities)
         self.assertFalse(client.connected)
+
+    async def test_third_party_bot_queries_require_explicit_opt_in(self) -> None:
+        user = User()
+        user.id = 42
+        user.username = "visible_user"
+        user.first_name = "Visible"
+        user.last_name = "User"
+        user.bot = False
+        user.verified = False
+        user.premium = False
+        user.restricted = False
+        user.scam = False
+        user.fake = False
+        user.photo = None
+        user.status = None
+        client = FakeTelegramClient(entity=user)
+
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch(
+                "backend.services.telegram_mtproto_service.asyncio.sleep",
+                new=AsyncMock(),
+            ),
+        ):
+            result = await self._service(temp_dir, client, bot_queries_enabled=True).lookup(
+                "visible_user"
+            )
+
+        self.assertTrue(result["third_party_bot_queries_performed"])
+        self.assertTrue(result["bot_response_messages_read"])
+        self.assertEqual(result["third_party_bot_queries_attempted"], 2)
+        self.assertEqual(result["third_party_bot_queries_succeeded"], 2)
+        self.assertEqual(result["bot_dialog_messages_fetched"], 2)
+        self.assertFalse(result["target_message_history_accessed"])
+        self.assertEqual(len(client.sent_messages), 2)
+        self.assertEqual({message for _, message in client.sent_messages}, {"visible_user"})
+
+    async def test_failed_bot_queries_do_not_claim_responses_were_read(self) -> None:
+        user = User()
+        user.id = 42
+        user.username = "visible_user"
+        user.first_name = "Visible"
+        user.last_name = "User"
+        user.bot = False
+        user.verified = False
+        user.premium = False
+        user.restricted = False
+        user.scam = False
+        user.fake = False
+        user.photo = None
+        user.status = None
+        client = FakeTelegramClient(entity=user)
+        client.bot_lookup_error = True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = await self._service(
+                temp_dir,
+                client,
+                bot_queries_enabled=True,
+            ).lookup("visible_user")
+
+        self.assertEqual(result["third_party_bot_queries_attempted"], 2)
+        self.assertFalse(result["third_party_bot_queries_performed"])
+        self.assertEqual(result["third_party_bot_queries_succeeded"], 0)
+        self.assertFalse(result["bot_response_messages_read"])
+        self.assertNotIn("bot_responses", result)
+
+    async def test_stale_bot_message_is_not_attached_to_current_target(self) -> None:
+        user = User()
+        user.id = 42
+        user.username = "visible_user"
+        user.first_name = "Visible"
+        user.last_name = "User"
+        user.bot = False
+        user.verified = False
+        user.premium = False
+        user.restricted = False
+        user.scam = False
+        user.fake = False
+        user.photo = None
+        user.status = None
+        client = FakeTelegramClient(entity=user)
+        client.get_messages = AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    text="Public bot response for visible_user_old",
+                    id=999,
+                    date=datetime.now(UTC),
+                    out=False,
+                    reply_to_msg_id=None,
+                )
+            ]
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch(
+                "backend.services.telegram_mtproto_service.asyncio.sleep",
+                new=AsyncMock(),
+            ),
+        ):
+            result = await self._service(
+                temp_dir,
+                client,
+                bot_queries_enabled=True,
+            ).lookup("visible_user")
+
+        self.assertTrue(result["third_party_bot_queries_performed"])
+        self.assertEqual(result["third_party_bot_queries_succeeded"], 0)
+        self.assertFalse(result["bot_response_messages_read"])
+        self.assertNotIn("bot_responses", result)
+
+    async def test_lookup_timeout_preserves_bot_disclosure_audit(self) -> None:
+        user = User()
+        user.id = 42
+        user.username = "visible_user"
+        user.first_name = "Visible"
+        user.last_name = "User"
+        user.bot = False
+        user.verified = False
+        user.premium = False
+        user.restricted = False
+        user.scam = False
+        user.fake = False
+        user.photo = None
+        user.status = None
+        client = FakeTelegramClient(entity=user)
+
+        async def never_finish(_: float) -> None:
+            await asyncio.Future()
+
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch(
+                "backend.services.telegram_mtproto_service.asyncio.sleep",
+                new=never_finish,
+            ),
+        ):
+            result = await self._service(
+                temp_dir,
+                client,
+                bot_queries_enabled=True,
+                timeout=0.02,
+            ).lookup("visible_user")
+
+        self.assertEqual(result["status"], "authorized_lookup_timeout")
+        self.assertEqual(result["third_party_bot_queries_attempted"], 1)
+        self.assertTrue(result["third_party_bot_queries_performed"])
+        self.assertEqual(result["third_party_bot_queries_succeeded"], 0)
+        self.assertFalse(result["bot_response_messages_read"])
+        self.assertEqual(len(client.sent_messages), 1)
+
+    async def test_direct_bot_query_honors_default_off_policy(self) -> None:
+        client = FakeTelegramClient(entity=User())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = await self._service(
+                temp_dir,
+                client,
+                bot_queries_enabled=False,
+            ).query_osint_bot(client, "@userinfobot", "visible_user")
+
+        self.assertEqual(result["status"], "disabled_by_policy")
+        self.assertFalse(result["query_attempted"])
+        self.assertEqual(client.sent_messages, [])
 
     async def test_invite_is_previewed_without_joining(self) -> None:
         invite = ChatInvite()

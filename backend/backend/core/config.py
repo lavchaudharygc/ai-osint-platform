@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 BACKEND_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+BACKEND_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
 class Settings(BaseSettings):
@@ -92,10 +93,19 @@ class Settings(BaseSettings):
     telegram_api_hash: str | None = Field(default=None, validation_alias="TELEGRAM_API_HASH")
     telegram_session_path: str = Field(default="./data/telegram_osint", validation_alias="TELEGRAM_SESSION_PATH")
     telegram_mtproto_timeout_seconds: float = Field(default=35.0, ge=5.0, le=120.0, validation_alias="TELEGRAM_MTPROTO_TIMEOUT_SECONDS")
+    telegram_osint_bot_queries_enabled: bool = Field(
+        default=False,
+        validation_alias="TELEGRAM_OSINT_BOT_QUERIES_ENABLED",
+    )
     serpapi_key: str | None = Field(default=None, validation_alias="SERPAPI_KEY")
     serpapi_base_url: str = Field(default="https://serpapi.com/search.json", validation_alias="SERPAPI_BASE_URL")
     serpapi_timeout_seconds: float = Field(default=35.0, validation_alias="SERPAPI_TIMEOUT_SECONDS")
     serpapi_results_per_query: int = Field(default=5, validation_alias="SERPAPI_RESULTS_PER_QUERY")
+    serpapi_country_code: str | None = Field(
+        default=None,
+        validation_alias="SERPAPI_COUNTRY_CODE",
+        description="Optional two-letter SerpAPI country bias. Unset means global search.",
+    )
     zerobounce_api_key: str | None = Field(default=None, validation_alias="ZEROBOUNCE_API_KEY")
     hunter_api_key: str | None = Field(default=None, validation_alias="HUNTER_API_KEY")
     hunter_base_url: str = Field(
@@ -227,6 +237,20 @@ class Settings(BaseSettings):
         le=10_000,
         validation_alias="INVESTIGATION_CACHE_MAX_ENTRIES",
     )
+    investigation_history_persist_enabled: bool = Field(
+        default=False,
+        validation_alias="INVESTIGATION_HISTORY_PERSIST_ENABLED",
+    )
+    investigation_history_db_path: str = Field(
+        default=str(BACKEND_DATA_DIR / "investigations.sqlite3"),
+        validation_alias="INVESTIGATION_HISTORY_DB_PATH",
+    )
+    investigation_history_max_entries: int = Field(
+        default=128,
+        ge=1,
+        le=10_000,
+        validation_alias="INVESTIGATION_HISTORY_MAX_ENTRIES",
+    )
     investigation_max_provider_calls: int = Field(
         default=24,
         ge=1,
@@ -250,6 +274,12 @@ class Settings(BaseSettings):
         ge=1,
         le=100,
         validation_alias="INVESTIGATION_SOCIAL_RESULT_LIMIT",
+    )
+    investigation_twitter_result_limit: int = Field(
+        default=5,
+        ge=1,
+        le=40,
+        validation_alias="INVESTIGATION_TWITTER_RESULT_LIMIT",
     )
     hibp_api_key: str | None = Field(default=None, validation_alias="HIBP_API_KEY")
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:5500"]

@@ -23,6 +23,7 @@ EXPECTED_PROVIDER_ROUTING = {
     "web_scraping": "bright_data",
     "instagram": "apify_instagram_scraper",
     "twitter": "apify_x_scraper",
+    "reddit": "apify_reddit_scraper",
     "linkedin": "bright_data",
     "facebook": "apify_facebook_scraper",
     "telegram": "existing_telegram_collectors",
@@ -145,11 +146,15 @@ class ProviderEndpointPolicyTests(unittest.IsolatedAsyncioTestCase):
             "target_user",
             full_name="Target Person",
             limit=3,
+            preferred_platform=None,
+            country_code=None,
         )
 
 
 class InvestigationCachePolicyTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        self._persistent_store = investigation_endpoint._PERSISTENT_INVESTIGATION_STORE
+        investigation_endpoint._PERSISTENT_INVESTIGATION_STORE = None
         investigation_endpoint._INVESTIGATION_CACHE.clear()
         investigation_endpoint._INVESTIGATION_STORE.clear()
         investigation_endpoint._INVESTIGATION_INFLIGHT.clear()
@@ -158,6 +163,7 @@ class InvestigationCachePolicyTests(unittest.IsolatedAsyncioTestCase):
         investigation_endpoint._INVESTIGATION_CACHE.clear()
         investigation_endpoint._INVESTIGATION_STORE.clear()
         investigation_endpoint._INVESTIGATION_INFLIGHT.clear()
+        investigation_endpoint._PERSISTENT_INVESTIGATION_STORE = self._persistent_store
 
     async def test_cache_hit_gets_new_id_and_avoids_every_fanout_boundary(self) -> None:
         request = UsernameInvestigationRequest(

@@ -35,6 +35,11 @@ The backend assigns one provider to each external capability:
 
 Automatic cross-provider fallback is disabled. Missing credentials, quota failures, timeouts, and provider errors are returned by the assigned adapter; they do not cause another vendor to run.
 
+“Global” in this documentation means worldwide, country-unbiased discovery of
+public sources. It does not mean exhaustive collection. Every investigation is
+bounded by configured query, provider-call, platform, item, and URL limits, and
+private or access-controlled content remains out of scope.
+
 ## Provider Status
 
 `GET /api/v1/providers/status`
@@ -44,9 +49,17 @@ Returns:
 - the authoritative capability-to-provider `routing` map;
 - credential/configuration booleans under `configured`;
 - `automatic_fallback: false`; and
-- the active `tiktok_actor_id`.
+- the active `search_scope`, collection `limits`, safe Telegram/Twilio readiness
+  metadata, persistent-history policy, and `tiktok_actor_id`.
 
 Tokens and API keys are never returned.
+
+This is a configuration-presence endpoint, not a live provider health check.
+`configured: true` means the required local credential fields are present; it
+does not prove that a credential is valid or that the account has entitlement,
+credits, quota, or current provider availability. The response therefore sets
+`live_validation_performed` to `false`. Use an explicit, bounded capability
+request when live validation is required; that request may consume quota.
 
 ## Username Investigation
 
@@ -104,11 +117,26 @@ The backend first probes public profile URLs. The requested primary platform is 
 
 This replaces the previous unconditional all-platform Actor fan-out. Collectors not selected by the public probe and configured limit are returned as `skipped`; budget-denied work is returned as `budget_exhausted`. One provider failure does not erase successful results. The backward-compatible social `summary` counts `total`, `completed`, `empty`, `skipped`, `failed`, and `not_configured` outcomes.
 
+An HTTP profile probe is discovery only. A 200 response is an unverified URL
+candidate, not proof that a real profile exists and not evidence that it belongs
+to the investigated person. Collector-confirmed profiles and identity
+corroboration are reported separately.
+
 The selected platform is the primary `platform_data`. The same-username profiles in `cross_platform_matches` remain unverified identity candidates and require human corroboration.
+
+See `../docs/methodology/correlation_rules_v2.0.md` for the current evidence
+states and the required separation between identity confidence and threat risk.
 
 ### Search
 
 `dorking_results` is produced exclusively by SerpAPI. There is no Bright Data or Apify search fallback. Each configured SerpAPI query reserves one logical provider-call unit. The default investigation ceiling is ten queries.
+
+Search is worldwide and country-unbiased by default. Set the optional
+`SERPAPI_COUNTRY_CODE` to an ISO 3166-1 alpha-2 code only when a case requires a
+country bias. A bounded plan starts with an exact general username query,
+prioritizes the requested platform, keeps Instagram, X/Twitter, and GitHub in
+the common ten-query plan, and then rotates across categories so one category
+cannot consume the whole batch.
 
 When `SERPAPI_KEY` is absent, the response is `not_configured` and includes the prepared queries. When SerpAPI fails, the response is `failed` or `completed_with_errors`, with `provider_metadata.fallback_used: false`.
 
@@ -133,26 +161,53 @@ Completed normal investigations use a process-local TTL/LRU cache. The cache key
 
 On a hit, the API creates a new investigation ID and reports the source ID and age in `execution_metadata.cache`. `execution_metadata.provider_call_budget` reports `maximum`, `used`, `remaining`, `reservations`, and skipped work. The cache is cleared on process restart.
 
-Configured DeepSeek/Groq correlation and risk calls each reserve one budget unit before SerpAPI dorks. If no unit remains, deterministic local analysis is returned. Identical concurrent investigation or direct-provider requests share one in-flight provider run. Direct provider and Apify reads use the same bounded process-local TTL cache; pending and failed responses are not cached. Investigation history is also capped by `INVESTIGATION_CACHE_MAX_ENTRIES`.
+Automatic identity correlation is deterministic and never spends an external AI
+call or provider-budget unit. When DeepSeek or Groq is configured, only the
+separate AI risk review may reserve one logical unit before SerpAPI dorks. If no
+unit remains, risk stays evidence-constrained without an AI network request.
+Identical concurrent investigation or direct-provider requests share one
+in-flight provider run. Direct provider and Apify reads use the same bounded
+process-local TTL cache; pending and failed responses are not cached. In-memory
+investigation history is capped by `INVESTIGATION_CACHE_MAX_ENTRIES`; optional
+durable history uses `INVESTIGATION_HISTORY_MAX_ENTRIES`.
+
+Investigation history is separate from the result cache. It is process-local by
+default. Optional SQLite persistence is disabled by default and, when enabled,
+stores full response JSON as plaintext local data subject to a separate history
+retention limit.
 
 Default policy:
 
 ```env
 INVESTIGATION_CACHE_TTL_SECONDS=3600
 INVESTIGATION_CACHE_MAX_ENTRIES=128
+INVESTIGATION_HISTORY_PERSIST_ENABLED=false
+INVESTIGATION_HISTORY_DB_PATH=./data/investigations.sqlite3
+INVESTIGATION_HISTORY_MAX_ENTRIES=128
 INVESTIGATION_MAX_PROVIDER_CALLS=24
 INVESTIGATION_MAX_DORK_QUERIES=10
 INVESTIGATION_MAX_SOCIAL_PLATFORMS=4
 INVESTIGATION_SOCIAL_RESULT_LIMIT=20
+INVESTIGATION_TWITTER_RESULT_LIMIT=5
 ```
 
 Request-level limits may lower, but never raise, the configured ceilings.
 
 ### Telegram Invite Privacy Guard
 
-Telegram behavior remains unchanged. Public `t.me` metadata is the default, and optional authorized MTProto access is read-only.
+Public `t.me` metadata is the default, and optional authorized MTProto access is
+read-only for normal operation. Third-party Telegram bot queries are a separate,
+explicit opt-in and are disabled by default with
+`TELEGRAM_OSINT_BOT_QUERIES_ENABLED=false`.
 
 When `platform` is `telegram` and `username` is an invite URL, the API runs only the isolated Telegram preview. The invite hash is redacted, no cache entry is read or written, and no cross-platform, search, database, AI, reporting, or non-Telegram provider receives the invite. Sending an invite URL with another platform returns HTTP 422.
+
+Enabling third-party bot queries sends a normal investigated username to the
+built-in third-party bot list. It fetches at most five recent messages per bot
+dialog to identify a newer response tied to that exact username. This changes
+the privacy boundary and must not be enabled implicitly. Audit fields distinguish
+queries attempted/sent, bot-dialog messages fetched, accepted responses, and
+target-chat history access. Invite previews never use the bot-query path.
 
 ## Explicit Capability Endpoints
 
@@ -317,6 +372,8 @@ SERPAPI_KEY=
 SERPAPI_BASE_URL=https://serpapi.com/search.json
 SERPAPI_TIMEOUT_SECONDS=20
 SERPAPI_RESULTS_PER_QUERY=5
+# Empty means worldwide/global; set a two-letter code only for case-specific bias.
+SERPAPI_COUNTRY_CODE=
 
 # Bright Data web and LinkedIn
 BRIGHTDATA_WEB_API_KEY=
@@ -354,6 +411,17 @@ GITHUB_API_BASE_URL=https://api.github.com
 GITHUB_API_VERSION=2026-03-10
 GITHUB_TIMEOUT_SECONDS=15
 GITHUB_REPO_LIMIT=10
+
+# Optional authorized Telegram session. Third-party bot queries remain off.
+TELEGRAM_MTPROTO_ENABLED=false
+TELEGRAM_SESSION_PATH=./data/telegram_osint
+TELEGRAM_OSINT_BOT_QUERIES_ENABLED=false
+
+# History is in memory unless explicitly enabled. SQLite content is plaintext.
+INVESTIGATION_HISTORY_PERSIST_ENABLED=false
+INVESTIGATION_HISTORY_DB_PATH=./data/investigations.sqlite3
+INVESTIGATION_HISTORY_MAX_ENTRIES=128
+INVESTIGATION_TWITTER_RESULT_LIMIT=5
 ```
 
 The legacy `BRIGHTDATA_SERP_*` and `APIFY_SERP_*` settings are not part of the supported search path. `RAPIDAPI_KEY`/FlashAPI and Instaloader are not automatic Instagram fallbacks under the capability-routing policy.
@@ -363,13 +431,28 @@ The legacy `BRIGHTDATA_SERP_*` and `APIFY_SERP_*` settings are not part of the s
 - `GET /api/v1/investigation/history?limit=20&offset=0`
 - `GET /api/v1/investigation/history/{investigation_id}`
 
-History is currently process-local and in-memory. Production deployments should persist it in PostgreSQL.
+History is process-local and in-memory by default. To retain completed
+investigations across restarts, explicitly set:
+
+```env
+INVESTIGATION_HISTORY_PERSIST_ENABLED=true
+INVESTIGATION_HISTORY_DB_PATH=./data/investigations.sqlite3
+INVESTIGATION_HISTORY_MAX_ENTRIES=128
+```
+
+The SQLite store contains full investigation response JSON in plaintext. Keep
+the API loopback/private, restrict filesystem access, apply an appropriate
+retention policy, and use encrypted storage or an approved database before a
+production deployment. Persistence failure is non-fatal: the API logs a warning
+and continues with bounded in-memory history.
 
 ## Report Generation
 
 `POST /api/v1/reports/generate-report/{investigation_id}?format=pdf`
 
-Supported formats are `pdf` and `html`. The investigation must exist in the current process history.
+Supported formats are `pdf` and `html`. The investigation must exist in current
+in-memory history or, when persistence is enabled, in the configured SQLite
+history store.
 
 ## Training Dataset
 
@@ -380,10 +463,17 @@ When the training data file is present, investigations include related guidance 
 
 ## Optional AI and Local Intelligence
 
-- DeepSeek is used for AI correlation and risk review when `DEEPSEEK_API_KEY` is configured; otherwise rules-based analysis remains available.
+- Automatic identity correlation is deterministic and does not call DeepSeek or Groq.
+- When configured and budgeted, DeepSeek or Groq may be used once for the separate risk review; otherwise risk remains local/evidence-constrained.
 - Hashtag analysis is local-only and does not issue a separate X API request.
 - Local SQLite/Hi-Tek lookup behavior is independent of external provider routing.
 
 ## Authorized Telegram Details
 
-Public `t.me` scraping remains the default. Optional MTProto access can resolve public usernames and preview invite links through an existing authorized user session, subject to account privacy and membership permissions. It never joins chats, reads messages, returns phone numbers, or enumerates contacts. See `docs/telegram_authorized_lookup.md`.
+Public `t.me` scraping remains the default. Optional MTProto access can resolve
+public usernames and preview invite links through an existing authorized user
+session, subject to account privacy and membership permissions. Normal operation
+never joins chats, reads target-chat history, returns phone numbers, or enumerates
+contacts. Optional third-party bot queries are disabled by default because they
+send a username and inspect a bounded set of bot-dialog messages for a new,
+target-tied response. See `docs/telegram_authorized_lookup.md`.

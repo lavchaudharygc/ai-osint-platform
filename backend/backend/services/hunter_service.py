@@ -158,15 +158,19 @@ class HunterService:
                 **empty,
             }
 
-        request_params = {**params, "api_key": self.api_key}
         try:
             async with httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=self.timeout_seconds,
                 transport=self.transport,
-                headers={"Accept": "application/json"},
+                headers={
+                    "Accept": "application/json",
+                    # Hunter supports header authentication. Keep the secret out
+                    # of URLs, access logs, and provider-error diagnostics.
+                    "X-API-KEY": self.api_key,
+                },
             ) as client:
-                response = await client.get(path, params=request_params)
+                response = await client.get(path, params=params)
         except httpx.TimeoutException:
             return self._error(operation, "timeout", "Hunter request timed out", None, empty)
         except httpx.HTTPError:

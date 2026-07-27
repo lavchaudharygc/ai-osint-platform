@@ -1,5 +1,11 @@
 # Twitter/X Platform Behavior — OSINT Data Extraction Reference
 
+> **Historical research — non-operational.** Sections labelled “bypass” are not
+> approved, implemented, or authorized instructions. The current application
+> uses the bounded configured Apify X collectors, does not circumvent access
+> controls, and does not switch providers automatically. See
+> `../../backend/API_DOCUMENTATION.md`.
+
 **Prepared by:** Shubham Jha
 **Date:** 30 June 2026
 **Sprint:** Sprint 1

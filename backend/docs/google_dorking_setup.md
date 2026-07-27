@@ -2,7 +2,7 @@
 
 ## Scope
 
-The backend automates public search-engine discovery for authorized OSINT work. It collects public organic-result metadata and does not bypass logins or access private content.
+The backend automates public search-engine discovery for authorized OSINT work. It collects public organic-result metadata and does not bypass logins or access private content. “Global” means worldwide, country-unbiased discovery by default; it does not mean exhaustive coverage or unlimited scraping.
 
 ## Provider Policy: SerpAPI Only
 
@@ -17,6 +17,8 @@ SERPAPI_KEY=your-serpapi-key
 SERPAPI_BASE_URL=https://serpapi.com/search.json
 SERPAPI_TIMEOUT_SECONDS=20
 SERPAPI_RESULTS_PER_QUERY=5
+# Leave empty for worldwide/global results.
+SERPAPI_COUNTRY_CODE=
 ```
 
 Do not commit real credentials. `backend/.env.example` is a copy-only template; runtime configuration is loaded from `backend/.env` and then overridden by process environment variables when present.
@@ -31,6 +33,18 @@ INVESTIGATION_MAX_PROVIDER_CALLS=24
 ```
 
 For `POST /api/v1/investigation/username`, `dork_query_limit` may lower the configured query ceiling. For `POST /api/v1/providers/search/username`, the request `limit` is also clamped to the configured ceiling. Setting an investigation's `dork_query_limit` to `0` skips SerpAPI.
+
+Each query returns at most `SERPAPI_RESULTS_PER_QUERY` organic results before
+normalization, exact-username filtering, and URL deduplication. These controls
+make worldwide discovery bounded and cost predictable.
+
+## Global and Regional Scope
+
+When `SERPAPI_COUNTRY_CODE` is empty or absent, requests omit SerpAPI's `gl`
+parameter and are not intentionally biased to one country. Set an ISO 3166-1
+alpha-2 code, such as `US` or `IN`, only when a case requires a regional bias.
+Language remains English (`hl=en`). Search-engine indexing, ranking, and
+provider availability still determine what is returned.
 
 ## API Usage
 
@@ -53,7 +67,10 @@ Username investigations include the same search output under `dorking_results` a
 
 The implementation lives in `backend/services/google_dorking.py`. It:
 
-- builds approved Indian and global platform dork templates;
+- builds a global-first plan with a small set of optional regional sources;
+- puts an exact general username query first and the requested platform next;
+- keeps Instagram, X/Twitter, and GitHub inside the common ten-query plan;
+- rotates across categories before taking a second query from one category;
 - caps the executed batch;
 - sends each query to SerpAPI;
 - normalizes organic results;
@@ -66,13 +83,15 @@ When `SERPAPI_KEY` is absent, the service returns the prepared queries so local 
 
 ## Dork Categories
 
+- `general`
 - `professional`
+- `professional_regional`
 - `social_media`
 - `developer_tech`
 - `education`
 - `ecommerce`
 - `forums`
-- `matrimony`
+- `identity_directories`
 - `blogs`
 - `risk_mentions`
 - `username_variation`
@@ -80,19 +99,20 @@ When `SERPAPI_KEY` is absent, the service returns the prepared queries so local 
 Representative templates include:
 
 ```text
+"{username}"
 site:linkedin.com/in "{username}"
 site:instagram.com "{username}"
 site:twitter.com "{username}" OR site:x.com "{username}"
 site:github.com "{username}"
 "{username}" "scam"
-"{full_name}" filetype:pdf "result" site:ac.in
+"{full_name}" filetype:pdf (research OR thesis OR conference)
 ```
 
 ## Workflow
 
 ```text
 Target username
-  -> generate bounded dork batch
+  -> generate global, preferred-platform-first bounded batch
   -> reserve provider-call units
   -> execute through SerpAPI only
   -> normalize and exact-match filter
@@ -139,5 +159,7 @@ Target username
 
 - SerpAPI quota is finite. Reduce `INVESTIGATION_MAX_DORK_QUERIES` for lower-cost deployments.
 - Search results depend on Google indexing and SerpAPI availability.
+- Worldwide mode is not exhaustive and does not guarantee a result from every country or platform.
+- Organic-result metadata is discovery evidence; the service does not scrape each result page.
 - Search snippets and username similarity are not proof of identity.
 - Private, login-only, or legally restricted data must not be collected.

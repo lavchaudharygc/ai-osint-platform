@@ -29,6 +29,7 @@ from backend.services.linkedin_brightdata_service import LinkedInBrightDataServi
 from backend.services.investigation_policy import InvestigationResultCache, request_cache_key
 from backend.services.tiktok_apify_service import TikTokApifyService
 from backend.services.twilio_lookup_service import TwilioLookupService
+from backend.services.telegram_mtproto_service import TelegramMTProtoService
 
 
 router = APIRouter(prefix="/api/v1/providers", tags=["capability-providers"])
@@ -88,12 +89,21 @@ async def _cached_call(
 @router.get("/status")
 async def provider_status() -> dict[str, Any]:
     """Expose routing and configuration state without returning credentials."""
+    twilio = TwilioLookupService()
+    telegram_authorized = TelegramMTProtoService().status()
+    twilio_credential_mode = getattr(twilio, "credential_type", None)
+    if twilio_credential_mode not in {"api_key", "account_sid", None}:
+        twilio_credential_mode = None
+    twilio_default_fields = getattr(twilio, "default_fields", [])
+    if not isinstance(twilio_default_fields, (list, tuple, set)):
+        twilio_default_fields = []
     return {
         "routing": {
             "google_search": "serpapi",
             "web_scraping": "bright_data",
             "instagram": "apify_instagram_scraper",
             "twitter": "apify_x_scraper",
+            "reddit": "apify_reddit_scraper",
             "linkedin": "bright_data",
             "facebook": "apify_facebook_scraper",
             "telegram": "existing_telegram_collectors",
@@ -108,7 +118,7 @@ async def provider_status() -> dict[str, Any]:
             "bright_data_web": BrightDataWebService().is_configured(),
             "apify": bool(settings.apify_api_token),
             "hunter": HunterService().is_configured(),
-            "twilio_lookup": TwilioLookupService().is_configured(),
+            "twilio_lookup": twilio.is_configured(),
             "firecrawl": FirecrawlService().is_configured(),
             "github_rest": GitHubService().is_configured(),
             # Public t.me metadata lookup is always available; credentials only
@@ -121,6 +131,33 @@ async def provider_status() -> dict[str, Any]:
             ),
         },
         "automatic_fallback": False,
+        "configuration_status_meaning": (
+            "credentials_present_only; account validity, plan entitlement, credits, "
+            "and provider availability require an explicit smoke test"
+        ),
+        "live_validation_performed": False,
+        "search_scope": {
+            "mode": "country_biased" if settings.serpapi_country_code else "global",
+            "country_code": settings.serpapi_country_code or None,
+        },
+        "limits": {
+            "provider_calls_per_investigation": settings.investigation_max_provider_calls,
+            "dork_queries_per_investigation": settings.investigation_max_dork_queries,
+            "paid_social_platforms_per_investigation": settings.investigation_max_social_platforms,
+            "social_items_per_collector": settings.investigation_social_result_limit,
+            "twitter_items_per_investigation": settings.investigation_twitter_result_limit,
+        },
+        "twilio": {
+            "credential_mode": twilio_credential_mode,
+            "paid_lookup_fields_enabled": bool(twilio_default_fields),
+        },
+        "telegram_authorized_status": telegram_authorized,
+        "persistent_history": {
+            "enabled": settings.investigation_history_persist_enabled,
+            "max_entries": settings.investigation_history_max_entries,
+            "plaintext_local_storage": True,
+            "requires_access_control_before_network_exposure": True,
+        },
         "tiktok_actor_id": getattr(
             settings,
             "apify_tiktok_actor_id",
@@ -142,6 +179,8 @@ async def search_username(request: SearchUsernameRequest) -> dict[str, Any]:
             request.username,
             full_name=request.full_name,
             limit=limit,
+            preferred_platform=request.preferred_platform,
+            country_code=request.country_code,
         )
     )
 

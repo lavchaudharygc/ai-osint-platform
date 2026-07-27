@@ -12,8 +12,15 @@ from backend.services.apify_client import ApifyActorClient, ApifyClientError
 class TwitterApifyService:
     """Use the two requested Apidojo actors with their actor-specific inputs."""
 
-    DEFAULT_PROFILE_MAX_ITEMS = 50
-    DEFAULT_SEARCH_MAX_ITEMS = 50
+    # The profile Actor's current input contract defaults reply and About
+    # queries to false because both can trigger additional billable events.
+    # Keep the automatic investigation path small enough for Apify demo mode,
+    # while still allowing a caller to explicitly request a bounded larger run.
+    DEFAULT_PROFILE_MAX_ITEMS = 5
+    MAX_PROFILE_ITEMS = 40
+    DEFAULT_SEARCH_MAX_ITEMS = 10
+    MAX_SEARCH_ITEMS = 50
+    DEFAULT_MIN_REPLY_COUNT = 10
 
     def __init__(self, client: ApifyActorClient | None = None) -> None:
         self.client = client or ApifyActorClient()
@@ -28,36 +35,54 @@ class TwitterApifyService:
         username: str,
         *,
         max_items: int = DEFAULT_PROFILE_MAX_ITEMS,
-        get_replies: bool = True,
-        min_reply_count: int = 1,
-        get_about_data: bool = True,
+        get_replies: bool = False,
+        min_reply_count: int = DEFAULT_MIN_REPLY_COUNT,
+        get_about_data: bool = False,
     ) -> dict[str, Any]:
         handle = self._clean_handle(username)
+        item_limit = self._bounded_item_limit(
+            max_items,
+            maximum=self.MAX_PROFILE_ITEMS,
+            field_name="max_items",
+        )
+        reply_threshold = self._non_negative_integer(
+            min_reply_count,
+            field_name="min_reply_count",
+        )
         if not self.is_configured():
             return self._not_configured(handle, self.profile_actor_id)
 
-        run_input = {
+        run_input: dict[str, Any] = {
             "twitterHandles": [handle],
-            "maxItems": max_items,
-            "getReplies": get_replies,
-            "minReplyCount": min_reply_count,
-            "getAboutData": get_about_data,
+            "maxItems": item_limit,
+            "getReplies": bool(get_replies),
+            "getAboutData": bool(get_about_data),
             "includeNativeRetweets": False,
             "onlyImages": False,
+        }
+        if get_replies:
+            run_input["minReplyCount"] = reply_threshold
+        collection_options = {
+            "requested_max_items": max_items,
+            "max_items": item_limit,
+            "get_replies": bool(get_replies),
+            "min_reply_count": reply_threshold if get_replies else None,
+            "get_about_data": bool(get_about_data),
         }
         try:
             run = await self.client.run_actor(
                 self.profile_actor_id,
                 run_input,
-                dataset_limit=max_items,
+                dataset_limit=item_limit,
             )
         except ApifyClientError as exc:
-            return self._error(handle, exc)
+            return self._error(handle, self.profile_actor_id, exc)
 
         return self._normalize_profile(
             handle,
             run.items,
             run.as_dict(include_items=False),
+            collection_options,
         )
 
     async def search(
@@ -73,15 +98,20 @@ class TwitterApifyService:
         author: str | None = None,
         in_reply_to: str | None = None,
         mentioning: str | None = None,
-        include_search_terms: bool = True,
+        include_search_terms: bool = False,
     ) -> dict[str, Any]:
+        item_limit = self._bounded_item_limit(
+            max_items,
+            maximum=self.MAX_SEARCH_ITEMS,
+            field_name="max_items",
+        )
         handles = [self._clean_handle(value) for value in (twitter_handles or [])]
         run_input: dict[str, Any] = {
             "searchTerms": [value.strip() for value in (search_terms or []) if value.strip()],
             "twitterHandles": handles,
             "startUrls": [value.strip() for value in (start_urls or []) if value.strip()],
             "conversationIds": [value.strip() for value in (conversation_ids or []) if value.strip()],
-            "maxItems": max_items,
+            "maxItems": item_limit,
             "sort": sort,
             "includeSearchTerms": include_search_terms,
         }
@@ -105,72 +135,244 @@ class TwitterApifyService:
             run = await self.client.run_actor(
                 self.tweet_actor_id,
                 run_input,
-                dataset_limit=max_items,
+                dataset_limit=item_limit,
             )
         except ApifyClientError as exc:
-            return {
-                "success": False,
-                "configured": True,
-                "platform": "twitter",
-                "status": "provider_error",
-                "source": "apify",
-                "actor_id": self.tweet_actor_id,
-                "error": exc.as_dict(),
-                "tweets": [],
-                "total": 0,
-            }
+            return self._error(None, self.tweet_actor_id, exc)
 
-        tweets = [self._normalize_tweet(item) for item in run.items]
+        run_metadata = run.as_dict(include_items=False)
+        data_items, actor_diagnostics = self._partition_actor_output(run.items)
+        if not data_items:
+            if actor_diagnostics:
+                return self._actor_output_failure(
+                    username=None,
+                    actor_id=self.tweet_actor_id,
+                    diagnostics=actor_diagnostics,
+                    run_metadata=run_metadata,
+                )
+            return self._empty_result(
+                username=None,
+                actor_id=self.tweet_actor_id,
+                run_metadata=run_metadata,
+                message="Twitter search Actor succeeded but returned no dataset items.",
+            )
+
+        tweet_items = [item for item in data_items if self._is_tweet_record(item)]
+        if not tweet_items:
+            result = self._empty_result(
+                username=None,
+                actor_id=self.tweet_actor_id,
+                run_metadata=run_metadata,
+                message=(
+                    "Twitter search Actor returned dataset records, but none had "
+                    "a recognizable tweet shape."
+                ),
+            )
+            result.update(
+                {
+                    "actor_diagnostics": actor_diagnostics,
+                    "raw_data": run.items,
+                    "collection_options": {
+                        "requested_max_items": max_items,
+                        "max_items": item_limit,
+                        "include_search_terms": bool(include_search_terms),
+                        "sort": sort,
+                    },
+                }
+            )
+            return result
+
+        tweets = [self._normalize_tweet(item) for item in tweet_items]
+        status = "completed_with_warnings" if actor_diagnostics else "completed"
         return {
             "success": True,
             "configured": True,
             "platform": "twitter",
-            "status": "completed",
+            "status": status,
             "source": "apify",
             "actor_id": self.tweet_actor_id,
             "total": len(tweets),
             "tweets": tweets,
-            "run": run.as_dict(include_items=False),
+            "replies": [],
+            "run": run_metadata,
+            "collection_options": {
+                "requested_max_items": max_items,
+                "max_items": item_limit,
+                "include_search_terms": bool(include_search_terms),
+                "sort": sort,
+            },
+            "actor_diagnostics": actor_diagnostics,
             "raw_data": run.items,
             "scraped_at": datetime.now(UTC).isoformat(),
         }
 
+    @classmethod
+    def _profile_candidate(cls, item: dict[str, Any]) -> dict[str, Any]:
+        """Extract a target profile from tweet, wrapper, flattened, or profile-only output."""
+        for key in ("author", "user", "profile"):
+            candidate = item.get(key)
+            if isinstance(candidate, dict) and cls._profile_handle(candidate):
+                return candidate
+
+        flattened = {
+            key.removeprefix("author."): value
+            for key, value in item.items()
+            if key.startswith("author.") and not key.startswith("author.about.")
+        }
+        if flattened:
+            about = {
+                key.removeprefix("author.about."): value
+                for key, value in item.items()
+                if key.startswith("author.about.")
+            }
+            if about:
+                flattened["about"] = about
+            if cls._profile_handle(flattened):
+                return flattened
+
+        record_type = str(item.get("type") or item.get("recordType") or "").casefold()
+        profile_types = {"profile", "user", "account", "author"}
+        if record_type in profile_types or not cls._is_tweet_record(item):
+            if cls._profile_handle(item):
+                return item
+        return {}
+
     @staticmethod
-    def _normalize_clappi_profile(handle: str, items: list[dict]) -> dict:
-        """Normalize the flat profile-first schema returned by clappi/x-twitter-profile-scraper."""
-        if not items:
-            return {"success": False, "exists": None, "platform": "twitter", "username": handle}
-        p = items[0]  # Clappi returns one item per profile URL
+    def _profile_value(profile: dict[str, Any], *keys: str) -> Any:
+        for key in keys:
+            if key in profile and profile[key] is not None:
+                return profile[key]
+        return None
+
+    @classmethod
+    def _profile_handle(cls, profile: dict[str, Any]) -> str:
+        value = cls._profile_value(
+            profile,
+            "userName",
+            "username",
+            "screenName",
+            "screen_name",
+            "handle",
+        )
+        return str(value).strip().lstrip("@") if value is not None else ""
+
+    @classmethod
+    def _profile_score(cls, profile: dict[str, Any]) -> int:
+        fields = (
+            "userName",
+            "username",
+            "name",
+            "fullName",
+            "description",
+            "bio",
+            "profilePicture",
+            "followers",
+            "followersCount",
+            "following",
+            "followingCount",
+            "statusesCount",
+            "tweetsCount",
+            "about",
+        )
+        return sum(cls._profile_value(profile, field) is not None for field in fields)
+
+    @staticmethod
+    def _is_tweet_record(item: dict[str, Any]) -> bool:
+        record_type = str(item.get("type") or item.get("recordType") or "").casefold()
+        if record_type in {"profile", "user", "account", "author"}:
+            return False
+        if record_type in {"tweet", "reply", "retweet", "quote", "post"}:
+            return True
+        if any(
+            key in item
+            for key in (
+                "fullText",
+                "text",
+                "createdAt",
+                "twitterUrl",
+                "conversationId",
+                "inReplyToStatusId",
+                "isReply",
+            )
+        ):
+            return True
+        return "/status/" in str(item.get("url") or "")
+
+    @classmethod
+    def _partition_actor_output(
+        cls,
+        items: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        data_items: list[dict[str, Any]] = []
+        diagnostics: list[dict[str, Any]] = []
+        for item in items:
+            diagnostic = cls._actor_diagnostic(item)
+            if diagnostic is None:
+                data_items.append(item)
+            else:
+                diagnostics.append(diagnostic)
+        return data_items, diagnostics
+
+    @classmethod
+    def _actor_diagnostic(cls, item: dict[str, Any]) -> dict[str, Any] | None:
+        if item.get("demo") is True:
+            return {
+                "code": "apify_demo_output",
+                "classification": "provider_plan_restricted",
+                "message": (
+                    "Apify returned demo placeholders instead of X data. "
+                    "Enable paid access for the configured Twitter Actor and retry."
+                ),
+                "target": None,
+            }
+
+        status = str(item.get("status") or item.get("state") or "").strip().casefold()
+        record_type = str(item.get("type") or item.get("recordType") or "").strip().casefold()
+        error_value = cls._profile_value(
+            item,
+            "error",
+            "errorMessage",
+            "error_message",
+            "errorDescription",
+            "error_description",
+        )
+        error_statuses = {"error", "failed", "failure", "aborted", "timed-out", "timeout"}
+        not_found_statuses = {
+            "not_found",
+            "not-found",
+            "not found",
+            "unavailable",
+            "does_not_exist",
+            "private",
+            "suspended",
+        }
+        if not error_value and status not in error_statuses | not_found_statuses and record_type != "error":
+            return None
+
+        classification = "not_found" if status in not_found_statuses else "actor_output_error"
+        code = status.replace(" ", "_").replace("-", "_") or classification
+        if isinstance(error_value, dict):
+            message_value = cls._profile_value(
+                error_value,
+                "message",
+                "description",
+                "error",
+                "code",
+            )
+        elif isinstance(error_value, list):
+            message_value = "; ".join(str(value) for value in error_value if value)
+        else:
+            message_value = error_value
+        message = str(
+            message_value
+            or cls._profile_value(item, "message", "statusMessage", "reason")
+            or f"Twitter Actor returned a {code} dataset record."
+        )
         return {
-            "success": p.get("status") == "available",
-            "configured": True,
-            "exists": p.get("status") == "available",
-            "platform": "twitter",
-            "username": p.get("username") or handle,
-            "full_name": p.get("name"),
-            "bio": p.get("bio"),
-            "profile_pic_url": p.get("avatar_url"),
-            "profile_pic_hd": p.get("avatar_url"),
-            "banner_url": p.get("banner_url"),
-            "follower_count": p.get("followers"),
-            "following_count": p.get("following"),
-            "post_count": p.get("tweets_count"),
-            "is_verified": bool(p.get("is_verified") or p.get("is_blue_verified")),
-            "is_blue_verified": p.get("is_blue_verified"),
-            "user_id": p.get("id"),
-            "location": p.get("location"),
-            "website": p.get("website"),
-            "joined_at": p.get("created_at"),
-            "tweets": [],
-            "replies": [],
-            "recent_posts": [],
-            "all_hashtags": [],
-            "total_tweets_fetched": 0,
-            "total_replies_fetched": 0,
-            "status": "completed" if p.get("status") == "available" else "empty_dataset",
-            "source": "apify_clappi_twitter_scraper",
-            "raw_data": items,
-            "scraped_at": datetime.now(UTC).isoformat(),
+            "code": code,
+            "classification": classification,
+            "message": message,
+            "target": cls._profile_value(item, "target", "url", "username", "userName"),
         }
 
     def _normalize_profile(
@@ -178,8 +380,36 @@ class TwitterApifyService:
         handle: str,
         items: list[dict[str, Any]],
         run_metadata: dict[str, Any],
+        collection_options: dict[str, Any],
     ) -> dict[str, Any]:
-        target_items = [item for item in items if self._author_handle(item).lower() == handle.lower()]
+        data_items, actor_diagnostics = self._partition_actor_output(items)
+        if not data_items:
+            if actor_diagnostics:
+                result = self._actor_output_failure(
+                    username=handle,
+                    actor_id=self.profile_actor_id,
+                    diagnostics=actor_diagnostics,
+                    run_metadata=run_metadata,
+                )
+            else:
+                result = self._empty_result(
+                    username=handle,
+                    actor_id=self.profile_actor_id,
+                    run_metadata=run_metadata,
+                    message=(
+                        "Twitter profile Actor succeeded but returned no dataset items "
+                        "for the requested handle."
+                    ),
+                )
+            result["collection_options"] = collection_options
+            return result
+
+        tweet_items = [item for item in data_items if self._is_tweet_record(item)]
+        target_items = [
+            item
+            for item in tweet_items
+            if self._author_handle(item).casefold() == handle.casefold()
+        ]
         target_tweet_ids = {
             str(item.get("id"))
             for item in target_items
@@ -187,7 +417,7 @@ class TwitterApifyService:
         }
         replies = [
             item
-            for item in items
+            for item in tweet_items
             if self._is_reply(item)
             and (
                 str(item.get("conversationId") or "") in target_tweet_ids
@@ -196,35 +426,13 @@ class TwitterApifyService:
         ]
         tweets = [item for item in target_items if not self._is_reply(item)]
 
-        author: dict[str, Any] = {}
-        for item in target_items:
-            candidate = item.get("author")
-            if isinstance(candidate, dict):
-                author = candidate
-                if candidate.get("about"):
-                    break
-            else:
-                # Check for flattened keys
-                if "author.userName" in item or "author.username" in item:
-                    author = {
-                        "userName": item.get("author.userName") or item.get("author.username"),
-                        "name": item.get("author.name") or item.get("author.fullName") or item.get("author.full_name"),
-                        "description": item.get("author.description") or item.get("author.bio"),
-                        "profilePicture": item.get("author.profilePicture") or item.get("author.profile_pic_url"),
-                        "followers": item.get("author.followers") or item.get("author.followersCount"),
-                        "following": item.get("author.following") or item.get("author.followingCount"),
-                        "isVerified": item.get("author.isVerified"),
-                        "isBlueVerified": item.get("author.isBlueVerified"),
-                        "id": item.get("author.id"),
-                    }
-                    # Also try to extract nested "about" values if they are flattened
-                    about = {}
-                    for k, v in item.items():
-                        if k.startswith("author.about."):
-                            about[k[len("author.about."):]] = v
-                    if about:
-                        author["about"] = about
-                    break
+        profile_candidates = [
+            candidate
+            for item in data_items
+            if (candidate := self._profile_candidate(item))
+            and self._profile_handle(candidate).casefold() == handle.casefold()
+        ]
+        author = max(profile_candidates, key=self._profile_score, default={})
         about = author.get("about") if isinstance(author.get("about"), dict) else {}
         normalized_tweets = [self._normalize_tweet(item) for item in tweets]
         normalized_replies = [self._normalize_tweet(item) for item in replies]
@@ -238,29 +446,122 @@ class TwitterApifyService:
         )
 
         profile_found = bool(author or tweets or replies)
+        if not profile_found:
+            if actor_diagnostics:
+                result = self._actor_output_failure(
+                    username=handle,
+                    actor_id=self.profile_actor_id,
+                    diagnostics=actor_diagnostics,
+                    run_metadata=run_metadata,
+                )
+            else:
+                result = self._empty_result(
+                    username=handle,
+                    actor_id=self.profile_actor_id,
+                    run_metadata=run_metadata,
+                    message=(
+                        "Twitter profile Actor returned data, but no record matched "
+                        f"the requested handle @{handle}."
+                    ),
+                )
+            result.update(
+                {
+                    "collection_options": collection_options,
+                    "discarded_related_items": len(data_items),
+                    "raw_data": items,
+                }
+            )
+            return result
+
+        username = self._profile_value(
+            author,
+            "userName",
+            "username",
+            "screenName",
+            "screen_name",
+            "handle",
+        )
+        legacy_verified = self._profile_value(
+            author,
+            "isVerified",
+            "is_verified",
+            "verified",
+        )
+        blue_verified = self._profile_value(
+            author,
+            "isBlueVerified",
+            "is_blue_verified",
+        )
+        status = "completed_with_warnings" if actor_diagnostics else "completed"
         return {
-            "success": profile_found,
+            "success": True,
             "configured": True,
-            "exists": True if profile_found else None,
+            "exists": True,
             "platform": "twitter",
-            "username": author.get("userName") or author.get("username") or handle,
-            "full_name": author.get("name"),
-            "bio": author.get("description"),
-            "profile_pic_url": author.get("profilePicture") or about.get("avatarUrl"),
-            "profile_pic_hd": about.get("avatarUrl") or author.get("profilePicture"),
-            "follower_count": author.get("followers"),
-            "following_count": author.get("following"),
-            "post_count": self._first_not_none(
-                author.get("statusesCount"),
-                author.get("tweetsCount"),
+            "username": username or handle,
+            "full_name": self._profile_value(author, "name", "fullName", "full_name"),
+            "bio": self._profile_value(author, "description", "bio"),
+            "profile_pic_url": self._first_not_none(
+                self._profile_value(
+                    author,
+                    "profilePicture",
+                    "profilePictureUrl",
+                    "profile_pic_url",
+                    "profile_image_url_https",
+                    "avatar_url",
+                ),
+                about.get("avatarUrl"),
             ),
-            "is_verified": bool(author.get("isVerified") or author.get("isBlueVerified")),
-            "is_legacy_verified": author.get("isVerified"),
-            "is_blue_verified": author.get("isBlueVerified"),
-            "user_id": author.get("id"),
-            "location": author.get("location") or about.get("accountBasedIn"),
-            "website": author.get("url") or author.get("website"),
-            "joined_at": about.get("accountCreatedAt"),
+            "profile_pic_hd": self._first_not_none(
+                about.get("avatarUrl"),
+                self._profile_value(
+                    author,
+                    "profilePicture",
+                    "profilePictureUrl",
+                    "profile_pic_url",
+                    "profile_image_url_https",
+                    "avatar_url",
+                ),
+            ),
+            "banner_url": self._profile_value(
+                author,
+                "coverPicture",
+                "bannerUrl",
+                "banner_url",
+                "profile_banner_url",
+            ),
+            "follower_count": self._profile_value(
+                author,
+                "followers",
+                "followersCount",
+                "follower_count",
+            ),
+            "following_count": self._profile_value(
+                author,
+                "following",
+                "followingCount",
+                "following_count",
+            ),
+            "post_count": self._profile_value(
+                author,
+                "statusesCount",
+                "tweetsCount",
+                "tweets_count",
+                "post_count",
+            ),
+            "is_verified": bool(legacy_verified or blue_verified),
+            "is_legacy_verified": legacy_verified,
+            "is_blue_verified": blue_verified,
+            "user_id": self._profile_value(author, "id", "userId", "user_id"),
+            "location": self._first_not_none(
+                self._profile_value(author, "location"),
+                about.get("accountBasedIn"),
+            ),
+            "website": self._profile_value(author, "website", "url"),
+            "joined_at": self._first_not_none(
+                about.get("accountCreatedAt"),
+                self._profile_value(author, "createdAt", "created_at"),
+            ),
             "account_based_in": about.get("accountBasedIn"),
             "username_last_changed_at": about.get("usernameLastChangedAt"),
             "username_change_count": about.get("usernameChangeCount"),
@@ -271,11 +572,13 @@ class TwitterApifyService:
             "all_hashtags": hashtags,
             "total_tweets_fetched": len(normalized_tweets),
             "total_replies_fetched": len(normalized_replies),
-            "discarded_related_items": len(items) - len(tweets) - len(replies),
-            "status": "completed" if profile_found else "empty_dataset",
+            "discarded_related_items": len(data_items) - len(tweets) - len(replies),
+            "status": status,
             "source": "apify_twitter_profile_scraper",
             "actor_id": self.profile_actor_id,
             "run": run_metadata,
+            "collection_options": collection_options,
+            "actor_diagnostics": actor_diagnostics,
             "raw_data": items,
             "scraped_at": datetime.now(UTC).isoformat(),
         }
@@ -409,17 +712,20 @@ class TwitterApifyService:
                 result.append(str(candidate).lstrip("#@"))
         return result
 
-    @staticmethod
-    def _author_handle(item: dict[str, Any]) -> str:
+    @classmethod
+    def _author_handle(cls, item: dict[str, Any]) -> str:
         author = item.get("author")
         if isinstance(author, dict):
-            val = author.get("userName") or author.get("username")
-            if val:
-                return str(val)
+            value = cls._profile_handle(author)
+            if value:
+                return value
         # Check flattened keys
         for key in ("author.userName", "author.username", "author.user_name"):
-            if key in item:
-                return str(item[key])
+            if item.get(key):
+                return str(item[key]).strip().lstrip("@")
+        for key in ("userName", "username", "screenName", "screen_name"):
+            if item.get(key):
+                return str(item[key]).strip().lstrip("@")
         return ""
 
     @staticmethod
@@ -438,6 +744,18 @@ class TwitterApifyService:
         return handle
 
     @staticmethod
+    def _bounded_item_limit(value: int, *, maximum: int, field_name: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{field_name} must be a positive integer")
+        return min(value, maximum)
+
+    @staticmethod
+    def _non_negative_integer(value: int, *, field_name: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{field_name} must be a non-negative integer")
+        return value
+
+    @staticmethod
     def _not_configured(username: str | None, actor_id: str) -> dict[str, Any]:
         return {
             "success": False,
@@ -449,11 +767,120 @@ class TwitterApifyService:
             "source": "apify",
             "actor_id": actor_id,
             "reason": "missing APIFY_API_TOKEN",
+            "reason_detail": {
+                "code": "not_configured",
+                "message": "missing APIFY_API_TOKEN",
+                "actor_id": actor_id,
+            },
+            "run": None,
+            "total": 0,
             "tweets": [],
             "replies": [],
         }
 
-    def _error(self, username: str, exc: ApifyClientError) -> dict[str, Any]:
+    @staticmethod
+    def _empty_result(
+        *,
+        username: str | None,
+        actor_id: str,
+        run_metadata: dict[str, Any],
+        message: str,
+    ) -> dict[str, Any]:
+        return {
+            "success": False,
+            "configured": True,
+            "exists": None,
+            "platform": "twitter",
+            "username": username,
+            "status": "empty_dataset",
+            "source": "apify",
+            "actor_id": actor_id,
+            "reason": message,
+            "reason_detail": {
+                "code": "empty_dataset",
+                "message": message,
+                "actor_id": actor_id,
+                "run_id": run_metadata.get("run_id"),
+                "run_status": run_metadata.get("run_status"),
+            },
+            "run": run_metadata,
+            "total": 0,
+            "tweets": [],
+            "replies": [],
+            "actor_diagnostics": [],
+            "raw_data": [],
+            "scraped_at": datetime.now(UTC).isoformat(),
+        }
+
+    @staticmethod
+    def _actor_output_failure(
+        *,
+        username: str | None,
+        actor_id: str,
+        diagnostics: list[dict[str, Any]],
+        run_metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        target_not_found = bool(diagnostics) and all(
+            item.get("classification") == "not_found" for item in diagnostics
+        )
+        plan_restricted = bool(diagnostics) and all(
+            item.get("classification") == "provider_plan_restricted"
+            for item in diagnostics
+        )
+        status = "not_found" if target_not_found else "provider_error"
+        if target_not_found:
+            code = "target_not_found"
+        elif plan_restricted:
+            code = "provider_plan_required"
+        else:
+            code = "actor_output_error"
+        message = diagnostics[0].get("message") or (
+            "Twitter target was not found."
+            if target_not_found
+            else "Twitter Actor returned an error dataset record."
+        )
+        reason_detail = {
+            "code": code,
+            "message": message,
+            "actor_id": actor_id,
+            "run_id": run_metadata.get("run_id"),
+            "run_status": run_metadata.get("run_status"),
+            "diagnostics": diagnostics,
+        }
+        return {
+            "success": False,
+            "configured": True,
+            "exists": False if target_not_found else None,
+            "platform": "twitter",
+            "username": username,
+            "status": status,
+            "source": "apify",
+            "actor_id": actor_id,
+            "reason": message,
+            "reason_detail": reason_detail,
+            "error": reason_detail,
+            "run": run_metadata,
+            "total": 0,
+            "tweets": [],
+            "replies": [],
+            "actor_diagnostics": diagnostics,
+            "raw_data": [],
+            "scraped_at": datetime.now(UTC).isoformat(),
+        }
+
+    @staticmethod
+    def _error(
+        username: str | None,
+        actor_id: str,
+        exc: ApifyClientError,
+    ) -> dict[str, Any]:
+        error = exc.as_dict()
+        run_metadata = {
+            "actor_id": actor_id,
+            "run_id": exc.run_id,
+            "run_status": exc.run_status,
+            "status_message": str(exc),
+        }
         return {
             "success": False,
             "configured": True,
@@ -462,8 +889,15 @@ class TwitterApifyService:
             "username": username,
             "status": "provider_error",
             "source": "apify",
-            "actor_id": self.profile_actor_id,
-            "error": exc.as_dict(),
+            "actor_id": actor_id,
+            "reason": str(exc),
+            "reason_detail": error,
+            "error": error,
+            "run": run_metadata,
+            "total": 0,
             "tweets": [],
             "replies": [],
+            "actor_diagnostics": [],
+            "raw_data": [],
+            "scraped_at": datetime.now(UTC).isoformat(),
         }

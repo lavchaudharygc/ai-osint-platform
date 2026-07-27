@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
+from backend.api.endpoints import investigation as investigation_endpoint
 from backend.api.endpoints.investigation import (
     _INVESTIGATION_STORE,
     investigate_username,
@@ -16,10 +17,13 @@ from backend.services.telegram_service import TelegramDataService
 
 class InvestigationTelegramRoutingTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        self._persistent_store = investigation_endpoint._PERSISTENT_INVESTIGATION_STORE
+        investigation_endpoint._PERSISTENT_INVESTIGATION_STORE = None
         _INVESTIGATION_STORE.clear()
 
     def tearDown(self) -> None:
         _INVESTIGATION_STORE.clear()
+        investigation_endpoint._PERSISTENT_INVESTIGATION_STORE = self._persistent_store
 
     async def test_username_scrape_embeds_authorized_access_readiness(self) -> None:
         profile = {

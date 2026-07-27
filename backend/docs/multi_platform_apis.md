@@ -1,5 +1,15 @@
 # Multi-Platform API Research
 
+> **Historical research — non-operational.** This document records an earlier
+> provider survey and may contain outdated endpoints, rate limits, pricing, and
+> recommendations. It does not describe the active runtime architecture. The
+> supported system routes X/Twitter, Reddit, Instagram, Facebook, and TikTok to
+> their approved bounded Apify collectors; LinkedIn and general web pages to
+> Bright Data; Google search to SerpAPI; Telegram to the existing public/optional
+> authorized collectors; and GitHub to the GitHub REST API. See
+> `../API_DOCUMENTATION.md` for the current contract. Do not treat any provider
+> listed here as an automatic fallback.
+
 ## Project Scope
 
 This document evaluates official APIs and public interfaces across multiple platforms commonly encountered in OSINT investigations, brand monitoring, digital research, and public profile analysis.

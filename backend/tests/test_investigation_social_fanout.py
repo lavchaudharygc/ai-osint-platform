@@ -2,6 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from backend.api.endpoints import investigation as investigation_endpoint
 from backend.api.endpoints.investigation import (
     PROVIDER_ROUTING,
     _actor_outcome,
@@ -48,6 +49,15 @@ ALL_COLLECTORS = {
 
 
 class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._persistent_store = investigation_endpoint._PERSISTENT_INVESTIGATION_STORE
+        investigation_endpoint._PERSISTENT_INVESTIGATION_STORE = None
+        investigation_endpoint._INVESTIGATION_STORE.clear()
+
+    def tearDown(self) -> None:
+        investigation_endpoint._INVESTIGATION_STORE.clear()
+        investigation_endpoint._PERSISTENT_INVESTIGATION_STORE = self._persistent_store
+
     def test_inconclusive_or_generic_unsuccessful_provider_is_a_warning(self) -> None:
         self.assertEqual(
             _actor_outcome(

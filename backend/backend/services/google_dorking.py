@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 import json
 import re
 
@@ -45,27 +45,39 @@ class SearchProvider:
 
 
 class IndianPlatformDorks:
-    """Indian and global platform dorks adapted for this backend."""
+    """Global discovery dorks plus a small set of optional regional sources.
+
+    The historical class name is retained for import compatibility; query
+    ordering and SerpAPI locale are global by default.
+    """
+
+    GENERAL = [
+        DorkTemplate("General Exact Username", "general", '"{username}"'),
+        DorkTemplate("General Username URL", "general", 'inurl:"{username}"'),
+        DorkTemplate("General Exact Name", "general", '"{full_name}"'),
+    ]
 
     PROFESSIONAL = [
         DorkTemplate("LinkedIn", "professional", 'site:linkedin.com/in "{username}"'),
-        DorkTemplate("Naukri", "professional", 'site:naukri.com inurl:"{username}"'),
-        DorkTemplate("Indeed India", "professional", 'site:in.indeed.com "{username}"'),
-        DorkTemplate("Glassdoor India", "professional", 'site:glassdoor.co.in "{username}"'),
-        DorkTemplate("AmbitionBox", "professional", 'site:ambitionbox.com "{username}"'),
-        DorkTemplate("Apna.co", "professional", 'site:apna.co inurl:"{username}"'),
-        DorkTemplate("Foundit", "professional", 'site:foundit.in "{username}"'),
-        DorkTemplate("Shine", "professional", 'site:shine.com "{username}"'),
-        DorkTemplate("Internshala", "professional", 'site:internshala.com inurl:"{username}"'),
-        DorkTemplate("TimesJobs", "professional", 'site:timesjobs.com "{username}"'),
-        DorkTemplate("Company Team Pages", "professional", '"{full_name}" intitle:"team" site:.in'),
+        DorkTemplate("Indeed", "professional", 'site:indeed.com "{username}"'),
+        DorkTemplate("Glassdoor", "professional", 'site:glassdoor.com "{username}"'),
+        DorkTemplate("Xing", "professional", 'site:xing.com/profile "{username}"'),
+        DorkTemplate("Wellfound", "professional", 'site:wellfound.com/u "{username}"'),
+        DorkTemplate("Crunchbase", "professional", 'site:crunchbase.com/person "{full_name}"'),
+        DorkTemplate("ResearchGate", "professional", 'site:researchgate.net/profile "{full_name}"'),
+        DorkTemplate("ORCID", "professional", 'site:orcid.org "{full_name}"'),
+        DorkTemplate("Behance", "professional", 'site:behance.net "{username}"'),
+        DorkTemplate("Dribbble", "professional", 'site:dribbble.com "{username}"'),
         DorkTemplate("Company Career Pages", "professional", '"{full_name}" intitle:"careers" OR intitle:"our team"'),
+        DorkTemplate("Naukri", "professional_regional", 'site:naukri.com inurl:"{username}"'),
+        DorkTemplate("Foundit", "professional_regional", 'site:foundit.in "{username}"'),
     ]
 
     SOCIAL_MEDIA = [
         DorkTemplate("Instagram", "social_media", 'site:instagram.com "{username}"'),
         DorkTemplate("Facebook", "social_media", 'site:facebook.com inurl:"{username}"'),
         DorkTemplate("Twitter/X", "social_media", 'site:twitter.com "{username}" OR site:x.com "{username}"'),
+        DorkTemplate("TikTok", "social_media", 'site:tiktok.com/@ "{username}"'),
         DorkTemplate("Reddit", "social_media", 'site:reddit.com/user "{username}"'),
         DorkTemplate("Telegram", "social_media", 'site:t.me "{username}"'),
         DorkTemplate("Koo", "social_media", 'site:kooapp.com inurl:"{username}"'),
@@ -95,44 +107,43 @@ class IndianPlatformDorks:
     ]
 
     EDUCATION = [
-        DorkTemplate("College Websites", "education", 'site:*.ac.in "{full_name}"'),
-        DorkTemplate("Shiksha", "education", 'site:shiksha.com "{full_name}"'),
-        DorkTemplate("CollegeDunia", "education", 'site:collegedunia.com "{full_name}"'),
+        DorkTemplate("Academic Websites", "education", '"{full_name}" (site:.edu OR site:.ac.uk OR site:.edu.au OR site:.ac.in)'),
+        DorkTemplate("Google Scholar", "education", 'site:scholar.google.com "{full_name}"'),
+        DorkTemplate("Academia.edu", "education", 'site:academia.edu "{full_name}"'),
+        DorkTemplate("ResearchGate Academic", "education", 'site:researchgate.net/profile "{full_name}"'),
+        DorkTemplate("ORCID Academic", "education", 'site:orcid.org "{full_name}"'),
         DorkTemplate("Coursera", "education", 'site:coursera.org/user "{username}"'),
         DorkTemplate("Udemy", "education", 'site:udemy.com/user "{username}"'),
-        DorkTemplate("NPTEL", "education", 'site:nptel.ac.in "{full_name}"'),
-        DorkTemplate("Alumni Pages", "education", '"{full_name}" intitle:"alumni" site:.ac.in'),
-        DorkTemplate("Exam Result PDFs", "education", '"{full_name}" filetype:pdf "result" site:.ac.in'),
-        DorkTemplate("Scholarship Lists", "education", '"{full_name}" "scholarship" filetype:pdf site:gov.in'),
+        DorkTemplate("Alumni Pages", "education", '"{full_name}" intitle:"alumni"'),
+        DorkTemplate("Academic PDFs", "education", '"{full_name}" filetype:pdf (research OR thesis OR conference)'),
     ]
 
     ECOMMERCE = [
-        DorkTemplate("Amazon India", "ecommerce", 'site:amazon.in "{username}"'),
-        DorkTemplate("Flipkart", "ecommerce", 'site:flipkart.com "{username}"'),
-        DorkTemplate("Meesho", "ecommerce", 'site:meesho.com "{username}"'),
-        DorkTemplate("IndiaMART", "ecommerce", 'site:indiamart.com "{username}"'),
-        DorkTemplate("OLX", "ecommerce", 'site:olx.in inurl:"{username}"'),
-        DorkTemplate("TradeIndia", "ecommerce", 'site:tradeindia.com "{username}"'),
+        DorkTemplate("Amazon", "ecommerce", '(site:amazon.com OR site:amazon.co.uk OR site:amazon.in) "{username}"'),
+        DorkTemplate("eBay", "ecommerce", 'site:ebay.com "{username}"'),
+        DorkTemplate("Etsy", "ecommerce", 'site:etsy.com/shop "{username}"'),
+        DorkTemplate("Gumroad", "ecommerce", 'site:gumroad.com "{username}"'),
+        DorkTemplate("Patreon", "ecommerce", 'site:patreon.com "{username}"'),
+        DorkTemplate("Ko-fi", "ecommerce", 'site:ko-fi.com "{username}"'),
         DorkTemplate("WhatsApp Business", "ecommerce", '"{username}" "whatsapp business" catalog'),
     ]
 
     FORUMS = [
         DorkTemplate("Quora", "forums", 'site:quora.com/profile "{username}"'),
         DorkTemplate("Medium", "forums", 'site:medium.com "{username}"'),
-        DorkTemplate("Team-BHP", "forums", 'site:team-bhp.com inurl:"{username}"'),
-        DorkTemplate("MouthShut", "forums", 'site:mouthshut.com "{username}"'),
-        DorkTemplate("TechEnclave", "forums", 'site:techenclave.com "{username}"'),
-        DorkTemplate("IndianKanoon", "forums", 'site:indiankanoon.org "{full_name}"'),
-        DorkTemplate("MyGov", "forums", 'site:mygov.in "{full_name}"'),
         DorkTemplate("XDA", "forums", 'site:xda-developers.com/members inurl:"{username}"'),
         DorkTemplate("StackExchange", "forums", 'site:stackexchange.com inurl:"{username}"'),
+        DorkTemplate("Hacker News", "forums", 'site:news.ycombinator.com/user?id= "{username}"'),
+        DorkTemplate("Discourse Forums", "forums", 'inurl:"/u/{username}" "profile"'),
+        DorkTemplate("Internet Archive", "forums", 'site:archive.org "{username}"'),
     ]
 
     MATRIMONY = [
-        DorkTemplate("Shaadi", "matrimony", 'site:shaadi.com "{full_name}"'),
-        DorkTemplate("BharatMatrimony", "matrimony", 'site:bharatmatrimony.com "{full_name}"'),
-        DorkTemplate("Jeevansathi", "matrimony", 'site:jeevansathi.com "{full_name}"'),
-        DorkTemplate("Matrimony Biodata", "matrimony", '"{full_name}" filetype:pdf "biodata"'),
+        DorkTemplate("Keybase", "identity_directories", 'site:keybase.io "{username}"'),
+        DorkTemplate("Gravatar", "identity_directories", 'site:gravatar.com "{username}"'),
+        DorkTemplate("Linktree", "identity_directories", 'site:linktr.ee "{username}"'),
+        DorkTemplate("Carrd", "identity_directories", 'site:carrd.co "{username}"'),
+        DorkTemplate("About.me", "identity_directories", 'site:about.me "{username}"'),
     ]
 
     BLOGS = [
@@ -154,10 +165,10 @@ class IndianPlatformDorks:
     ]
 
     @classmethod
-    def get_all_platforms(cls) -> list[DorkTemplate]:
-        """Return all approved simple dork templates."""
-        all_platforms: list[DorkTemplate] = []
-        for category in [
+    def get_categories(cls) -> list[list[DorkTemplate]]:
+        """Return query pools in a stable category round-robin order."""
+        return [
+            cls.GENERAL,
             cls.PROFESSIONAL,
             cls.SOCIAL_MEDIA,
             cls.DEVELOPER_TECH,
@@ -167,7 +178,13 @@ class IndianPlatformDorks:
             cls.MATRIMONY,
             cls.BLOGS,
             cls.RISK_MENTIONS,
-        ]:
+        ]
+
+    @classmethod
+    def get_all_platforms(cls) -> list[DorkTemplate]:
+        """Return all approved simple dork templates."""
+        all_platforms: list[DorkTemplate] = []
+        for category in cls.get_categories():
             all_platforms.extend(category)
         return all_platforms
 
@@ -187,47 +204,99 @@ class GoogleDorkingService:
         username: str,
         full_name: str | None = None,
         limit: int | None = None,
-    ) -> list[dict[str, str | None]]:
-        """Build simple Indian-platform dorks plus exact-match variations."""
+        preferred_platform: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Build a global, priority-aware, category-balanced dork plan."""
         name_anchor = full_name or username
-        queries: list[dict[str, str | None]] = []
-        for template in IndianPlatformDorks.get_all_platforms():
+        requested_limit = self.config.max_simple_dorks if limit is None else limit
+        effective_limit = max(0, min(requested_limit, self.config.max_simple_dorks))
+        if effective_limit == 0:
+            return []
+
+        selected_templates: list[DorkTemplate] = []
+        selected_names: set[str] = set()
+
+        def select(template: DorkTemplate | None) -> None:
+            if template is None or template.name in selected_names:
+                return
+            selected_names.add(template.name)
+            selected_templates.append(template)
+
+        # A limited plan must begin with a provider-neutral exact search. If a
+        # caller requested a platform, its dork is always the next query.
+        select(IndianPlatformDorks.GENERAL[0])
+        select(self._preferred_platform_template(preferred_platform))
+
+        # These globally useful identity surfaces must remain inside the common
+        # ten-query investigation budget even when no preferred platform exists.
+        all_templates = IndianPlatformDorks.get_all_platforms()
+        for platform_name in ("Instagram", "Twitter/X", "GitHub"):
+            select(next((item for item in all_templates if item.name == platform_name), None))
+
+        # Pull one query from each category before taking a second from any
+        # category. This prevents a small quota from being consumed by the
+        # professional/job-site list that happened to be declared first.
+        category_pools = [list(category) for category in IndianPlatformDorks.get_categories()]
+        while any(category_pools):
+            added_this_round = False
+            for pool in category_pools:
+                while pool and pool[0].name in selected_names:
+                    pool.pop(0)
+                if not pool:
+                    continue
+                select(pool.pop(0))
+                added_this_round = True
+            if not added_this_round:
+                break
+
+        queries: list[dict[str, Any]] = []
+        rendered_queries: set[str] = set()
+        for template in selected_templates:
             uses_username = "{username}" in template.template
             match_value = username if uses_username else name_anchor
+            query_text = template.template.format(username=username, full_name=name_anchor)
+            if query_text in rendered_queries:
+                continue
+            rendered_queries.add(query_text)
             queries.append(
                 {
                     "platform": template.name,
                     "category": template.category,
-                    "query": template.template.format(username=username, full_name=name_anchor),
+                    "query": query_text,
                     "match_value": match_value,
                     "phase": "simple_dorking",
                 }
             )
+            if len(queries) >= effective_limit:
+                return queries
 
         for variation in self._generate_username_variations(username)[: self.config.max_variations]:
-            queries.append(
-                {
-                    "platform": "Username Variation",
-                    "category": "username_variation",
-                    "query": f'"{variation}" -site:instagram.com -site:twitter.com -site:x.com',
-                    "match_value": variation,
-                    "phase": "simple_dorking",
-                }
-            )
-
-        requested_limit = self.config.max_simple_dorks if limit is None else limit
-        effective_limit = max(0, min(requested_limit, self.config.max_simple_dorks))
-        return queries[:effective_limit]
+            query_text = f'"{variation}" -site:instagram.com -site:twitter.com -site:x.com'
+            if query_text not in rendered_queries:
+                queries.append(
+                    {
+                        "platform": "Username Variation",
+                        "category": "username_variation",
+                        "query": query_text,
+                        "match_value": variation,
+                        "phase": "simple_dorking",
+                    }
+                )
+            if len(queries) >= effective_limit:
+                break
+        return queries
 
     async def search_username(
         self,
         username: str,
         full_name: str | None = None,
         limit: int | None = None,
+        preferred_platform: str | None = None,
+        country_code: str | None = None,
     ) -> dict[str, Any]:
         """Run simple dorking through SerpAPI."""
-        queries = self.build_queries(username, full_name, limit)
-        return await self._search_queries(queries)
+        queries = self.build_queries(username, full_name, limit, preferred_platform)
+        return await self._search_queries(queries, country_code=country_code)
 
     async def execute_simple_dorking(
         self,
@@ -236,9 +305,18 @@ class GoogleDorkingService:
     ) -> dict[str, Any]:
         """Compatibility wrapper for the supplied dorking engine interface."""
         full_name = None
+        preferred_platform = None
+        country_code = None
         if additional_data:
             full_name = additional_data.get("full_name") or additional_data.get("name")
-        result = await self.search_username(username, full_name=str(full_name) if full_name else None)
+            preferred_platform = additional_data.get("preferred_platform") or additional_data.get("platform")
+            country_code = additional_data.get("country_code")
+        result = await self.search_username(
+            username,
+            full_name=str(full_name) if full_name else None,
+            preferred_platform=str(preferred_platform) if preferred_platform else None,
+            country_code=str(country_code) if country_code else None,
+        )
         return {
             **result,
             "phase": "simple_dorking",
@@ -289,7 +367,12 @@ class GoogleDorkingService:
             "min_confidence_for_complex": self.config.min_confidence_for_complex,
         }
 
-    async def _search_queries(self, queries: list[dict[str, Any]]) -> dict[str, Any]:
+    async def _search_queries(
+        self,
+        queries: list[dict[str, Any]],
+        *,
+        country_code: str | None = None,
+    ) -> dict[str, Any]:
         provider = self._serpapi_provider()
         configured_providers = [provider.name] if provider else []
         disabled_providers = self._disabled_provider_names()
@@ -297,7 +380,7 @@ class GoogleDorkingService:
         if provider is None:
             return self._not_configured_response(queries, disabled_providers)
 
-        attempt = await self._search_with_provider(provider, queries)
+        attempt = await self._search_with_provider(provider, queries, country_code=country_code)
         attempt_results = attempt.get("results", [])
         attempt_errors = self._normalize_provider_errors(provider, attempt.get("errors", []))
         failed = bool(attempt.get("failed"))
@@ -322,6 +405,8 @@ class GoogleDorkingService:
             disabled_providers=disabled_providers,
             fallback_used=False,
             reason=reason,
+            queries_run=int(attempt.get("queries_attempted", len(queries))),
+            queries_completed=int(attempt.get("queries_completed", 0)),
         )
 
     def _serpapi_provider(self) -> SearchProvider | None:
@@ -343,9 +428,11 @@ class GoogleDorkingService:
         self,
         provider: SearchProvider,
         queries: list[dict[str, Any]],
+        *,
+        country_code: str | None = None,
     ) -> dict[str, Any]:
         if provider.kind == "serpapi":
-            return await self._search_serpapi(provider, queries)
+            return await self._search_serpapi(provider, queries, country_code=country_code)
         return {
             "provider": provider.name,
             "results": [],
@@ -364,29 +451,47 @@ class GoogleDorkingService:
         self,
         provider: SearchProvider,
         queries: list[dict[str, Any]],
+        *,
+        country_code: str | None = None,
     ) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         errors: list[dict[str, str]] = []
+        queries_attempted = 0
+        queries_completed = 0
+        requested_country = self._normalized_country_code(
+            country_code if country_code is not None else getattr(settings, "serpapi_country_code", None)
+        )
         async with httpx.AsyncClient(timeout=self.serpapi_timeout) as client:
             for query in queries:
+                queries_attempted += 1
                 query_text = str(query.get("query") or "")
+                params: dict[str, Any] = {
+                    "engine": "google",
+                    "q": query_text,
+                    "api_key": provider.api_key,
+                    "num": settings.serpapi_results_per_query,
+                    "hl": "en",
+                }
+                if requested_country:
+                    params["gl"] = requested_country
                 try:
                     response = await client.get(
                         provider.base_url,
-                        params={
-                            "engine": "google",
-                            "q": query_text,
-                            "api_key": provider.api_key,
-                            "num": settings.serpapi_results_per_query,
-                            "gl": "in",
-                            "hl": "en",
-                        },
+                        params=params,
                     )
                 except httpx.TimeoutException:
                     errors.append(self._provider_error(provider, query, "timeout", "SerpAPI request timed out"))
                     break
                 except httpx.HTTPError as exc:
-                    errors.append(self._provider_error(provider, query, "http_error", str(exc)))
+                    errors.append(
+                        self._provider_error(
+                            provider,
+                            query,
+                            "http_error",
+                            "Could not communicate with SerpAPI",
+                            error_type=exc.__class__.__name__,
+                        )
+                    )
                     break
 
                 if response.status_code != 200:
@@ -410,10 +515,12 @@ class GoogleDorkingService:
                 provider_error = self._payload_error_message(payload)
                 if provider_error:
                     if self._is_no_results_error(provider_error):
+                        queries_completed += 1
                         continue
                     errors.append(self._provider_error(provider, query, "provider_error", provider_error))
                     break
 
+                queries_completed += 1
                 results.extend(
                     self._normalize_organic_results(
                         query=query,
@@ -423,7 +530,14 @@ class GoogleDorkingService:
                     )
                 )
 
-        return {"provider": provider.name, "results": results, "errors": errors, "failed": bool(errors)}
+        return {
+            "provider": provider.name,
+            "results": results,
+            "errors": errors,
+            "failed": bool(errors),
+            "queries_attempted": queries_attempted,
+            "queries_completed": queries_completed,
+        }
 
     def _build_search_response(
         self,
@@ -439,15 +553,32 @@ class GoogleDorkingService:
         disabled_providers: list[str],
         fallback_used: bool,
         reason: str | None = None,
+        queries_run: int | None = None,
+        queries_completed: int | None = None,
     ) -> dict[str, Any]:
         deduped_results = self._dedupe_results(results)
         intel = self._extract_intel_from_results(deduped_results)
         ready_for_complex = self._should_trigger_complex_dorking(intel)
+        attempted_count = len(queries) if queries_run is None else queries_run
+        completed_count = attempted_count if queries_completed is None else queries_completed
+        attempted_queries = queries[:attempted_count]
         response: dict[str, Any] = {
             "provider": provider_name,
             "status": status,
             "phase": "simple_dorking",
-            "queries_run": len(queries),
+            "queries": queries,
+            "queries_prepared": len(queries),
+            "queries_run": attempted_count,
+            "queries_completed": completed_count,
+            "query_counts": {
+                "prepared": len(queries),
+                "attempted": attempted_count,
+                "completed": completed_count,
+                "failed": len(errors),
+            },
+            "categories_searched": sorted(
+                {str(query.get("category") or "uncategorized") for query in attempted_queries}
+            ),
             "result_count": len(deduped_results),
             "results": deduped_results,
             "grouped_by_category": self._group_by_category(deduped_results),
@@ -455,6 +586,7 @@ class GoogleDorkingService:
             "ready_for_complex": ready_for_complex,
             "complex_dorking": self._complex_phase_summary(ready_for_complex),
             "errors": errors,
+            "error_count": len(errors),
             "provider_metadata": {
                 "configured_providers": configured_providers,
                 "attempted_providers": attempted_providers,
@@ -482,8 +614,20 @@ class GoogleDorkingService:
             "reason": f"missing {missing}" if missing else "no search provider configured",
             "phase": "simple_dorking",
             "queries_prepared": len(queries),
+            "queries_run": 0,
+            "queries_completed": 0,
+            "query_counts": {
+                "prepared": len(queries),
+                "attempted": 0,
+                "completed": 0,
+                "failed": 0,
+            },
             "queries": queries,
+            "categories_searched": [],
             "results": [],
+            "result_count": 0,
+            "errors": [],
+            "error_count": 0,
             "grouped_by_category": {},
             "collected_intel": self._empty_intel(),
             "ready_for_complex": False,
@@ -521,7 +665,11 @@ class GoogleDorkingService:
                 continue
             title = str(result.get("title") or "")
             snippet = str(result.get("snippet") or result.get("description") or result.get("text") or "")
-            if not self._is_exact_match(str(match_value) if match_value else None, title, str(link), snippet):
+            exact_value = str(match_value) if match_value else None
+            if not (
+                self._url_contains_exact_identity(exact_value, str(link))
+                or self._is_exact_match(exact_value, title, str(link), snippet)
+            ):
                 continue
             normalized.append(
                 {
@@ -669,6 +817,44 @@ class GoogleDorkingService:
             return True
         pattern = re.compile(rf"(?<![a-zA-Z0-9_]){re.escape(value)}(?![a-zA-Z0-9_])", re.IGNORECASE)
         return any(pattern.search(text or "") for text in texts)
+
+    @staticmethod
+    def _url_contains_exact_identity(value: str | None, url: str) -> bool:
+        """Match an exact username in a decoded host label or URL path segment."""
+        if not value:
+            return True
+        expected = value.casefold().lstrip("@")
+        parsed = urlparse(url)
+        candidates = [part for part in (parsed.hostname or "").split(".") if part]
+        candidates.extend(part for part in unquote(parsed.path).split("/") if part)
+        return any(candidate.casefold().lstrip("@") == expected for candidate in candidates)
+
+    @staticmethod
+    def _normalized_country_code(value: Any) -> str | None:
+        """Return a SerpAPI `gl` code only when explicitly and validly supplied."""
+        if value is None:
+            return None
+        normalized = str(value).strip().casefold()
+        return normalized if re.fullmatch(r"[a-z]{2}", normalized) else None
+
+    @staticmethod
+    def _preferred_platform_template(preferred_platform: str | None) -> DorkTemplate | None:
+        if not preferred_platform:
+            return None
+        aliases = {
+            "x": "twitter/x",
+            "twitter": "twitter/x",
+            "twitter/x": "twitter/x",
+            "git hub": "github",
+            "linked in": "linkedin",
+            "tik tok": "tiktok",
+        }
+        requested = preferred_platform.strip().casefold()
+        requested = aliases.get(requested, requested)
+        for template in IndianPlatformDorks.get_all_platforms():
+            if template.name.casefold() == requested:
+                return template
+        return None
 
     @staticmethod
     def _generate_username_variations(username: str) -> list[str]:

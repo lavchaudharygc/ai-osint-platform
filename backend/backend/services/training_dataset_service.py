@@ -73,12 +73,22 @@ class TrainingDatasetService:
         return matches[:limit]
 
     def build_correlation_context(self, positive_match_count: int) -> dict[str, Any]:
-        category = "SAME USERNAME - SAME PERSON" if positive_match_count else "NO MATCH / LOW CONFIDENCE"
-        examples = self.find_examples_for_category(category, limit=2)
+        # The bundled legacy examples are research material, not authoritative
+        # labels. Do not use the old "same username = same person" category as
+        # evidence in a live investigation.
+        category = (
+            "INDEPENDENT PUBLIC EVIDENCE CORROBORATED"
+            if positive_match_count
+            else "INSUFFICIENT INDEPENDENT EVIDENCE"
+        )
         return {
             "dataset": self.get_summary(),
             "suggested_category": category,
-            "reference_example_ids": [example.get("example_id") for example in examples],
+            "reference_example_ids": [],
+            "notice": (
+                "Legacy examples are excluded from live scoring; same-username "
+                "reuse and HTTP reachability are discovery signals only."
+            ),
         }
 
 

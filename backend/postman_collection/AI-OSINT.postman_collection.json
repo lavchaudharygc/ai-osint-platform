@@ -46,7 +46,7 @@
           "request": {
             "method": "POST",
             "header": [{"key": "Content-Type", "value": "application/json"}],
-            "body": {"mode": "raw", "raw": "{\n  \"username\": \"example_user\",\n  \"max_items\": 50,\n  \"get_replies\": true\n}"},
+            "body": {"mode": "raw", "raw": "{\n  \"username\": \"example_user\",\n  \"max_items\": 5,\n  \"get_replies\": false,\n  \"get_about_data\": false\n}"},
             "url": "{{base_url}}/api/v1/apify/twitter/profile"
           }
         },
@@ -55,7 +55,7 @@
           "request": {
             "method": "POST",
             "header": [{"key": "Content-Type", "value": "application/json"}],
-            "body": {"mode": "raw", "raw": "{\n  \"twitter_handles\": [\"example_user\"],\n  \"max_items\": 50,\n  \"sort\": \"Latest\"\n}"},
+            "body": {"mode": "raw", "raw": "{\n  \"twitter_handles\": [\"example_user\"],\n  \"max_items\": 10,\n  \"sort\": \"Latest\",\n  \"include_search_terms\": false\n}"},
             "url": "{{base_url}}/api/v1/apify/twitter/search"
           }
         },

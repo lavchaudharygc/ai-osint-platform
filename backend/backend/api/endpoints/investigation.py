@@ -6,6 +6,8 @@ from dataclasses import fields as dataclass_fields, is_dataclass
 from datetime import UTC, datetime
 import asyncio
 import ipaddress
+import logging
+import re
 import socket
 from typing import Any
 from urllib.parse import urlparse
@@ -50,8 +52,10 @@ from backend.services.investigation_policy import (
     ProviderCallBudget,
     request_cache_key,
 )
+from backend.services.investigation_store import InvestigationHistoryStore
 
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
+logger = logging.getLogger(__name__)
 
 _INVESTIGATION_STORE: OrderedDict[str, InvestigationResponse] = OrderedDict()
 _INVESTIGATION_CACHE = InvestigationResultCache(
@@ -59,6 +63,29 @@ _INVESTIGATION_CACHE = InvestigationResultCache(
     max_entries=int(getattr(settings, "investigation_cache_max_entries", 128)),
 )
 _INVESTIGATION_INFLIGHT: dict[str, asyncio.Task[InvestigationResponse]] = {}
+
+
+def _create_persistent_investigation_store() -> InvestigationHistoryStore | None:
+    if not bool(getattr(settings, "investigation_history_persist_enabled", False)):
+        return None
+    try:
+        return InvestigationHistoryStore(settings.investigation_history_db_path)
+    except Exception as exc:
+        logger.warning("Persistent investigation history is unavailable: %s", exc)
+        return None
+
+
+_PERSISTENT_INVESTIGATION_STORE: InvestigationHistoryStore | None = None
+_PERSISTENT_STORE_INITIALIZED = False
+
+
+def initialize_persistent_investigation_store() -> None:
+    """Initialize optional durable history during application startup, never import."""
+    global _PERSISTENT_INVESTIGATION_STORE, _PERSISTENT_STORE_INITIALIZED
+    if _PERSISTENT_STORE_INITIALIZED:
+        return
+    _PERSISTENT_STORE_INITIALIZED = True
+    _PERSISTENT_INVESTIGATION_STORE = _create_persistent_investigation_store()
 
 
 def _finish_investigation_inflight(
@@ -74,19 +101,67 @@ def _finish_investigation_inflight(
 
 
 def _store_investigation(response: InvestigationResponse) -> None:
-    """Keep only a bounded in-process history of potentially large results."""
+    """Keep bounded in-process and durable history without breaking scans on I/O errors."""
     investigation_id = response.investigation_id
     _INVESTIGATION_STORE[investigation_id] = response
     _INVESTIGATION_STORE.move_to_end(investigation_id)
     maximum = int(getattr(settings, "investigation_cache_max_entries", 128))
     while len(_INVESTIGATION_STORE) > maximum:
         _INVESTIGATION_STORE.popitem(last=False)
+    if _PERSISTENT_INVESTIGATION_STORE is not None:
+        history_maximum = int(
+            getattr(settings, "investigation_history_max_entries", 128)
+        )
+        try:
+            _PERSISTENT_INVESTIGATION_STORE.put(
+                response,
+                maximum=history_maximum,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not persist investigation %s: %s",
+                investigation_id,
+                exc,
+            )
+
+
+def _get_stored_investigation(investigation_id: str) -> InvestigationResponse | None:
+    investigation = _INVESTIGATION_STORE.get(investigation_id)
+    if investigation is not None or _PERSISTENT_INVESTIGATION_STORE is None:
+        return investigation
+    try:
+        return _PERSISTENT_INVESTIGATION_STORE.get(investigation_id)
+    except Exception as exc:
+        logger.warning("Could not read persisted investigation %s: %s", investigation_id, exc)
+        return None
+
+
+def _list_stored_investigations(*, limit: int, offset: int) -> list[InvestigationResponse]:
+    """Return newest-first history, merging durable rows with any memory-only results."""
+    combined = {
+        item.investigation_id: item
+        for item in reversed(list(_INVESTIGATION_STORE.values()))
+    }
+    if _PERSISTENT_INVESTIGATION_STORE is not None:
+        maximum = int(getattr(settings, "investigation_history_max_entries", 128))
+        try:
+            for item in _PERSISTENT_INVESTIGATION_STORE.list(limit=maximum):
+                combined.setdefault(item.investigation_id, item)
+        except Exception as exc:
+            logger.warning("Could not list persisted investigations: %s", exc)
+    ordered = sorted(
+        combined.values(),
+        key=lambda item: item.timestamp,
+        reverse=True,
+    )
+    return ordered[offset : offset + limit]
 
 PROVIDER_ROUTING = {
     "google_search": "serpapi",
     "web_scraping": "bright_data",
     "instagram": "apify_instagram_scraper",
     "twitter": "apify_x_scraper",
+    "reddit": "apify_reddit_scraper",
     "linkedin": "bright_data",
     "facebook": "apify_facebook_scraper",
     "telegram": "existing_telegram_collectors",
@@ -338,6 +413,10 @@ async def run_all_social_scrapers(
         getattr(settings, "apify_tiktok_actor_id", "clockworks/tiktok-scraper")
     )
     result_limit = int(getattr(settings, "investigation_social_result_limit", 20))
+    twitter_result_limit = min(
+        int(getattr(settings, "investigation_twitter_result_limit", 5)),
+        40,
+    )
 
     active = active_platforms if active_platforms is not None else {
         "instagram", "twitter", "telegram", "linkedin", "reddit", "facebook", "tiktok"
@@ -433,7 +512,7 @@ async def run_all_social_scrapers(
             "calls": 1,
             "factory": lambda: twitter_apify_service.get_profile(
                 username,
-                max_items=result_limit,
+                max_items=twitter_result_limit,
             ),
             "configured": twitter_apify_service.is_configured(),
             "actor_id": _APIFY_ACTOR_IDS["twitter_profile_and_replies"],
@@ -634,12 +713,16 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
     from backend.services.github_service import GitHubService
 
     result_limit = int(getattr(settings, "investigation_social_result_limit", 20))
+    twitter_result_limit = min(
+        int(getattr(settings, "investigation_twitter_result_limit", 5)),
+        40,
+    )
     try:
         if platform == "instagram":
             call = InstagramProfileService().fetch_profile(username)
             timeout = settings.apify_run_timeout_seconds + 15.0
         elif platform == "twitter":
-            call = TwitterApifyService().get_profile(username, max_items=result_limit)
+            call = TwitterApifyService().get_profile(username, max_items=twitter_result_limit)
             timeout = settings.apify_run_timeout_seconds + 15.0
         elif platform == "telegram":
             call = TelegramIntelligenceExtractor().get_profile(username)
@@ -696,13 +779,503 @@ async def google_dork_username(
     platform_data: dict[str, Any],
     *,
     limit: int | None = None,
+    preferred_platform: str | None = None,
 ) -> dict[str, Any]:
     full_name = clean_profile_text(platform_data.get("full_name")) if isinstance(platform_data, dict) else None
     return await GoogleDorkingService().search_username(
         username,
         full_name=full_name,
         limit=limit,
+        preferred_platform=preferred_platform,
     )
+
+
+_FAILED_COLLECTION_STATUSES = {
+    "budget_exhausted",
+    "disabled",
+    "empty",
+    "empty_dataset",
+    "error",
+    "failed",
+    "inconclusive",
+    "invalid_target",
+    "manual_review_required",
+    "not_configured",
+    "not_found",
+    "orchestration_error",
+    "provider_error",
+    "skipped",
+    "timeout",
+    "timed-out",
+}
+_FAN_ACCOUNT_MARKERS = {
+    "fan account",
+    "fan page",
+    "fanpage",
+    "parody",
+    "tribute",
+    "unofficial",
+}
+_SHARED_PROFILE_HOSTS = {
+    "about.me",
+    "beacons.ai",
+    "bit.ly",
+    "bio.link",
+    "bio.site",
+    "campsite.bio",
+    "gravatar.com",
+    "linktr.ee",
+    "lnk.bio",
+    "solo.to",
+    "t.co",
+    "taplink.cc",
+    "tinyurl.com",
+}
+_PLACEHOLDER_IMAGE_MARKERS = {
+    "avatar-default",
+    "blank-profile",
+    "default-avatar",
+    "default-profile",
+    "default_user",
+    "no-avatar",
+    "no-profile",
+    "placeholder",
+}
+_INTRUSIVE_ACTION_PATTERN = re.compile(
+    r"\b(?:intercepts?|surveillance|wiretap|warrants?|subpoenas?|detain|arrest|"
+    r"coordinate\s+with\s+(?:the\s+)?isp|isp\s+(?:trace|request|coordination))\b",
+    re.IGNORECASE,
+)
+_CONCRETE_HARM_QUOTE_PATTERNS = (
+    re.compile(
+        r"\b(?:(?:i|we)\s+(?:will|shall|plan\s+to|intend\s+to|want\s+to)|"
+        r"(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:planning|going)\s+to)\s+"
+        r"(?:kill|murder|shoot|stab|attack|bomb|kidnap|abduct|rape|poison|"
+        r"harm|extort|doxx|swat)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:(?:i|we)\s+(?:will|shall|plan\s+to|intend\s+to)|"
+        r"(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:planning|going)\s+to)\s+"
+        r"(?:deploy|install|spread|release)\s+"
+        r"(?:malware|ransomware)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:send|pay|transfer)\b.{0,80}\bor\b.{0,80}"
+        r"\b(?:kill|hurt|attack|leak|publish|expose)\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _contains_concrete_harm_signal(quote: str) -> bool:
+    """Recognize only narrow, explicit conduct language for automated elevation."""
+    return any(pattern.search(quote) for pattern in _CONCRETE_HARM_QUOTE_PATTERNS)
+
+
+def _profile_view(profile: dict[str, Any] | None) -> dict[str, Any]:
+    """Flatten common provider envelopes into a comparable public profile view."""
+    if not isinstance(profile, dict):
+        return {}
+    result = dict(profile)
+    nested = profile.get("profile")
+    if isinstance(nested, dict):
+        result.update({key: value for key, value in nested.items() if value is not None})
+    public_evidence = profile.get("public_evidence")
+    if isinstance(public_evidence, dict):
+        result.update(
+            {key: value for key, value in public_evidence.items() if value is not None}
+        )
+    return result
+
+
+def _collector_confirmed(profile: dict[str, Any] | None) -> bool:
+    """Return true only when a provider collected a positive profile record."""
+    if not isinstance(profile, dict) or profile.get("success") is False:
+        return False
+    if profile.get("exists") is False:
+        return False
+    status = str(profile.get("status") or "").strip().casefold()
+    if status in _FAILED_COLLECTION_STATUSES:
+        return False
+    view = _profile_view(profile)
+    has_identity_record = any(
+        view.get(key)
+        for key in (
+            "username",
+            "full_name",
+            "display_name",
+            "name",
+            "bio",
+            "description",
+            "profile_url",
+            "profile_pic_url",
+        )
+    )
+    return bool(
+        profile.get("success") is True
+        or (profile.get("exists") is True and has_identity_record)
+    )
+
+
+def _normalized_identity_text(value: Any) -> str:
+    return " ".join(re.findall(r"[\w]+", str(value or "").casefold(), flags=re.UNICODE))
+
+
+def _string_values(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item) for item in value if str(item).strip()]
+    return []
+
+
+def _profile_urls(profile: dict[str, Any]) -> set[str]:
+    values: list[str] = []
+    for key in (
+        "external_url",
+        "external_urls",
+        "links",
+        "bio_links",
+        "website",
+        "blog",
+        "profile_url",
+        "url",
+    ):
+        values.extend(_string_values(profile.get(key)))
+    return {value.strip().rstrip("/").casefold() for value in values if "://" in value}
+
+
+def _profile_domains(profile: dict[str, Any]) -> set[str]:
+    domains: set[str] = set()
+    for value in _profile_urls(profile):
+        hostname = (urlparse(value).hostname or "").casefold()
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+        if hostname:
+            domains.add(hostname)
+    social_domains = {
+        "facebook.com",
+        "github.com",
+        "instagram.com",
+        "linkedin.com",
+        "reddit.com",
+        "t.me",
+        "tiktok.com",
+        "twitter.com",
+        "x.com",
+        "youtube.com",
+    }
+    return {
+        domain
+        for domain in domains
+        if not any(domain == social or domain.endswith(f".{social}") for social in social_domains)
+        and domain not in _SHARED_PROFILE_HOSTS
+    }
+
+
+def _profile_contacts(profile: dict[str, Any]) -> set[str]:
+    values: list[str] = []
+    for key in (
+        "email",
+        "emails",
+        "public_email",
+        "business_email",
+        "contact_email",
+        "phone",
+        "phones",
+        "phone_number",
+        "public_phone_number",
+    ):
+        values.extend(_string_values(profile.get(key)))
+    contacts: set[str] = set()
+    for value in values:
+        candidate = value.strip().casefold()
+        if "@" in candidate:
+            local_part, separator, domain = candidate.rpartition("@")
+            if not separator or not local_part or not domain or "." not in domain:
+                continue
+            try:
+                ascii_domain = domain.encode("idna").decode("ascii")
+            except UnicodeError:
+                continue
+            if any(character.isspace() for character in local_part) or any(
+                character.isspace() for character in ascii_domain
+            ):
+                continue
+            contacts.add(f"email:{local_part}@{ascii_domain}")
+            continue
+        digits = re.sub(r"\D", "", candidate)
+        if 7 <= len(digits) <= 15:
+            contacts.add(f"phone:{digits}")
+    return contacts
+
+
+def _is_generic_public_contact(value: str) -> bool:
+    if not value.startswith("email:") or "@" not in value:
+        return False
+    local_part = value.removeprefix("email:").split("@", 1)[0]
+    local_part = local_part.replace(".", "").replace("_", "").replace("-", "")
+    return local_part in {
+        "abuse",
+        "accounting",
+        "accounts",
+        "admin",
+        "billing",
+        "business",
+        "booking",
+        "bookings",
+        "careers",
+        "compliance",
+        "contact",
+        "contactus",
+        "customer",
+        "customerservice",
+        "enquiries",
+        "hello",
+        "help",
+        "hr",
+        "humanresources",
+        "info",
+        "jobs",
+        "legal",
+        "marketing",
+        "media",
+        "noreply",
+        "office",
+        "operations",
+        "press",
+        "privacy",
+        "recruiting",
+        "recruitment",
+        "sales",
+        "security",
+        "service",
+        "support",
+        "team",
+        "webmaster",
+    }
+
+
+def _is_fan_or_parody(profile: dict[str, Any]) -> bool:
+    text = " ".join(
+        str(profile.get(key) or "")
+        for key in (
+            "full_name",
+            "display_name",
+            "name",
+            "bio",
+            "description",
+            "page_extra",
+            "account_type",
+        )
+    ).casefold()
+    return any(marker in text for marker in _FAN_ACCOUNT_MARKERS)
+
+
+def _correlation_evidence(
+    primary_profile: dict[str, Any],
+    candidate_profile: dict[str, Any],
+    platform: str,
+) -> dict[str, Any]:
+    primary = _profile_view(primary_profile)
+    candidate = _profile_view(candidate_profile)
+    positive: list[str] = []
+    contradictions: list[str] = []
+    score = 0
+    direct_identifier = False
+
+    primary_username = _normalized_identity_text(primary.get("username"))
+    candidate_username = _normalized_identity_text(candidate.get("username"))
+    if primary_username and primary_username == candidate_username:
+        positive.append("same_username_weak_signal")
+        score += 10
+
+    primary_name = _normalized_identity_text(
+        primary.get("full_name") or primary.get("display_name") or primary.get("name")
+    )
+    candidate_name = _normalized_identity_text(
+        candidate.get("full_name") or candidate.get("display_name") or candidate.get("name")
+    )
+    if primary_name and candidate_name:
+        if primary_name == candidate_name:
+            positive.append("matching_full_name")
+            score += 25
+        elif len(primary_name) >= 4 and len(candidate_name) >= 4:
+            contradictions.append("conflicting_full_name")
+            score -= 20
+
+    contact_overlap = _profile_contacts(primary) & _profile_contacts(candidate)
+    unique_contact_overlap = {
+        value for value in contact_overlap if not _is_generic_public_contact(value)
+    }
+    if unique_contact_overlap:
+        positive.append("matching_public_contact")
+        score += 50
+        direct_identifier = True
+    elif contact_overlap:
+        positive.append("matching_generic_public_contact_weak_signal")
+        score += 5
+
+    primary_urls = _profile_urls(primary)
+    candidate_urls = _profile_urls(candidate)
+    external_url_overlap = {
+        value
+        for value in primary_urls & candidate_urls
+        if (urlparse(value).path or "/") not in {"", "/"}
+    }
+    if external_url_overlap:
+        # Two people can link the same employer About page, article, petition,
+        # or shared resource. An identical arbitrary external URL is therefore
+        # a lead, not person-specific proof. A true profile-to-profile cross-link
+        # is handled separately below as direct evidence.
+        positive.append("matching_external_url_weak_signal")
+        score += 10
+    else:
+        domain_overlap = _profile_domains(primary) & _profile_domains(candidate)
+        if domain_overlap:
+            # A shared employer, publisher, or organization domain is a useful
+            # research lead but is not person-specific identity evidence.
+            positive.append("matching_external_domain_weak_signal")
+            score += 5
+
+    candidate_profile_url = str(candidate.get("profile_url") or candidate.get("url") or "").rstrip("/").casefold()
+    primary_profile_url = str(primary.get("profile_url") or primary.get("url") or "").rstrip("/").casefold()
+    if (
+        (candidate_profile_url and candidate_profile_url in primary_urls)
+        or (primary_profile_url and primary_profile_url in candidate_urls)
+    ):
+        positive.append("explicit_cross_platform_link")
+        score += 50
+        direct_identifier = True
+
+    primary_bio_tokens = set(
+        _normalized_identity_text(primary.get("bio") or primary.get("description")).split()
+    )
+    candidate_bio_tokens = set(
+        _normalized_identity_text(candidate.get("bio") or candidate.get("description")).split()
+    )
+    if len(primary_bio_tokens) >= 5 and len(candidate_bio_tokens) >= 5:
+        similarity = len(primary_bio_tokens & candidate_bio_tokens) / len(
+            primary_bio_tokens | candidate_bio_tokens
+        )
+        if similarity >= 0.65:
+            positive.append("high_bio_similarity")
+            score += 15
+
+    primary_location = _normalized_identity_text(primary.get("location"))
+    candidate_location = _normalized_identity_text(candidate.get("location"))
+    if primary_location and candidate_location and primary_location == candidate_location:
+        positive.append("matching_location")
+        score += 10
+
+    primary_picture = str(
+        primary.get("profile_pic_hd") or primary.get("profile_pic_url") or ""
+    ).strip()
+    candidate_picture = str(
+        candidate.get("profile_pic_hd") or candidate.get("profile_pic_url") or ""
+    ).strip()
+    normalized_picture = primary_picture.casefold()
+    is_placeholder_picture = any(
+        marker in normalized_picture for marker in _PLACEHOLDER_IMAGE_MARKERS
+    )
+    if (
+        primary_picture
+        and primary_picture == candidate_picture
+        and not is_placeholder_picture
+    ):
+        positive.append("identical_profile_image_url")
+        score += 25
+
+    primary_fan_or_parody = _is_fan_or_parody(primary)
+    candidate_fan_or_parody = _is_fan_or_parody(candidate)
+    fan_or_parody = primary_fan_or_parody or candidate_fan_or_parody
+    if fan_or_parody:
+        if primary_fan_or_parody:
+            contradictions.append("primary_is_fan_parody_or_unofficial_account")
+        if candidate_fan_or_parody:
+            contradictions.append("candidate_is_fan_parody_or_unofficial_account")
+        score -= 60
+
+    independent_positive = [
+        signal for signal in positive if not signal.endswith("_weak_signal")
+    ]
+    confirmed = direct_identifier and not fan_or_parody and not contradictions
+    corroborated = (
+        not fan_or_parody
+        and not contradictions
+        and score >= 45
+        and len(independent_positive) >= 2
+    )
+    if confirmed:
+        status = "identity_confirmed"
+    elif corroborated:
+        status = "identity_corroborated"
+    elif contradictions:
+        status = "identity_conflict"
+    else:
+        status = "identity_unverified"
+    return {
+        "platform": platform,
+        "status": status,
+        "score": max(0, min(100, score)),
+        "positive_signals": positive,
+        "contradictions": contradictions,
+        "direct_identifier_match": direct_identifier,
+    }
+
+
+def _reconcile_ai_correlation(
+    ai_analysis: dict[str, Any],
+    *,
+    confidence: float,
+    candidate_count: int,
+    collected_count: int,
+    confirmed_count: int,
+    corroborated_count: int,
+    conflict_count: int,
+) -> dict[str, Any]:
+    """Keep model prose non-authoritative and expose one evidence-based verdict."""
+    reconciled = dict(ai_analysis) if isinstance(ai_analysis, dict) else {}
+    if confirmed_count:
+        decision = "VERY LIKELY SAME"
+    elif corroborated_count:
+        decision = "PROBABLY SAME"
+    elif conflict_count:
+        decision = "IDENTITY CONFLICT"
+    else:
+        decision = "INSUFFICIENT EVIDENCE"
+    reasons = [
+        f"{confirmed_count} profile(s) have direct public identity evidence",
+        f"{corroborated_count} profile(s) have multiple independent corroborating attributes",
+        f"{conflict_count} profile(s) contain contradictory identity evidence",
+        (
+            f"{collected_count} non-primary profile(s) were returned by assigned collectors; "
+            "collector presence alone is not an identity match"
+        ),
+    ]
+    if candidate_count:
+        reasons.append(
+            f"{candidate_count} reachable URL probe(s) remain unverified collection candidates"
+        )
+    reconciled["parsed"] = {
+        "decision": decision,
+        "confidence": round(confidence * 100),
+        "reasons": reasons,
+        "next_steps": [
+            "Review collector-confirmed public names, bios, contacts, images, and cross-links",
+            "Resolve every contradiction and fan/parody label before attributing identity",
+        ],
+    }
+    reconciled.pop("raw_response", None)
+    reconciled["model_output_used_for_scoring"] = False
+    reconciled["provider_narrative_omitted"] = True
+    reconciled["reconciliation_notice"] = (
+        "The displayed decision and confidence are deterministic and evidence-based; "
+        "model output cannot override them."
+    )
+    return reconciled
 
 
 async def ai_correlate(
@@ -712,42 +1285,159 @@ async def ai_correlate(
     *,
     allow_external_ai: bool = True,
 ) -> dict[str, Any]:
-    positive_matches = [match for match in cross_matches if match.get("exists")]
-    confidence = min(0.95, 0.35 + (len(positive_matches) * 0.1))
+    candidate_platforms = list(
+        dict.fromkeys(
+            str(match.get("platform"))
+            for match in cross_matches
+            if match.get("exists") is True and match.get("platform")
+        )
+    )
+    primary_platform = str(platform_data.get("platform") or "").casefold()
+    collector_confirmed_platforms: list[str] = []
+    identity_confirmed_platforms: list[str] = []
+    identity_corroborated_platforms: list[str] = []
+    evidence: list[dict[str, Any]] = []
 
-    # Enrich positive matches with bio, full name, followers, posts from scraped_data
-    enriched_matches = []
+    collected_profiles = scraped_data or {}
+    for platform, details in collected_profiles.items():
+        platform_name = str(platform).casefold()
+        if not _collector_confirmed(details):
+            continue
+        collector_confirmed_platforms.append(platform_name)
+        if platform_name == primary_platform:
+            evidence.append(
+                {
+                    "platform": platform_name,
+                    "status": "primary_profile",
+                    "score": 0,
+                    "positive_signals": ["collector_returned_profile"],
+                    "contradictions": [],
+                    "direct_identifier_match": False,
+                }
+            )
+            continue
+        platform_evidence = _correlation_evidence(
+            platform_data,
+            details,
+            platform_name,
+        )
+        evidence.append(platform_evidence)
+        if platform_evidence["status"] == "identity_confirmed":
+            identity_confirmed_platforms.append(platform_name)
+        elif platform_evidence["status"] == "identity_corroborated":
+            identity_corroborated_platforms.append(platform_name)
+
+    collector_confirmed_platforms = list(dict.fromkeys(collector_confirmed_platforms))
+    matching_platforms = list(
+        dict.fromkeys(
+            [*identity_confirmed_platforms, *identity_corroborated_platforms]
+        )
+    )
+    non_primary_collected = [
+        platform for platform in collector_confirmed_platforms if platform != primary_platform
+    ]
+    confirmed_scores = [
+        int(item.get("score") or 0)
+        for item in evidence
+        if item.get("status") == "identity_confirmed"
+    ]
+    corroborated_scores = [
+        int(item.get("score") or 0)
+        for item in evidence
+        if item.get("status") == "identity_corroborated"
+    ]
+    if identity_confirmed_platforms:
+        confidence = max(0.9, max(confirmed_scores, default=90) / 100)
+    elif identity_corroborated_platforms:
+        confidence = min(0.85, max(corroborated_scores, default=45) / 100)
+    elif non_primary_collected:
+        confidence = 0.25
+    elif candidate_platforms:
+        confidence = 0.1
+    else:
+        confidence = 0.05
+
+    evidence_by_platform = {item["platform"]: item for item in evidence}
+    enriched_matches: list[dict[str, Any]] = []
     for match in cross_matches:
-        plat = match.get("platform")
-        exists = match.get("exists")
+        plat = str(match.get("platform") or "").casefold()
         enriched_match = dict(match)
-        if exists and scraped_data and plat:
-            details = scraped_data.get(plat.lower())
-            if isinstance(details, dict) and details.get("success") is not False:
-                enriched_match["full_name"] = details.get("full_name") or details.get("name")
-                enriched_match["bio"] = details.get("bio") or details.get("description")
-                enriched_match["followers"] = details.get("follower_count") or details.get("followers")
-                enriched_match["posts"] = details.get("post_count") or details.get("posts_count")
+        details = collected_profiles.get(plat)
+        collected = _collector_confirmed(details)
+        enriched_match["probe_reachable"] = match.get("exists") is True
+        enriched_match["collector_confirmed"] = collected
+        enriched_match["identity_evidence"] = evidence_by_platform.get(plat)
+        if collected:
+            view = _profile_view(details)
+            enriched_match["full_name"] = view.get("full_name") or view.get("name")
+            enriched_match["bio"] = view.get("bio") or view.get("description")
+            enriched_match["followers"] = view.get("follower_count") or view.get("followers")
+            enriched_match["posts"] = view.get("post_count") or view.get("posts_count")
         enriched_matches.append(enriched_match)
 
-    ai_analysis = await AIAnalyzer().analyze_correlation(
-        platform_data,
-        enriched_matches,
-        allow_external=allow_external_ai,
+    if allow_external_ai:
+        ai_analysis = await AIAnalyzer().analyze_correlation(
+            platform_data,
+            enriched_matches,
+            allow_external=True,
+        )
+    else:
+        ai_analysis = {
+            "success": True,
+            "status": "local_policy",
+            "reason": (
+                "External AI correlation is disabled for automatic investigations; "
+                "the deterministic evidence engine is authoritative."
+            ),
+            "model_used": "deterministic_rules",
+        }
+    ai_analysis = _reconcile_ai_correlation(
+        ai_analysis,
+        confidence=confidence,
+        candidate_count=len(candidate_platforms),
+        collected_count=len(non_primary_collected),
+        confirmed_count=len(identity_confirmed_platforms),
+        corroborated_count=len(identity_corroborated_platforms),
+        conflict_count=sum(
+            1 for item in evidence if item.get("status") == "identity_conflict"
+        ),
     )
     model_used = ai_analysis.get("model_used", "rules_fallback")
     if ai_analysis.get("reason") == "per-investigation provider call limit reached":
         summary = "AI correlation used local rules because the provider call limit was reached."
-    elif model_used == "rules_fallback":
-        summary = "AI correlation fallback rules applied (configure GROQ_API_KEY or DEEPSEEK_API_KEY for advanced analysis)."
+    elif model_used in {"rules_fallback", "deterministic_rules"}:
+        fallback_status = str(ai_analysis.get("status") or "fallback")
+        if fallback_status == "local_policy":
+            summary = (
+                "Correlation was computed locally from deterministic public-evidence rules; "
+                "no external model call was made."
+            )
+        elif fallback_status == "not_configured":
+            summary = "Local correlation rules applied because no external AI provider is configured."
+        else:
+            summary = f"Local correlation rules applied after AI status: {fallback_status}."
     else:
         summary = f"AI correlation completed using active model: {model_used}."
     return {
         "summary": summary,
         "confidence": round(confidence, 2),
-        "matching_platforms": [match["platform"] for match in positive_matches],
+        "matching_platforms": matching_platforms,
+        "candidate_platforms": candidate_platforms,
+        "collector_confirmed_platforms": collector_confirmed_platforms,
+        "identity_confirmed_platforms": identity_confirmed_platforms,
+        "identity_corroborated_platforms": identity_corroborated_platforms,
+        "evidence": evidence,
+        "requires_human_review": bool(
+            candidate_platforms
+            or non_primary_collected
+            or any(item.get("contradictions") for item in evidence)
+        ),
+        "methodology_notice": (
+            "HTTP reachability and same-username reuse are discovery signals only. "
+            "Identity correlation requires independent collector-confirmed evidence."
+        ),
         "primary_platform": platform_data.get("platform"),
-        "training_context": get_training_dataset_service().build_correlation_context(len(positive_matches)),
+        "training_context": get_training_dataset_service().build_correlation_context(len(matching_platforms)),
         "ai_analysis": ai_analysis,
     }
 
@@ -758,17 +1448,140 @@ async def assess_risk(
     *,
     allow_external_ai: bool = True,
 ) -> dict[str, Any]:
-    confidence = ai_result.get("confidence", 0)
-    level = "low" if confidence < 0.55 else "medium" if confidence < 0.8 else "high"
-    ai_risk = await AIAnalyzer().assess_risk(
-        platform_data,
-        allow_external=allow_external_ai,
+    evidence_bundle = AIAnalyzer._risk_evidence_bundle(platform_data)
+    has_public_risk_evidence = bool(
+        str(evidence_bundle.get("bio") or "").strip()
+        or evidence_bundle.get("public_content_excerpts")
     )
+    if has_public_risk_evidence:
+        ai_risk = await AIAnalyzer().assess_risk(
+            platform_data,
+            allow_external=allow_external_ai,
+        )
+    else:
+        ai_risk = {
+            "success": False,
+            "status": "insufficient_evidence",
+            "reason": "No public bio or post excerpts were available for risk assessment.",
+            "analysis": "Automated risk assessment was skipped because public text evidence was absent.",
+            "parsed": {
+                "risk_level": "UNKNOWN",
+                "risk_score": 0,
+                "indicators": [],
+                "recommendations": [],
+            },
+        }
+    parsed = ai_risk.get("parsed") if isinstance(ai_risk, dict) else None
+    parsed = parsed if isinstance(parsed, dict) else {}
+    try:
+        score = max(0, min(100, int(parsed.get("risk_score", 0))))
+    except (TypeError, ValueError):
+        score = 0
+    reported_level = str(parsed.get("risk_level") or "unknown").strip().casefold()
+    valid_risk_levels = {"low", "medium", "high", "critical"}
+    if ai_risk.get("success") is not True or reported_level not in valid_risk_levels:
+        level = "unknown"
+        score = 0
+    elif score < 40:
+        level = "low"
+    elif score < 70:
+        level = "medium"
+    elif score < 90:
+        level = "high"
+    else:
+        level = "critical"
+
+    consistency_warnings: list[str] = []
+    if level != "unknown" and reported_level != level:
+        consistency_warnings.append(
+            f"Model label '{reported_level}' disagreed with score {score}; score-derived level '{level}' was used."
+        )
+    reported_indicators = [
+        str(indicator)
+        for indicator in parsed.get("indicators", [])
+        if str(indicator).strip()
+    ]
+    source_text_by_ref: dict[str, str] = {}
+    if evidence_bundle.get("bio"):
+        source_text_by_ref["bio"] = str(evidence_bundle["bio"])
+    for index, excerpt in enumerate(evidence_bundle.get("public_content_excerpts") or []):
+        if not isinstance(excerpt, dict) or not excerpt.get("text"):
+            continue
+        source_ref = str(excerpt.get("source_ref") or f"public_content_excerpts[{index}]")
+        source_text_by_ref[source_ref.casefold()] = str(excerpt["text"])
+
+    validated_indicators: list[str] = []
+    unvalidated_indicators: list[str] = []
+    for indicator in reported_indicators:
+        evidence_match = re.search(
+            r'SOURCE_QUOTE\s*:\s*["“]([^"”]{1,500})["”]\s*\|\s*'
+            r'SOURCE_REF\s*:\s*([^|]+?)\s*\|\s*BASIS\s*:\s*(.+)',
+            indicator,
+            flags=re.IGNORECASE,
+        )
+        if evidence_match:
+            quote = evidence_match.group(1).strip()
+            source_ref = evidence_match.group(2).strip().casefold()
+            basis = evidence_match.group(3).strip()
+            normalized_quote = " ".join(quote.split())
+            quote_words = re.findall(r"\w+", normalized_quote, flags=re.UNICODE)
+            source_text = source_text_by_ref.get(source_ref, "")
+            substantial_quote = len(normalized_quote) >= 12 and len(quote_words) >= 3
+        else:
+            quote = source_ref = basis = source_text = ""
+            substantial_quote = False
+        if (
+            substantial_quote
+            and basis
+            and quote.casefold() in source_text.casefold()
+            and _contains_concrete_harm_signal(quote)
+        ):
+            validated_indicators.append(indicator)
+        else:
+            unvalidated_indicators.append(indicator)
+
+    deterministic_review_triggers = [
+        {
+            "source_ref": source_ref,
+            "exact_excerpt": source_text,
+            "reason": "narrow explicit harmful-conduct language requires human review",
+        }
+        for source_ref, source_text in source_text_by_ref.items()
+        if _contains_concrete_harm_signal(source_text)
+    ]
+
+    if level in {"medium", "high", "critical"} and not validated_indicators:
+        consistency_warnings.append(
+            "Elevated model risk was rejected because no indicator contained a substantial exact quote, valid source reference, and narrow concrete-harm signal from the supplied public evidence."
+        )
+        level = "unknown"
+        score = 0
+    if deterministic_review_triggers and level == "low":
+        consistency_warnings.append(
+            "The model returned low risk despite narrow explicit harmful-conduct language in the bounded public evidence; the automated result was changed to unknown for human review."
+        )
+        level = "unknown"
+        score = 0
     return {
         "level": level,
-        "score": int(confidence * 100),
-        "factors": ["cross_platform_presence"] if ai_result.get("matching_platforms") else [],
-        "requires_human_review": level != "low",
+        "score": score,
+        "factors": validated_indicators,
+        "validated_indicators": validated_indicators,
+        "unvalidated_model_indicators": unvalidated_indicators,
+        "deterministic_review_triggers": deterministic_review_triggers,
+        "recommendations": [
+            str(recommendation)
+            for recommendation in parsed.get("recommendations", [])
+            if str(recommendation).strip()
+            and not _INTRUSIVE_ACTION_PATTERN.search(str(recommendation))
+        ],
+        "requires_human_review": level in {"unknown", "medium", "high", "critical"}
+        or bool(consistency_warnings)
+        or bool(validated_indicators)
+        or bool(deterministic_review_triggers),
+        "basis": "bounded_public_profile_evidence" if level != "unknown" else "insufficient_evidence",
+        "identity_correlation_used_as_risk_signal": False,
+        "consistency_warnings": consistency_warnings,
         "ai_risk_analysis": ai_risk,
     }
 
@@ -1652,14 +2465,47 @@ async def _investigate_username_impl(
     internal_matches["hitek_filter_name"] = fetched_name if hitek_filtered else None
     internal_matches["hitek_filter_locations"] = fetched_locations if hitek_filtered else []
 
-    # Reserve configured model calls before lowest-priority search dorks. When
-    # budget is unavailable, AIAnalyzer returns deterministic local analysis.
+    is_instagram = (request.platform == "instagram") or (
+        not request.platform and platform_data.get("platform") == "instagram"
+    )
+    if is_instagram and instagram_posts and isinstance(instagram_posts, dict):
+        platform_content = {
+            "platform": "instagram",
+            "source": "apify_instagram_scraper",
+            "posts": instagram_posts.get("posts") or instagram_posts.get("reels") or [],
+            "replies": [],
+            "comments": [],
+        }
+    else:
+        platform_content = extract_platform_content(platform_data)
+
+    risk_profile_data = dict(platform_data)
+    if platform_content:
+        bounded_risk_content: list[dict[str, Any]] = []
+        for collection_name in ("posts", "replies", "comments"):
+            collection = platform_content.get(collection_name)
+            if isinstance(collection, list):
+                bounded_risk_content.extend(
+                    item for item in collection if isinstance(item, dict)
+                )
+            if len(bounded_risk_content) >= 10:
+                break
+        if bounded_risk_content:
+            risk_profile_data["recent_posts"] = bounded_risk_content[:10]
+    preliminary_risk_evidence = AIAnalyzer._risk_evidence_bundle(risk_profile_data)
+    has_public_risk_evidence = bool(
+        str(preliminary_risk_evidence.get("bio") or "").strip()
+        or preliminary_risk_evidence.get("public_content_excerpts")
+    )
+
+    # Correlation is deterministic and local, so it never consumes model quota.
+    # Reserve a risk-model call only when public text evidence exists.
     external_ai_configured = bool(settings.deepseek_api_key or settings.groq_api_key)
-    allow_ai_correlation = True
-    allow_ai_risk = True
-    if external_ai_configured:
-        allow_ai_correlation = provider_budget.try_reserve("analysis.ai_correlation", 1)
-        allow_ai_risk = provider_budget.try_reserve("analysis.ai_risk", 1)
+    allow_ai_risk = bool(
+        external_ai_configured
+        and has_public_risk_evidence
+        and provider_budget.try_reserve("analysis.ai_risk", 1)
+    )
 
     # 6. Fetch a bounded SerpAPI-only dork batch using the resolved name.
     if settings.serpapi_key and requested_dork_limit > 0:
@@ -1710,19 +2556,8 @@ async def _investigate_username_impl(
             request.username,
             platform_data,
             limit=dork_query_limit,
+            preferred_platform=request.platform,
         )
-
-    is_instagram = (request.platform == "instagram") or (not request.platform and platform_data.get("platform") == "instagram")
-    if is_instagram and instagram_posts and isinstance(instagram_posts, dict):
-        platform_content = {
-            "platform": "instagram",
-            "source": "apify_instagram_scraper",
-            "posts": instagram_posts.get("posts") or instagram_posts.get("reels") or [],
-            "replies": [],
-            "comments": [],
-        }
-    else:
-        platform_content = extract_platform_content(platform_data)
 
     # 7. Merge hashtags across all scraped platforms
     all_hashtags = set()
@@ -1741,10 +2576,10 @@ async def _investigate_username_impl(
         platform_data,
         cross_matches,
         scraped_data=scraped_data,
-        allow_external_ai=allow_ai_correlation,
+        allow_external_ai=False,
     )
     risk = await assess_risk(
-        platform_data,
+        risk_profile_data,
         ai_result,
         allow_external_ai=allow_ai_risk,
     )
@@ -1871,6 +2706,9 @@ async def _investigate_username_impl(
             "social_result_items": int(
                 getattr(settings, "investigation_social_result_limit", 20)
             ),
+            "twitter_result_items": int(
+                getattr(settings, "investigation_twitter_result_limit", 5)
+            ),
         },
     }
 
@@ -1948,7 +2786,7 @@ async def investigate_username(request: UsernameInvestigationRequest) -> Investi
 
 @router.get("/history/{investigation_id}", response_model=InvestigationResponse)
 async def get_investigation(investigation_id: str) -> InvestigationResponse:
-    investigation = _INVESTIGATION_STORE.get(investigation_id)
+    investigation = _get_stored_investigation(investigation_id)
     if investigation is None:
         raise HTTPException(status_code=404, detail="Investigation not found")
     return investigation
@@ -1959,7 +2797,7 @@ async def list_investigations(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[InvestigationHistoryItem]:
-    items = list(_INVESTIGATION_STORE.values())[offset : offset + limit]
+    items = _list_stored_investigations(limit=limit, offset=offset)
     return [
         InvestigationHistoryItem(
             investigation_id=item.investigation_id,

@@ -153,7 +153,7 @@
                             </div>
 
                             <div id="console-loader">
-                                <div class="card-title" style="color:var(--accent-blue); margin-bottom: 8px;">Intercept Engine Active</div>
+                                <div class="card-title" style="color:var(--accent-blue); margin-bottom: 8px;">Public-Source Collection Active</div>
                                 <div class="console-stream" id="console-stream">
                                     <!-- Dynamic scanner log lines appear here -->
                                 </div>
@@ -167,7 +167,7 @@
                                 <input type="text" id="target-username" class="form-control" placeholder="username, LinkedIn slug, or Facebook page slug" style="background:var(--bg-input);">
                             </div>
 
-                            <div class="form-row" style="display: none;">
+                            <div class="form-row">
                                 <label>Target Platform</label>
                                 <select id="target-platform" class="form-control" style="background:var(--bg-input); border-color:var(--border-glow);">
                                     <option value="instagram">Instagram</option>
@@ -188,6 +188,66 @@
                                     <span class="slider-val" id="depth-val">2</span>
                                 </div>
                             </div>
+
+                            <details id="advanced-provider-inputs" style="margin: 0 0 18px; border:1px solid var(--border-glow); border-radius:6px; background:rgba(255,255,255,0.015);">
+                                <summary style="cursor:pointer; padding:9px 10px; color:var(--accent-blue); font-size:0.72rem; font-weight:600; text-transform:uppercase; letter-spacing:0.6px;">
+                                    Advanced Provider Inputs
+                                </summary>
+                                <div style="padding:2px 10px 10px;">
+                                    <p style="font-size:0.68rem; line-height:1.4; color:var(--text-secondary); margin:4px 0 10px;">
+                                        Optional fields call their mapped provider. Leave them blank to avoid that provider call.
+                                    </p>
+
+                                    <div class="form-row">
+                                        <label for="dork-query-limit">SerpAPI Query Limit (0–50)</label>
+                                        <input type="number" id="dork-query-limit" class="form-control" min="0" max="50" step="1" placeholder="Server default" style="background:var(--bg-input);">
+                                    </div>
+
+                                    <div class="form-row">
+                                        <label for="provider-call-limit">Total Provider Call Limit (1–50)</label>
+                                        <input type="number" id="provider-call-limit" class="form-control" min="1" max="50" step="1" placeholder="Server default" style="background:var(--bg-input);">
+                                    </div>
+
+                                    <div class="form-row">
+                                        <label for="provider-email">Email for Hunter Verification</label>
+                                        <input type="email" id="provider-email" class="form-control" maxlength="320" placeholder="person@example.com" autocomplete="off" style="background:var(--bg-input);">
+                                    </div>
+
+                                    <div class="form-row">
+                                        <label for="provider-phone">Phone for Twilio Lookup</label>
+                                        <input type="tel" id="provider-phone" class="form-control" maxlength="32" placeholder="+919876543210" autocomplete="off" style="background:var(--bg-input);">
+                                    </div>
+
+                                    <div class="form-row">
+                                        <label for="company-domain">Company Domain for Hunter</label>
+                                        <input type="text" id="company-domain" class="form-control" maxlength="253" placeholder="example.com" autocomplete="off" style="background:var(--bg-input);">
+                                    </div>
+
+                                    <div class="form-row">
+                                        <label for="web-urls">Web URLs for Bright Data (max 5)</label>
+                                        <textarea id="web-urls" class="form-control" rows="3" placeholder="https://example.com/public-page&#10;One public URL per line" style="background:var(--bg-input); resize:vertical;"></textarea>
+                                    </div>
+
+                                    <div class="form-row">
+                                        <label for="extract-urls">Extract URLs for Firecrawl (max 5)</label>
+                                        <textarea id="extract-urls" class="form-control" rows="3" placeholder="https://example.com/public-page&#10;One public URL per line" style="background:var(--bg-input); resize:vertical;"></textarea>
+                                    </div>
+
+                                    <div class="form-row">
+                                        <label for="extraction-prompt">Firecrawl Extraction Prompt</label>
+                                        <textarea id="extraction-prompt" class="form-control" rows="3" maxlength="2000" placeholder="Extract the public profile name, biography, and links." style="background:var(--bg-input); resize:vertical;"></textarea>
+                                    </div>
+
+                                    <div class="form-row" style="margin-bottom:4px;">
+                                        <label for="cache-mode">Cache Mode</label>
+                                        <select id="cache-mode" class="form-control" style="background:var(--bg-input); border-color:var(--border-glow);">
+                                            <option value="use">Use cached result when available</option>
+                                            <option value="refresh">Refresh and replace cache</option>
+                                            <option value="bypass">Bypass cache</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </details>
 
                             <div class="form-row" style="display:flex; align-items:center; gap:8px; margin-bottom:18px;">
                                 <input type="checkbox" id="filter-hitek" style="width:16px; height:16px; margin:0; cursor:pointer;" checked>
@@ -226,12 +286,12 @@
                                     </div>
                                 </div>
 
-                                <!-- 1. THREAT ASSESSMENT CARD -->
+                                <!-- 1. PUBLIC-SOURCE RISK ASSESSMENT CARD -->
                                 <div class="glass-card platform-intel-card" id="threat-assessment-card">
                                     <div class="platform-intel-card-header clickable-header" onclick="toggleStaticCardCollapse('threat-assessment-card', this)" style="cursor: pointer;">
                                         <div style="display:flex; align-items:center; gap:10px;">
                                             <span style="font-size: 1.1rem;">🛡️</span>
-                                            <span class="platform-intel-card-name" style="text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1.5px; font-weight: 600; color: var(--text-secondary);">Threat Assessment</span>
+                                            <span class="platform-intel-card-name" style="text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1.5px; font-weight: 600; color: var(--text-secondary);">Public-Source Risk Assessment</span>
                                         </div>
                                         <button class="platform-intel-toggle-btn">
                                             <span class="toggle-text">Show Details</span>
@@ -247,10 +307,11 @@
                                                 </svg>
                                                 <div class="risk-gauge-text">
                                                     <span class="risk-score" id="risk-score-num">0%</span>
-                                                    <span class="risk-label">SCORE</span>
+                                                    <span class="risk-label">AUTOMATED SCORE</span>
                                                 </div>
                                             </div>
-                                            <div class="risk-indicator-badge risk-medium" id="risk-badge" style="margin-bottom: 10px;">MEDIUM THREAT</div>
+                                            <div class="risk-indicator-badge actor-status-neutral" id="risk-badge" style="margin-bottom: 10px;">ASSESSMENT NOT RUN</div>
+                                            <div id="risk-consistency-notice" style="display:none; width:100%; box-sizing:border-box; margin:0 0 10px; padding:8px 10px; border-radius:6px; border:1px solid rgba(255,215,0,0.35); background:rgba(255,215,0,0.08); color:var(--accent-gold); font-size:0.72rem; line-height:1.45; text-align:left;"></div>
 
                                             <!-- AI Risk Error Notice -->
                                             <div id="risk-error-notice" style="display:none; background: rgba(255, 51, 102, 0.1); border: 1px solid rgba(255, 51, 102, 0.3); padding: 10px; border-radius: 6px; font-size: 0.75rem; color: var(--accent-crimson); margin-top: 10px; text-align: left; line-height: 1.4; width: 100%;">
