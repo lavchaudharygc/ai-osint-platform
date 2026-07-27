@@ -376,15 +376,31 @@ class GoogleDorkingService:
         provider = self._serpapi_provider()
         configured_providers = [provider.name] if provider else []
         disabled_providers = self._disabled_provider_names()
+        attempted_providers = []
+        failed_providers = []
+        fallback_used = False
 
         if provider is None:
             return self._not_configured_response(queries, disabled_providers)
 
+        attempted_providers.append(provider.name)
         attempt = await self._search_with_provider(provider, queries, country_code=country_code)
+
+        if attempt.get("failed") and not attempt.get("results"):
+            failed_providers.append(provider.name)
+            from backend.services.apify_client import ApifyActorClient
+            if ApifyActorClient().is_configured():
+                apify_attempt = await self._search_apify_google(queries)
+                if apify_attempt.get("results"):
+                    attempt = apify_attempt
+                    fallback_used = True
+                    attempted_providers.append("apify_google")
+                    configured_providers.append("apify_google")
+
         attempt_results = attempt.get("results", [])
         attempt_errors = self._normalize_provider_errors(provider, attempt.get("errors", []))
-        failed = bool(attempt.get("failed"))
-        status = "completed_with_errors" if failed and attempt_results else "failed" if failed else "completed"
+        failed = bool(attempt.get("failed")) and not attempt_results
+        status = "completed_with_errors" if attempt.get("failed") and attempt_results else "failed" if failed else "completed"
         reason = None
         if failed:
             reason = (
@@ -392,22 +408,84 @@ class GoogleDorkingService:
                 if attempt_results
                 else "SerpAPI search failed."
             )
+        elif fallback_used:
+            reason = "SerpAPI failed (e.g. 429 limit); secondary Apify Google Search fallback was used."
 
         return self._build_search_response(
-            provider_name=provider.name,
+            provider_name=attempt.get("provider", provider.name),
             status=status,
             queries=queries,
             results=attempt_results,
             errors=attempt_errors,
             configured_providers=configured_providers,
-            attempted_providers=[provider.name],
-            failed_providers=[provider.name] if failed else [],
+            attempted_providers=attempted_providers,
+            failed_providers=failed_providers,
             disabled_providers=disabled_providers,
-            fallback_used=False,
+            fallback_used=fallback_used,
             reason=reason,
             queries_run=int(attempt.get("queries_attempted", len(queries))),
             queries_completed=int(attempt.get("queries_completed", 0)),
         )
+
+    async def _search_apify_google(
+        self,
+        queries: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        from backend.services.apify_client import ApifyActorClient
+        client = ApifyActorClient()
+        if not client.is_configured():
+            return {"provider": "apify_google", "results": [], "errors": [], "failed": True}
+
+        results: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        queries_attempted = 0
+        queries_completed = 0
+
+        for query in queries:
+            queries_attempted += 1
+            query_text = str(query.get("query") or "")
+            if not query_text:
+                continue
+
+            try:
+                run = await client.run_actor(
+                    "apify/google-search-scraper",
+                    {
+                        "queries": query_text,
+                        "maxPagesPerQuery": 1,
+                        "resultsPerPage": getattr(settings, "serpapi_results_per_query", 5),
+                    },
+                    dataset_limit=10,
+                )
+                queries_completed += 1
+                for item in run.items:
+                    organic_results = item.get("organicResults") or [item] if isinstance(item, dict) else []
+                    for res in organic_results:
+                        if not isinstance(res, dict):
+                            continue
+                        url = res.get("url") or res.get("link")
+                        title = res.get("title") or res.get("name") or "Web Match"
+                        snippet = res.get("description") or res.get("snippet") or res.get("text") or ""
+                        if url:
+                            results.append({
+                                "title": title,
+                                "url": url,
+                                "snippet": snippet,
+                                "query": query_text,
+                                "category": query.get("category", "general"),
+                                "source": "apify_google_search",
+                            })
+            except Exception as exc:
+                errors.append({"error": str(exc), "query": query_text})
+
+        return {
+            "provider": "apify_google",
+            "results": results,
+            "errors": errors,
+            "failed": not bool(results),
+            "queries_attempted": queries_attempted,
+            "queries_completed": queries_completed,
+        }
 
     def _serpapi_provider(self) -> SearchProvider | None:
         serpapi_key = getattr(settings, "serpapi_key", None)

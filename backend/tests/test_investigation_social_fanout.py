@@ -122,7 +122,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                 "configured": True,
                 "platform": "linkedin",
                 "status": "completed",
-                "source": "bright_data_linkedin",
+                "source": "apify_linkedin_profile_scraper",
                 "username": "target_user",
                 "full_name": "Candidate Professional",
             },
@@ -222,8 +222,8 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                 "backend.api.endpoints.investigation.RedditApifyService"
             ) as reddit_class,
             patch(
-                "backend.api.endpoints.investigation.LinkedInBrightDataService"
-            ) as linkedin_brightdata_class,
+                "backend.api.endpoints.investigation.LinkedInApifyService"
+            ) as linkedin_class,
             patch(
                 "backend.api.endpoints.investigation.FacebookApifyService"
             ) as facebook_class,
@@ -240,9 +240,6 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "backend.services.twitter_service.TwitterDataService"
             ) as twitter_fallback_class,
-            patch(
-                "backend.services.linkedin_apify_service.LinkedInApifyService"
-            ) as linkedin_apify_class,
         ):
             instagram_profile_class.return_value.fetch_profile = AsyncMock(
                 side_effect=side_effect("instagram_profile")
@@ -257,7 +254,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
             reddit_class.return_value.get_profile = AsyncMock(
                 side_effect=side_effect("reddit")
             )
-            linkedin_brightdata_class.return_value.get_profile = AsyncMock(
+            linkedin_class.return_value.get_profile = AsyncMock(
                 side_effect=side_effect("linkedin")
             )
             facebook_class.return_value.get_profile = AsyncMock(
@@ -279,13 +276,13 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                 "twitter_profile": twitter_class.return_value.get_profile,
                 "twitter_search": twitter_class.return_value.search,
                 "reddit": reddit_class.return_value.get_profile,
-                "linkedin": linkedin_brightdata_class.return_value.get_profile,
+                "linkedin": linkedin_class.return_value.get_profile,
                 "facebook": facebook_class.return_value.get_profile,
                 "tiktok": tiktok_class.return_value.get_profile,
                 "telegram": scrape_mock,
                 "flashapi_class": flashapi_class,
                 "twitter_fallback_class": twitter_fallback_class,
-                "linkedin_apify_class": linkedin_apify_class,
+                "linkedin_apify_class": AsyncMock(),
             }
 
         return output, started, mocks, results
@@ -363,7 +360,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(envelope["providers"]["instagram"]["profile"]["status"], "skipped")
         self.assertEqual(envelope["providers"]["reddit"]["status"], "skipped")
         self.assertEqual(envelope["providers"]["facebook"]["profile"]["status"], "skipped")
-        self.assertEqual(profiles["linkedin"]["source"], "bright_data_linkedin")
+        self.assertEqual(profiles["linkedin"]["source"], "apify_linkedin_profile_scraper")
 
         mocks["instagram_profile"].assert_not_awaited()
         mocks["instagram_posts"].assert_not_awaited()

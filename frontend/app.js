@@ -781,6 +781,9 @@ async function triggerInvestigation() {
         return;
     }
 
+    // Clear stale data immediately so old results don't bleed through on error/re-run
+    currentInvestigationData = null;
+
     // Immediately hide empty standby state & show skeleton workspace grid on button click
     const emptyState = document.getElementById("results-empty-state");
     const grid = document.getElementById("results-workspace-grid");
@@ -1457,121 +1460,192 @@ function renderInvestigationResults(data) {
     const tgIntelStatusEl = document.getElementById("telegram-intel-status");
     const tgIntelResultsEl = document.getElementById("telegram-intel-results");
     const tgData = DataMappers.resolveTelegramData(data);
-    
+    const hasCTIData = Boolean(data.telegram_cti && data.telegram_cti.results && data.telegram_cti.results.length > 0);
+    const hasTelegramProfile = Boolean(
+        tgData.username
+        || tgData.full_name
+        || tgData.display_name
+        || tgData.target_type === "invite_link"
+        || tgData.invite_hash_redacted
+    );
+
     if (tgIntelStatusEl) {
-        tgIntelStatusEl.innerText = tgData.target_type === "invite_link"
-            ? "Invite Preview"
-            : (tgData.exists ? "Active Account/Channel" : (tgData.exists === false ? "No Account Found" : "No Data"));
+        if (hasCTIData) {
+            tgIntelStatusEl.innerText = "CTI Breach Intel Found";
+        } else if (tgData.target_type === "invite_link") {
+            tgIntelStatusEl.innerText = "Invite Preview";
+        } else if (tgData.exists) {
+            tgIntelStatusEl.innerText = "Active Account/Channel";
+        } else if (tgData.exists === false) {
+            tgIntelStatusEl.innerText = "No Account Found";
+        } else {
+            tgIntelStatusEl.innerText = "No Data";
+        }
     }
+
     if (tgIntelResultsEl) {
         tgIntelResultsEl.innerHTML = "";
-        const hasTelegramPayload = Boolean(
-            tgData.username
-            || tgData.full_name
-            || tgData.display_name
-            || tgData.target_type === "invite_link"
-            || tgData.invite_hash_redacted
-        );
-        if (!hasTelegramPayload) {
-            tgIntelResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No Telegram intelligence cached for this target username.</span>`;
+        
+        if (!hasTelegramProfile && !hasCTIData) {
+            tgIntelResultsEl.innerHTML = `<span style="font-size:0.8rem; font-style:italic; color:var(--text-secondary); text-align:center; padding:10px;">No Telegram intelligence or breach records found for this target.</span>`;
         } else {
-            let mtprotoHTML = "";
-            if (tgData.mtproto_status) {
-                const ms = tgData.mtproto_status;
-                mtprotoHTML = `
-                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:10px 12px; border-radius:6px; font-size:0.78rem; margin-top:10px;">
-                        <span style="font-size:0.7rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; display:block; margin-bottom:4px;">MTProto API Access Diagnostics:</span>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-                            <div>MTProto Enabled: <span style="font-weight:600; color:${ms.enabled ? 'var(--accent-blue)' : 'var(--text-secondary)'};">${ms.enabled ? 'YES' : 'NO'}</span></div>
-                            <div>Auth Dependency: <span style="font-weight:600; color:${ms.dependency_available ? 'var(--accent-blue)' : 'var(--accent-crimson)'};">${ms.dependency_available ? 'AVAILABLE' : 'MISSING'}</span></div>
-                            <div>Credentials Configured: <span style="font-weight:600; color:${ms.credentials_configured ? 'var(--accent-blue)' : 'var(--text-secondary)'};">${ms.credentials_configured ? 'YES' : 'NO'}</span></div>
-                            <div>Session File: <span style="font-weight:600; color:${ms.session_file_present ? 'var(--accent-blue)' : 'var(--text-secondary)'};">${ms.session_file_present ? 'FOUND' : 'NOT FOUND'}</span></div>
+            const htmlParts = [];
+
+            if (hasTelegramProfile) {
+                let mtprotoHTML = "";
+                if (tgData.mtproto_status) {
+                    const ms = tgData.mtproto_status;
+                    mtprotoHTML = `
+                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:10px 12px; border-radius:6px; font-size:0.78rem; margin-top:10px;">
+                            <span style="font-size:0.7rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; display:block; margin-bottom:4px;">MTProto API Access Diagnostics:</span>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                                <div>MTProto Enabled: <span style="font-weight:600; color:${ms.enabled ? 'var(--accent-blue)' : 'var(--text-secondary)'};">${ms.enabled ? 'YES' : 'NO'}</span></div>
+                                <div>Auth Dependency: <span style="font-weight:600; color:${ms.dependency_available ? 'var(--accent-blue)' : 'var(--accent-crimson)'};">${ms.dependency_available ? 'AVAILABLE' : 'MISSING'}</span></div>
+                                <div>Credentials Configured: <span style="font-weight:600; color:${ms.credentials_configured ? 'var(--accent-blue)' : 'var(--text-secondary)'};">${ms.credentials_configured ? 'YES' : 'NO'}</span></div>
+                                <div>Session File: <span style="font-weight:600; color:${ms.session_file_present ? 'var(--accent-blue)' : 'var(--text-secondary)'};">${ms.session_file_present ? 'FOUND' : 'NOT FOUND'}</span></div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                let signalsHTML = "";
+                if (tgData.verification_signals) {
+                    const vs = tgData.verification_signals;
+                    signalsHTML = `
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                            <span class="system-badge" style="background:${vs.is_verified ? 'rgba(0,188,212,0.08)' : 'rgba(255,255,255,0.03)'}; border-color:${vs.is_verified ? 'rgba(0,188,212,0.2)' : 'rgba(255,255,255,0.08)'}; color:${vs.is_verified ? 'var(--accent-blue)' : 'var(--text-secondary)'};">Verified Badge: ${vs.is_verified ? 'YES' : 'NO'}</span>
+                            <span class="system-badge" style="background:${vs.is_scam ? 'rgba(255,51,102,0.08)' : 'rgba(255,255,255,0.03)'}; border-color:${vs.is_scam ? 'rgba(255,51,102,0.2)' : 'rgba(255,255,255,0.08)'}; color:${vs.is_scam ? 'var(--accent-crimson)' : 'var(--text-secondary)'};">Scam Signal: ${vs.is_scam ? 'YES' : 'NO'}</span>
+                            <span class="system-badge" style="background:${vs.is_fake ? 'rgba(255,51,102,0.08)' : 'rgba(255,255,255,0.03)'}; border-color:${vs.is_fake ? 'rgba(255,51,102,0.2)' : 'rgba(255,255,255,0.08)'}; color:${vs.is_fake ? 'var(--accent-crimson)' : 'var(--text-secondary)'};">Fake Signal: ${vs.is_fake ? 'YES' : 'NO'}</span>
+                        </div>
+                    `;
+                }
+
+                const telegramStatus = String(tgData.status || "").replace(/_/g, " ");
+                const telegramError = tgData.error && typeof tgData.error === "object"
+                    ? (tgData.error.message || tgData.error.code || "Telegram lookup was unavailable")
+                    : tgData.error;
+                const telegramNoticeHTML = (telegramStatus || telegramError) ? `
+                    <div style="margin-top:10px; padding:8px 10px; border:1px solid ${telegramError ? 'rgba(255,51,102,0.2)' : 'rgba(0,188,212,0.16)'}; border-radius:5px; background:${telegramError ? 'rgba(255,51,102,0.05)' : 'rgba(0,188,212,0.04)'}; color:${telegramError ? 'var(--accent-crimson)' : 'var(--text-secondary)'}; font-size:0.75rem; line-height:1.4;">
+                        ${telegramStatus ? `<strong>Status:</strong> ${escapeHTML(telegramStatus)}` : ""}
+                        ${telegramError ? `${telegramStatus ? " · " : ""}${escapeHTML(telegramError)}` : ""}
+                    </div>
+                ` : "";
+
+                const profileCard = `
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:6px; display:flex; gap:12px; align-items:start;">
+                        <div style="width:50px; height:50px; border-radius:50%; background:rgba(36,161,222,0.1); border:1px solid rgba(36,161,222,0.3); display:flex; align-items:center; justify-content:center; font-weight:bold; color:var(--accent-blue); flex-shrink:0;">TG</div>
+                        <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
+                            <div style="font-size:0.9rem; font-weight:700; color:var(--text-primary); display:flex; justify-content:space-between;">
+                                <span>${escapeHTML(tgData.full_name || tgData.display_name || "Telegram Preview")}</span>
+                                <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:normal;">${tgData.username ? `@${escapeHTML(tgData.username)}` : "Invite preview"}</span>
+                            </div>
+                            ${tgData.bio ? `<div style="font-size:0.8rem; color:var(--text-secondary); line-height:1.4;">${escapeHTML(tgData.bio)}</div>` : ""}
+                            <div style="font-size:0.78rem; color:var(--text-primary); font-weight:600; margin-top:2px;">
+                                Entity Type: ${escapeHTML((tgData.entity_type || tgData.target_type || "user").toUpperCase())}
+                                ${DataMappers.firstDefined(tgData.subscriber_count, tgData.member_count) !== undefined ? `· ${Number(DataMappers.firstDefined(tgData.subscriber_count, tgData.member_count)).toLocaleString()} members` : ""}
+                            </div>
+                            ${signalsHTML}
                         </div>
                     </div>
+                    ${telegramNoticeHTML}
+                    ${(() => {
+                        const ia = tgData.intelligence_analysis || {};
+                        const botResponses = tgData.bot_responses || ia.bot_responses || [];
+                        let extraHTML = "";
+
+                        if (botResponses && botResponses.length > 0) {
+                            extraHTML += `
+                                <div style="margin-top:10px; background:rgba(0,255,150,0.03); border:1px solid rgba(0,255,150,0.15); padding:10px; border-radius:6px;">
+                                    <div style="font-size:0.72rem; text-transform:uppercase; font-weight:700; color:#00ff99; margin-bottom:6px;">🤖 OSINT Bot Dispatched Responses:</div>
+                                    <div style="display:flex; flex-direction:column; gap:6px;">
+                                        ${botResponses.map(br => `
+                                            <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.05); padding:6px 8px; border-radius:4px; font-size:0.72rem;">
+                                                <div style="font-weight:700; color:var(--accent-gold); margin-bottom:2px;">${br.bot} ${br.timestamp ? `<span style="font-size:0.65rem; color:var(--text-secondary); font-weight:normal;">· ${new Date(br.timestamp).toLocaleTimeString()}</span>` : ''}</div>
+                                                <div style="font-family:'Share Tech Mono',monospace; white-space:pre-wrap; color:var(--text-primary); font-size:0.7rem;">${br.response_text || br.error || 'No response data'}</div>
+                                            </div>
+                                        `).join("")}
+                                    </div>
+                                </div>
+                            `;
+                        }
+
+                        if (ia.links_extracted && ia.links_extracted.length > 0) {
+                            extraHTML += `<div style="margin-top:8px; font-size:0.75rem; color:var(--text-secondary);"><strong>Links in Bio:</strong> ${ia.links_extracted.map(l => `<a href="${l}" target="_blank" style="color:var(--accent-blue); margin-right:6px;">${l}</a>`).join("")}</div>`;
+                        }
+                        if (ia.handles_mentioned && ia.handles_mentioned.length > 0) {
+                            extraHTML += `<div style="margin-top:4px; font-size:0.75rem; color:var(--text-secondary);"><strong>Handles Mentioned:</strong> ${ia.handles_mentioned.map(h => `<span class="tag-pill" style="font-size:0.65rem; padding:1px 5px; margin-right:4px;">${h}</span>`).join("")}</div>`;
+                        }
+                        if (ia.recommended_osint_bots && ia.recommended_osint_bots.length > 0) {
+                            extraHTML += `
+                                <div style="margin-top:10px; background:rgba(0,198,255,0.03); border:1px solid rgba(0,198,255,0.12); padding:8px 10px; border-radius:6px;">
+                                    <div style="font-size:0.7rem; text-transform:uppercase; font-weight:700; color:var(--accent-blue); margin-bottom:4px;">Recommended Telegram OSINT Bots (Methodology):</div>
+                                    <div style="display:flex; flex-direction:column; gap:3px;">
+                                        ${ia.recommended_osint_bots.map(b => `<div style="font-size:0.72rem; color:var(--text-secondary);"><strong style="color:var(--accent-gold);">${b.bot}</strong> — ${b.purpose}</div>`).join("")}
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        return extraHTML;
+                    })()}
+                    ${mtprotoHTML}
                 `;
+                htmlParts.push(profileCard);
             }
 
-            let signalsHTML = "";
-            if (tgData.verification_signals) {
-                const vs = tgData.verification_signals;
-                signalsHTML = `
-                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
-                        <span class="system-badge" style="background:${vs.is_verified ? 'rgba(0,188,212,0.08)' : 'rgba(255,255,255,0.03)'}; border-color:${vs.is_verified ? 'rgba(0,188,212,0.2)' : 'rgba(255,255,255,0.08)'}; color:${vs.is_verified ? 'var(--accent-blue)' : 'var(--text-secondary)'};">Verified Badge: ${vs.is_verified ? 'YES' : 'NO'}</span>
-                        <span class="system-badge" style="background:${vs.is_scam ? 'rgba(255,51,102,0.08)' : 'rgba(255,255,255,0.03)'}; border-color:${vs.is_scam ? 'rgba(255,51,102,0.2)' : 'rgba(255,255,255,0.08)'}; color:${vs.is_scam ? 'var(--accent-crimson)' : 'var(--text-secondary)'};">Scam Signal: ${vs.is_scam ? 'YES' : 'NO'}</span>
-                        <span class="system-badge" style="background:${vs.is_fake ? 'rgba(255,51,102,0.08)' : 'rgba(255,255,255,0.03)'}; border-color:${vs.is_fake ? 'rgba(255,51,102,0.2)' : 'rgba(255,255,255,0.08)'}; color:${vs.is_fake ? 'var(--accent-crimson)' : 'var(--text-secondary)'};">Fake Signal: ${vs.is_fake ? 'YES' : 'NO'}</span>
-                    </div>
+            if (hasCTIData) {
+                let ctiHTML = `
+                    <div style="margin-top:${hasTelegramProfile ? '14px' : '0'}; background:rgba(255,170,0,0.04); border:1px solid rgba(255,170,0,0.25); border-radius:8px; padding:14px;">
+                        <div style="font-size:0.78rem; text-transform:uppercase; font-weight:700; color:var(--accent-gold); display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid rgba(255,170,0,0.15); padding-bottom:8px;">
+                            <span>🔍 Telegram CTI / Breach Intelligence</span>
+                            <span class="system-badge" style="background:rgba(255,170,0,0.1); border-color:rgba(255,170,0,0.3); color:var(--accent-gold);">Searches: ${data.telegram_cti.searches_performed || 0}</span>
+                        </div>
                 `;
+                data.telegram_cti.results.forEach(res => {
+                    ctiHTML += `
+                        <div style="margin-bottom:12px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:10px;">
+                            <div style="font-size:0.78rem; font-weight:700; color:var(--text-primary); margin-bottom:6px; display:flex; justify-content:space-between;">
+                                <span>Query Target: <span style="color:var(--accent-blue);">${escapeHTML(res.query)}</span></span>
+                                <span style="font-size:0.7rem; text-transform:uppercase; color:var(--accent-green); font-weight:600;">${escapeHTML(res.status)}</span>
+                            </div>
+                    `;
+                    (res.results || []).forEach(db => {
+                        const rows = db.data || [];
+                        const headers = rows.length > 0 && typeof rows[0] === 'object' ? Object.keys(rows[0]) : [];
+                        ctiHTML += `
+                            <div style="margin-top:8px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:8px 10px; border-radius:5px;">
+                                <div style="font-size:0.75rem; font-weight:600; color:var(--accent-gold); display:flex; justify-content:space-between;">
+                                    <span>📦 Leak DB: ${escapeHTML(db.database)}</span>
+                                    ${db.info_leak ? `<span style="color:var(--accent-crimson); font-size:0.7rem;">Info Leak: ${escapeHTML(db.info_leak)}</span>` : ''}
+                                </div>
+                                ${headers.length > 0 ? `
+                                    <div style="overflow-x:auto; margin-top:6px;">
+                                        <table style="width:100%; border-collapse:collapse; font-size:0.7rem; text-align:left;">
+                                            <thead>
+                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.1); color:var(--text-secondary);">
+                                                    ${headers.map(h => `<th style="padding:4px 8px; font-size:0.68rem;">${escapeHTML(h)}</th>`).join('')}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${rows.slice(0, 10).map(row => `
+                                                    <tr style="border-bottom:1px solid rgba(255,255,255,0.03);">
+                                                        ${headers.map(h => `<td style="padding:4px 8px; font-family:'Share Tech Mono',monospace; color:var(--text-primary);">${escapeHTML(String(row[h] ?? ''))}</td>`).join('')}
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                        ${rows.length > 10 ? `<div style="font-size:0.68rem; color:var(--text-secondary); margin-top:4px;">+ ${rows.length - 10} more breach entries</div>` : ''}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
+                    });
+                    ctiHTML += `</div>`;
+                });
+                ctiHTML += `</div>`;
+                htmlParts.push(ctiHTML);
             }
 
-            const telegramStatus = String(tgData.status || "").replace(/_/g, " ");
-            const telegramError = tgData.error && typeof tgData.error === "object"
-                ? (tgData.error.message || tgData.error.code || "Telegram lookup was unavailable")
-                : tgData.error;
-            const telegramNoticeHTML = (telegramStatus || telegramError) ? `
-                <div style="margin-top:10px; padding:8px 10px; border:1px solid ${telegramError ? 'rgba(255,51,102,0.2)' : 'rgba(0,188,212,0.16)'}; border-radius:5px; background:${telegramError ? 'rgba(255,51,102,0.05)' : 'rgba(0,188,212,0.04)'}; color:${telegramError ? 'var(--accent-crimson)' : 'var(--text-secondary)'}; font-size:0.75rem; line-height:1.4;">
-                    ${telegramStatus ? `<strong>Status:</strong> ${escapeHTML(telegramStatus)}` : ""}
-                    ${telegramError ? `${telegramStatus ? " · " : ""}${escapeHTML(telegramError)}` : ""}
-                </div>
-            ` : "";
-
-            tgIntelResultsEl.innerHTML = `
-                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:6px; display:flex; gap:12px; align-items:start;">
-                    <div style="width:50px; height:50px; border-radius:50%; background:rgba(36,161,222,0.1); border:1px solid rgba(36,161,222,0.3); display:flex; align-items:center; justify-content:center; font-weight:bold; color:var(--accent-blue); flex-shrink:0;">TG</div>
-                    <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
-                        <div style="font-size:0.9rem; font-weight:700; color:var(--text-primary); display:flex; justify-content:space-between;">
-                            <span>${escapeHTML(tgData.full_name || tgData.display_name || "Telegram Preview")}</span>
-                            <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:normal;">${tgData.username ? `@${escapeHTML(tgData.username)}` : "Invite preview"}</span>
-                        </div>
-                        ${tgData.bio ? `<div style="font-size:0.8rem; color:var(--text-secondary); line-height:1.4;">${escapeHTML(tgData.bio)}</div>` : ""}
-                        <div style="font-size:0.78rem; color:var(--text-primary); font-weight:600; margin-top:2px;">
-                            Entity Type: ${escapeHTML((tgData.entity_type || tgData.target_type || "user").toUpperCase())}
-                            ${DataMappers.firstDefined(tgData.subscriber_count, tgData.member_count) !== undefined ? `· ${Number(DataMappers.firstDefined(tgData.subscriber_count, tgData.member_count)).toLocaleString()} members` : ""}
-                        </div>
-                        ${signalsHTML}
-                    </div>
-                </div>
-                ${telegramNoticeHTML}
-                ${(() => {
-                    const ia = tgData.intelligence_analysis || {};
-                    const botResponses = tgData.bot_responses || ia.bot_responses || [];
-                    let extraHTML = "";
-
-                    if (botResponses && botResponses.length > 0) {
-                        extraHTML += `
-                            <div style="margin-top:10px; background:rgba(0,255,150,0.03); border:1px solid rgba(0,255,150,0.15); padding:10px; border-radius:6px;">
-                                <div style="font-size:0.72rem; text-transform:uppercase; font-weight:700; color:#00ff99; margin-bottom:6px;">🤖 OSINT Bot Dispatched Responses:</div>
-                                <div style="display:flex; flex-direction:column; gap:6px;">
-                                    ${botResponses.map(br => `
-                                        <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.05); padding:6px 8px; border-radius:4px; font-size:0.72rem;">
-                                            <div style="font-weight:700; color:var(--accent-gold); margin-bottom:2px;">${br.bot} ${br.timestamp ? `<span style="font-size:0.65rem; color:var(--text-secondary); font-weight:normal;">· ${new Date(br.timestamp).toLocaleTimeString()}</span>` : ''}</div>
-                                            <div style="font-family:'Share Tech Mono',monospace; white-space:pre-wrap; color:var(--text-primary); font-size:0.7rem;">${br.response_text || br.error || 'No response data'}</div>
-                                        </div>
-                                    `).join("")}
-                                </div>
-                            </div>
-                        `;
-                    }
-
-                    if (ia.links_extracted && ia.links_extracted.length > 0) {
-                        extraHTML += `<div style="margin-top:8px; font-size:0.75rem; color:var(--text-secondary);"><strong>Links in Bio:</strong> ${ia.links_extracted.map(l => `<a href="${l}" target="_blank" style="color:var(--accent-blue); margin-right:6px;">${l}</a>`).join("")}</div>`;
-                    }
-                    if (ia.handles_mentioned && ia.handles_mentioned.length > 0) {
-                        extraHTML += `<div style="margin-top:4px; font-size:0.75rem; color:var(--text-secondary);"><strong>Handles Mentioned:</strong> ${ia.handles_mentioned.map(h => `<span class="tag-pill" style="font-size:0.65rem; padding:1px 5px; margin-right:4px;">${h}</span>`).join("")}</div>`;
-                    }
-                    if (ia.recommended_osint_bots && ia.recommended_osint_bots.length > 0) {
-                        extraHTML += `
-                            <div style="margin-top:10px; background:rgba(0,198,255,0.03); border:1px solid rgba(0,198,255,0.12); padding:8px 10px; border-radius:6px;">
-                                <div style="font-size:0.7rem; text-transform:uppercase; font-weight:700; color:var(--accent-blue); margin-bottom:4px;">Recommended Telegram OSINT Bots (Methodology):</div>
-                                <div style="display:flex; flex-direction:column; gap:3px;">
-                                    ${ia.recommended_osint_bots.map(b => `<div style="font-size:0.72rem; color:var(--text-secondary);"><strong style="color:var(--accent-gold);">${b.bot}</strong> — ${b.purpose}</div>`).join("")}
-                                </div>
-                            </div>
-                        `;
-                    }
-                    return extraHTML;
-                })()}
-                ${mtprotoHTML}
-            `;
+            tgIntelResultsEl.innerHTML = htmlParts.join("");
         }
     }
 }

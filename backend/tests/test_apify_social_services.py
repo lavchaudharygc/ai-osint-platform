@@ -174,7 +174,10 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
                     "actor_id": TWITTER_PROFILE_ACTOR,
                     "run_input": {
                         "twitterHandles": ["TargetUser"],
+                        "profileUrls": ["https://x.com/TargetUser", "https://twitter.com/TargetUser"],
+                        "urls": ["https://x.com/TargetUser"],
                         "maxItems": 25,
+                        "maxPosts": 25,
                         "getReplies": True,
                         "minReplyCount": 4,
                         "getAboutData": True,
@@ -307,7 +310,10 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
                     "actor_id": TWITTER_PROFILE_ACTOR,
                     "run_input": {
                         "twitterHandles": ["alice"],
+                        "profileUrls": ["https://x.com/alice", "https://twitter.com/alice"],
+                        "urls": ["https://x.com/alice"],
                         "maxItems": 5,
+                        "maxPosts": 5,
                         "getReplies": False,
                         "getAboutData": False,
                         "includeNativeRetweets": False,
@@ -555,6 +561,18 @@ class LinkedInApifyServiceTests(unittest.IsolatedAsyncioTestCase):
                             "https://www.linkedin.com/in/alice/",
                             "Alice Analyst",
                         ],
+                        "queries": [
+                            "https://www.linkedin.com/in/alice/",
+                            "Alice Analyst",
+                        ],
+                        "urls": [
+                            "https://www.linkedin.com/in/alice/",
+                            "Alice Analyst",
+                        ],
+                        "profileUrls": [
+                            "https://www.linkedin.com/in/alice/",
+                            "Alice Analyst",
+                        ],
                         "limit": 2,
                         "location": ["India"],
                     },
@@ -565,6 +583,9 @@ class LinkedInApifyServiceTests(unittest.IsolatedAsyncioTestCase):
                     "run_input": {
                         "action": "get-companies",
                         "keywords": ["Example Labs"],
+                        "queries": ["Example Labs"],
+                        "urls": ["Example Labs"],
+                        "profileUrls": ["Example Labs"],
                         "limit": 3,
                         "location": [],
                     },

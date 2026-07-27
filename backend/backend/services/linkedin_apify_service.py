@@ -68,8 +68,7 @@ class LinkedInApifyService:
             }
 
         fallbacks = [
-            # NOTE: dev_fusion requires one-time permission approval at:
-            # https://console.apify.com/actors/2SyF0bVxmgGr8IVCZ?approvePermissions=true
+            ("harvestapi/linkedin-profile-scraper", {"queries": [profile_url], "urls": [profile_url]}),
             ("dev_fusion/linkedin-profile-scraper", {"urls": [profile_url]}),
         ]
 
@@ -154,6 +153,9 @@ class LinkedInApifyService:
         run_input = {
             "action": action,
             "keywords": clean_keywords,
+            "queries": clean_keywords,
+            "urls": clean_keywords,
+            "profileUrls": clean_keywords,
             "limit": limit,
             "location": [value.strip() for value in (locations or []) if value.strip()],
         }
@@ -278,7 +280,8 @@ class LinkedInApifyService:
         full_name = item.get("fullName") or " ".join(
             str(value) for value in (first_name, last_name) if value
         ).strip()
-        experience = item.get("experience") if isinstance(item.get("experience"), list) else []
+        raw_exp = item.get("experience")
+        experience = raw_exp if isinstance(raw_exp, list) else ([raw_exp] if isinstance(raw_exp, dict) else [])
         current = experience[0] if experience and isinstance(experience[0], dict) else {}
         provider_status = item.get("status")
         return {
@@ -300,7 +303,7 @@ class LinkedInApifyService:
             "current_role": current.get("title") or current.get("role"),
             "current_company": current.get("companyName") or current.get("company"),
             "experience": experience,
-            "education": item.get("education") or item.get("educations") or [],
+            "education": (lambda e: e if isinstance(e, list) else ([e] if isinstance(e, dict) else []))(item.get("education") or item.get("educations")),
             "certifications": item.get("certifications") or [],
             "skills": item.get("skills") or [],
             "languages": item.get("languages") or [],

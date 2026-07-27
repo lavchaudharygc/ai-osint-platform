@@ -129,7 +129,8 @@ class InvestigationResponse(BaseModel):
         default=None,
         description=(
             "Capability-routed results from SerpAPI, Bright Data, Apify, Hunter.io, "
-            "Twilio Lookup, Firecrawl, GitHub, and the unchanged Telegram collectors."
+            "Twilio Lookup, Firecrawl, GitHub, the unchanged Telegram collectors, "
+            "and Telegram CTI breach intelligence."
         ),
     )
     execution_metadata: dict[str, Any] | None = Field(
@@ -142,6 +143,10 @@ class InvestigationResponse(BaseModel):
             "Backward-compatible social collection envelope. New integrations should "
             "read provider_results, which is provider-neutral."
         ),
+    )
+    telegram_cti: dict[str, Any] | None = Field(
+        default=None,
+        description="Breach data and threat intelligence lookups from Telegram CTI.",
     )
     timestamp: datetime
 

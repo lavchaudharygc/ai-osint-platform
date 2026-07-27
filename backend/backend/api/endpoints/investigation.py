@@ -33,8 +33,10 @@ from backend.services.hitek_service import HiTekConnectorService
 from backend.services.instagram_posts_service import InstagramPostsService
 from backend.services.instagram_profile_service import InstagramProfileService
 from backend.services.facebook_apify_service import FacebookApifyService
+from backend.services.linkedin_apify_service import LinkedInApifyService
 from backend.services.reddit_apify_service import RedditApifyService
 from backend.services.tiktok_apify_service import TikTokApifyService
+from backend.services.telegram_cti_service import get_cti_service
 from backend.services.brightdata_web_service import BrightDataWebService
 from backend.services.linkedin_brightdata_service import LinkedInBrightDataService
 from backend.services.firecrawl_service import FirecrawlService
@@ -162,7 +164,7 @@ PROVIDER_ROUTING = {
     "instagram": "apify_instagram_scraper",
     "twitter": "apify_x_scraper",
     "reddit": "apify_reddit_scraper",
-    "linkedin": "bright_data",
+    "linkedin": "apify_linkedin_profile_scraper",
     "facebook": "apify_facebook_scraper",
     "telegram": "existing_telegram_collectors",
     "tiktok": "apify_tiktok_scraper",
@@ -406,7 +408,7 @@ async def run_all_social_scrapers(
     instagram_profile_service = InstagramProfileService()
     instagram_posts_service = InstagramPostsService()
     twitter_apify_service = TwitterApifyService()
-    linkedin_service = LinkedInBrightDataService()
+    linkedin_service = LinkedInApifyService()
     reddit_service = RedditApifyService()
     facebook_service = FacebookApifyService()
     tiktok_service = TikTokApifyService(
@@ -532,10 +534,11 @@ async def run_all_social_scrapers(
         {
             "key": "linkedin",
             "platform": "linkedin",
-            "provider": "bright_data",
+            "provider": "apify",
             "calls": 1,
             "factory": lambda: linkedin_service.get_profile(username),
             "configured": linkedin_service.is_configured(),
+            "actor_id": settings.apify_linkedin_profile_actor_id,
         },
         {
             "key": "facebook_combined",
@@ -2147,22 +2150,18 @@ async def _investigate_username_impl(
 
     # 1. Run cross platform check to find where username exists
     cross_matches = await CrossPlatformSearchService().search_all_platforms(request.username)
-    cross_matches = cross_matches[: max(request.correlation_depth * 4, 8)]
-    
-    # Build active platforms set (include inconclusive matches like LinkedIn 999)
     selected_platforms = [
         str(match["platform"]).lower()
         for match in cross_matches
         if match.get("exists") is True or match.get("exists") is None
     ]
-    # Always ensure the requested platform receives first priority.
     primary_platform = request.platform.lower() if request.platform else "instagram"
     selected_platforms = list(dict.fromkeys([primary_platform, *selected_platforms]))
     max_social_platforms = int(
-        getattr(settings, "investigation_max_social_platforms", 4)
+        getattr(settings, "investigation_max_social_platforms", 7)
     )
     paid_social_platforms = {
-        "instagram", "twitter", "linkedin", "reddit", "facebook", "tiktok"
+        "instagram", "twitter", "linkedin", "reddit", "facebook", "tiktok", "telegram"
     }
     active_platforms: set[str] = set()
     paid_count = 0
@@ -2458,8 +2457,8 @@ async def _investigate_username_impl(
             internal_matches["by_username"].extend(hitek_matches.get("by_username") or [])
             internal_matches["by_phone"].extend(hitek_matches.get("by_phone") or [])
             internal_matches["by_email"].extend(hitek_matches.get("by_email") or [])
-        except Exception:
-            pass
+        except Exception as _hitek_exc:
+            logger.warning("Hitek match extend failed: %s", _hitek_exc)
 
     internal_matches["hitek_filtered"] = hitek_filtered
     internal_matches["hitek_filter_name"] = fetched_name if hitek_filtered else None
@@ -2632,8 +2631,8 @@ async def _investigate_username_impl(
                 full_name=platform_data.get("full_name") or platform_data.get("name")
             )
             content_intel.emails = sorted(list(set(content_intel.emails + guessed_emails)))
-        except Exception:
-            pass
+        except Exception as _email_exc:
+            logger.warning("Email guesser failed: %s", _email_exc)
 
         hashtag_intel_analyzer = HashtagIntelligenceAnalyzer()
         hashtag_intel = await hashtag_intel_analyzer.analyze_hashtags(
@@ -2712,6 +2711,31 @@ async def _investigate_username_impl(
         },
     }
 
+    telegram_cti_data = None
+    cti_service = get_cti_service()
+    if cti_service.is_configured() and getattr(settings, "telegram_cti_enabled", True):
+        cti_queries = []
+        if request.username:
+            cti_queries.append(request.username)
+        if request.email:
+            cti_queries.append(request.email)
+        if request.phone_number:
+            cti_queries.append(request.phone_number)
+        if fetched_name:
+            cti_queries.append(fetched_name)
+
+        cti_results = []
+        for q in list(dict.fromkeys(cti_queries))[:5]:
+            cti_res = await cti_service.search(q)
+            if cti_res and cti_res.status == "success" and cti_res.results:
+                cti_results.append(cti_res.model_dump())
+
+        telegram_cti_data = {
+            "searches_performed": len(cti_queries),
+            "results": cti_results,
+            "query_count": len(cti_queries),
+        }
+
     response = InvestigationResponse(
         investigation_id=investigation_id,
         status=provider_results["status"],
@@ -2730,6 +2754,7 @@ async def _investigate_username_impl(
         provider_results=provider_results,
         execution_metadata=execution_metadata,
         apify_social_results=apify_social_results,
+        telegram_cti=telegram_cti_data,
         timestamp=datetime.now(UTC),
     )
     _store_investigation(response)

@@ -54,7 +54,10 @@ class TwitterApifyService:
 
         run_input: dict[str, Any] = {
             "twitterHandles": [handle],
+            "profileUrls": [f"https://x.com/{handle}", f"https://twitter.com/{handle}"],
+            "urls": [f"https://x.com/{handle}"],
             "maxItems": item_limit,
+            "maxPosts": item_limit,
             "getReplies": bool(get_replies),
             "getAboutData": bool(get_about_data),
             "includeNativeRetweets": False,
@@ -286,9 +289,13 @@ class TwitterApifyService:
         if any(
             key in item
             for key in (
+                "postText",
+                "postUrl",
+                "postId",
                 "fullText",
                 "text",
                 "createdAt",
+                "timestamp",
                 "twitterUrl",
                 "conversationId",
                 "inReplyToStatusId",
@@ -296,7 +303,7 @@ class TwitterApifyService:
             )
         ):
             return True
-        return "/status/" in str(item.get("url") or "")
+        return "/status/" in str(item.get("url") or item.get("postUrl") or "")
 
     @classmethod
     def _partition_actor_output(
@@ -504,6 +511,7 @@ class TwitterApifyService:
             "profile_pic_url": self._first_not_none(
                 self._profile_value(
                     author,
+                    "profileImageUrl",
                     "profilePicture",
                     "profilePictureUrl",
                     "profile_pic_url",
@@ -516,6 +524,7 @@ class TwitterApifyService:
                 about.get("avatarUrl"),
                 self._profile_value(
                     author,
+                    "profileImageUrl",
                     "profilePicture",
                     "profilePictureUrl",
                     "profile_pic_url",
@@ -588,9 +597,9 @@ class TwitterApifyService:
         author = item.get("author") if isinstance(item.get("author"), dict) else {}
         
         # If author is empty, see if we have flattened author keys
-        author_username = author.get("userName") or author.get("username")
+        author_username = author.get("userName") or author.get("username") or author.get("screenName") or author.get("screen_name")
         if not author_username:
-            author_username = item.get("author.userName") or item.get("author.username") or item.get("author.user_name")
+            author_username = item.get("author.userName") or item.get("author.username") or item.get("author.user_name") or item.get("author.screenName") or item.get("author.screen_name")
             
         author_name = author.get("name") or author.get("fullName")
         if not author_name:
@@ -600,9 +609,9 @@ class TwitterApifyService:
         if not author_desc:
             author_desc = item.get("author.description") or item.get("author.bio")
             
-        author_pic = author.get("profilePicture") or author.get("profile_pic_url")
+        author_pic = author.get("profileImageUrl") or author.get("profilePicture") or author.get("profile_pic_url")
         if not author_pic:
-            author_pic = item.get("author.profilePicture") or item.get("author.profile_pic_url") or item.get("author.profilePictureUrl")
+            author_pic = item.get("author.profileImageUrl") or item.get("author.profilePicture") or item.get("author.profile_pic_url") or item.get("author.profilePictureUrl")
             
         author_followers = author.get("followers") or author.get("followersCount")
         if not author_followers:
@@ -654,17 +663,32 @@ class TwitterApifyService:
                     fallback_keys=("url", "display_url"),
                 )
 
+        created_at = item.get("createdAt")
+        if not created_at and item.get("timestamp"):
+            ts = item["timestamp"]
+            if isinstance(ts, (int, float)):
+                if ts > 1e11:
+                    ts = ts / 1000.0
+                created_at = datetime.fromtimestamp(ts, UTC).isoformat()
+            elif isinstance(ts, str) and ts.strip():
+                # ISO-8601 or other parseable string from scraper API
+                try:
+                    from dateutil import parser as _dateutil_parser
+                    created_at = _dateutil_parser.parse(ts).isoformat()
+                except Exception:
+                    created_at = ts  # keep raw string rather than losing it
+
         return {
             "type": item.get("type") or ("reply" if item.get("isReply") else "tweet"),
-            "id": item.get("id"),
-            "url": item.get("url") or item.get("twitterUrl"),
-            "twitter_url": item.get("twitterUrl"),
-            "text": item.get("fullText") or item.get("text"),
-            "created_at": item.get("createdAt"),
+            "id": item.get("postId") or item.get("id"),
+            "url": item.get("postUrl") or item.get("url") or item.get("twitterUrl"),
+            "twitter_url": item.get("postUrl") or item.get("twitterUrl") or item.get("url"),
+            "text": item.get("postText") or item.get("fullText") or item.get("text"),
+            "created_at": created_at,
             "language": item.get("lang"),
             "source_app": item.get("source"),
-            "like_count": item.get("likeCount") or item.get("like_count") or item.get("favorite_count"),
-            "retweet_count": item.get("retweetCount") or item.get("retweet_count"),
+            "like_count": item.get("favouriteCount") or item.get("likeCount") or item.get("like_count") or item.get("favorite_count"),
+            "retweet_count": item.get("repostCount") or item.get("retweetCount") or item.get("retweet_count"),
             "reply_count": item.get("replyCount") or item.get("reply_count"),
             "quote_count": item.get("quoteCount") or item.get("quote_count"),
             "view_count": item.get("viewCount") or item.get("view_count"),

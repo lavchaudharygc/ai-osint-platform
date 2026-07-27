@@ -30,6 +30,7 @@ from backend.services.investigation_policy import InvestigationResultCache, requ
 from backend.services.tiktok_apify_service import TikTokApifyService
 from backend.services.twilio_lookup_service import TwilioLookupService
 from backend.services.telegram_mtproto_service import TelegramMTProtoService
+from backend.services.telegram_cti_service import TelegramCTIService
 
 
 router = APIRouter(prefix="/api/v1/providers", tags=["capability-providers"])
@@ -104,7 +105,7 @@ async def provider_status() -> dict[str, Any]:
             "instagram": "apify_instagram_scraper",
             "twitter": "apify_x_scraper",
             "reddit": "apify_reddit_scraper",
-            "linkedin": "bright_data",
+            "linkedin": "apify_linkedin_profile_scraper",
             "facebook": "apify_facebook_scraper",
             "telegram": "existing_telegram_collectors",
             "tiktok": "apify_tiktok_scraper",
@@ -129,6 +130,7 @@ async def provider_status() -> dict[str, Any]:
                 and settings.telegram_api_id
                 and settings.telegram_api_hash
             ),
+            "telegram_cti": TelegramCTIService().is_configured(),
         },
         "automatic_fallback": False,
         "configuration_status_meaning": (

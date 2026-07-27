@@ -24,7 +24,7 @@ EXPECTED_PROVIDER_ROUTING = {
     "instagram": "apify_instagram_scraper",
     "twitter": "apify_x_scraper",
     "reddit": "apify_reddit_scraper",
-    "linkedin": "bright_data",
+    "linkedin": "apify_linkedin_profile_scraper",
     "facebook": "apify_facebook_scraper",
     "telegram": "existing_telegram_collectors",
     "tiktok": "apify_tiktok_scraper",
