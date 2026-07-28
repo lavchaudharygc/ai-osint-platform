@@ -293,6 +293,8 @@ Targeted Apify routes remain under `/api/v1/apify/...` for X, Reddit post collec
 
 `POST /api/v1/person-search` is separate from username investigations and does not write to investigation history. It builds exact-name SerpAPI queries, strictly accepts only recognized public profile URL shapes, and can enrich a bounded number of candidates with the lightest existing profile collector. Enrichment is an explicit opt-in: `enrich_profiles` defaults to `false`.
 
+In the dashboard, choose **Person Search** in the left sidebar. Its form, readiness check, request state, and profile/username/photo results are isolated from the existing **OSINT Console**. The screen reads `GET /api/v1/person-search/status` when opened, shows the required environment setting when discovery is unavailable, and never submits optional enrichment unless the investigator explicitly enables it.
+
 For quota isolation, configure `PERSON_SEARCH_SERPAPI_KEY` with a separately managed key. Existing investigation/provider credentials and shared provider resources remain unavailable to this feature unless the server operator explicitly sets `PERSON_SEARCH_ALLOW_SHARED_PROVIDER_CREDENTIALS=true`.
 
 ```json

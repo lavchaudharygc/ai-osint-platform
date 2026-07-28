@@ -677,6 +677,9 @@ function logout() {
     
     generateCaseID();
     resetConsoleWorkspace();
+    if (window.PersonSearchUI) {
+        window.PersonSearchUI.reset();
+    }
 }
 
 // Tab Switching router
@@ -702,6 +705,7 @@ function switchTab(tabId) {
 
     const titles = {
         "scan-console": "OSINT Investigation Engine",
+        "person-search": "Cross-Platform Person Search",
         "history-logs": "Investigation Register History",
         "diagnostics": "Diagnostics & Core Services Configuration"
     };
@@ -711,6 +715,8 @@ function switchTab(tabId) {
     
     if (tabId === "history-logs") {
         loadHistoryList();
+    } else if (tabId === "person-search" && window.PersonSearchUI) {
+        window.PersonSearchUI.activate();
     } else if (tabId === "diagnostics") {
         updateHiTekDiagnostics();
     }
