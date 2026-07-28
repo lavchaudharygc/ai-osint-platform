@@ -94,6 +94,7 @@ class PhoneLookupRequest(BaseModel):
 class GitHubProfileRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=39)
     repo_limit: int = Field(default=10, ge=1, le=30)
+    organization_limit: int = Field(default=30, ge=1, le=30)
 
 
 class LinkedInProfileRequest(BaseModel):
@@ -103,6 +104,21 @@ class LinkedInProfileRequest(BaseModel):
 class TikTokProfileRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     max_items: int = Field(default=20, ge=1, le=100)
+
+
+class YouTubeChannelRequest(BaseModel):
+    target: str = Field(..., min_length=1, max_length=500)
+    recent_video_limit: int = Field(default=5, ge=0, le=50)
+
+
+class RedditProfileRequest(BaseModel):
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=20,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+    max_posts: int = Field(default=20, ge=1, le=100)
 
 
 class SearchUsernameRequest(BaseModel):
@@ -119,6 +135,7 @@ class SearchUsernameRequest(BaseModel):
         "facebook",
         "tiktok",
         "github",
+        "youtube",
     ] | None = None
     country_code: str | None = Field(
         default=None,

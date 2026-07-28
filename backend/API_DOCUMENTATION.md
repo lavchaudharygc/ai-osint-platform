@@ -22,18 +22,21 @@ The backend assigns one provider to each external capability:
 | Google dorking/search | SerpAPI |
 | General public web scraping | Bright Data Web Unlocker |
 | Instagram | Existing Apify Instagram Actors |
-| X/Twitter | Existing Apify X Actors |
-| LinkedIn | Bright Data Web Unlocker |
+| X/Twitter profiles and ordinary posts | Apify Scraper One X profile/posts Actor |
+| X/Twitter optional replies/About and explicit search | Apify Apidojo Actors |
+| LinkedIn | Apify LinkedIn profile Actors |
 | Facebook | Existing Apify Facebook Actors |
-| Reddit | Existing Apify Reddit Actor |
+| Reddit public account metadata | Reddit OAuth Data API |
+| Reddit public posts | Existing Apify Reddit Actor |
 | Telegram | Existing public `t.me` and optional read-only MTProto collectors |
 | TikTok | Configurable Apify TikTok Actor |
-| GitHub | GitHub REST API |
+| YouTube | YouTube Data API v3 |
+| GitHub | GitHub REST and GraphQL APIs |
 | Email discovery and verification | Hunter.io |
 | Phone lookup | Twilio Lookup |
 | Structured extraction | Firecrawl Extract API |
 
-Automatic cross-provider fallback is disabled. Missing credentials, quota failures, timeouts, and provider errors are returned by the assigned adapter; they do not cause another vendor to run.
+Automatic cross-vendor fallback is disabled. Missing credentials, quota failures, timeouts, and provider errors are returned by the assigned adapter; they do not cause another vendor to run. The X Actor split and Reddit OAuth-plus-Apify response are intentional capability composition: they do not run because another provider failed.
 
 “Global” in this documentation means worldwide, country-unbiased discovery of
 public sources. It does not mean exhaustive collection. Every investigation is
@@ -50,7 +53,7 @@ Returns:
 - credential/configuration booleans under `configured`;
 - `automatic_fallback: false`; and
 - the active `search_scope`, collection `limits`, safe Telegram/Twilio readiness
-  metadata, persistent-history policy, and `tiktok_actor_id`.
+  metadata, persistent-history policy, and configured public Actor identifiers.
 
 Tokens and API keys are never returned.
 
@@ -65,7 +68,7 @@ request when live validation is required; that request may consume quota.
 
 `POST /api/v1/investigation/username`
 
-Supported primary platforms are `instagram`, `twitter`, `telegram`, `linkedin`, `reddit`, `facebook`, `tiktok`, and `github`.
+Supported primary platforms are `instagram`, `twitter`, `telegram`, `linkedin`, `reddit`, `facebook`, `tiktok`, `github`, and `youtube`.
 
 Example:
 
@@ -108,11 +111,12 @@ Only `username` is required. Optional fields trigger their assigned specialist c
 The backend first probes public profile URLs. The requested primary platform is placed first, and no more than `INVESTIGATION_MAX_SOCIAL_PLATFORMS` paid social platforms are scheduled; the default is four. A selected capability uses only its approved provider:
 
 - Instagram: Apify profile and posts Actors.
-- X/Twitter: Apify profile Actor.
-- LinkedIn: Bright Data Web Unlocker.
-- Reddit: Apify Reddit Actor.
+- X/Twitter: Scraper One for normal profiles/posts; the Apidojo enrichment Actor is used only when replies/About are explicitly requested.
+- LinkedIn: Apify LinkedIn profile collection.
+- Reddit: Reddit OAuth for account metadata and Apify for bounded posts.
 - Facebook: Apify Pages and posts Actors.
 - TikTok: the configured Apify TikTok Actor.
+- YouTube: YouTube Data API v3 channel metadata and a bounded recent-uploads page.
 - Telegram: the existing Telegram collector, with no paid-provider budget unit.
 
 This replaces the previous unconditional all-platform Actor fan-out. Collectors not selected by the public probe and configured limit are returned as `skipped`; budget-denied work is returned as `budget_exhausted`. One provider failure does not erase successful results. The backward-compatible social `summary` counts `total`, `completed`, `empty`, `skipped`, `failed`, and `not_configured` outcomes.
@@ -149,7 +153,7 @@ Specialist outputs are returned under `provider_results.specialized`:
 - `web_scrapes` for Bright Data URLs; and
 - `structured_extraction` for Firecrawl.
 
-`provider_results` is the provider-neutral contract. It contains `routing`, `social`, `specialized`, and `search`. `apify_social_results` remains for backward compatibility, but its normal mode is now `capability_routing`, and it includes non-Apify LinkedIn and Telegram results alongside the Apify actor entries.
+`provider_results` is the provider-neutral contract. It contains `routing`, `social`, `specialized`, and `search`. `apify_social_results` remains for backward compatibility, but its normal mode is `capability_routing`; consumers must not assume every nested result came from Apify because Telegram, Reddit OAuth metadata, and YouTube use their assigned non-Apify APIs.
 
 ### Cache and Execution Metadata
 
@@ -297,20 +301,21 @@ The domain-discovery limit is bounded by `HUNTER_DOMAIN_SEARCH_LIMIT`.
 
 Twilio API key credentials are preferred. Account SID/Auth Token credentials are also supported. Requested data packages may have separate Twilio charges.
 
-### GitHub REST Profile
+### GitHub Profile and Activity
 
 `POST /api/v1/providers/github/profile`
 
 ```json
 {
   "username": "octocat",
-  "repo_limit": 10
+  "repo_limit": 10,
+  "organization_limit": 10
 }
 ```
 
-Returns the public user profile and one bounded page of recently updated owner repositories. `repo_limit` is between 1 and 30.
+Returns the public user profile, one bounded page of recently updated owner repositories, one bounded page of publicly listed organizations, and the default one-year contribution totals. Profile, repository, and organization data use the GitHub REST API; contribution totals use GitHub GraphQL. Both `repo_limit` and `organization_limit` accept 1-30; `organization_limit` is also capped by `GITHUB_ORGANIZATION_LIMIT`. If the profile succeeds but an enrichment call fails, the top-level result is `partial` and preserves the successful sections plus structured errors. Restricted/private contribution details are not exposed.
 
-### Bright Data LinkedIn Profile
+### Apify LinkedIn Profile
 
 `POST /api/v1/providers/linkedin/profile`
 
@@ -318,7 +323,39 @@ Returns the public user profile and one bounded page of recently updated owner r
 {"username": "public-profile-slug"}
 ```
 
-A full `https://www.linkedin.com/in/...` URL is also accepted. No Apify LinkedIn fallback is attempted.
+A full `https://www.linkedin.com/in/...` URL is also accepted.
+
+The direct route and automatic investigation path both use `LinkedInApifyService`. The configured bulk-profile Actor runs first; same-provider Apify profile Actors may be attempted when that Actor yields no usable profile. Bright Data is not used as a LinkedIn profile fallback.
+
+### YouTube Data API Channel
+
+`POST /api/v1/providers/youtube/channel`
+
+```json
+{
+  "target": "@GoogleDevelopers",
+  "recent_video_limit": 5
+}
+```
+
+`target` accepts a channel ID, `@handle`, supported `youtube.com` channel URL, or legacy `/user/` or `/c/` URL. The adapter resolves the channel through `channels.list` using `id`, `forHandle`, or `forUsername` for legacy `/user/` URLs, normalizes channel name, description, public subscriber count, avatar, view count, and video count, then reads the channel's uploads playlist with one bounded `playlistItems.list` request. Legacy `/c/` custom names are attempted as handles because the Data API has no custom-URL lookup parameter. `recent_video_limit` is capped at 50; `0` skips the uploads request. Hidden subscriber counts remain `null` rather than being inferred.
+
+The response uses `not_configured` when `YOUTUBE_API_KEY` is absent, `not_found` when the channel lookup returns no item, `rate_limited` or `quota_exhausted` when YouTube reports those conditions, and `provider_error` for other failed channel requests. Rate-limit responses preserve `Retry-After` metadata for backoff. If channel metadata succeeds but uploads fail, it returns the channel with top-level status `partial` and a structured upload error.
+
+### Reddit OAuth Profile and Apify Posts
+
+`POST /api/v1/providers/reddit/profile`
+
+```json
+{
+  "username": "spez",
+  "max_posts": 20
+}
+```
+
+The profile component uses Reddit application-only OAuth and `/user/{username}/about` to normalize public bio, link/comment/total karma, creation timestamp, account age, avatar, and public account flags. The post component uses the configured Apify Reddit Actor with a bounded `max_posts` value. OAuth access tokens are cached in-process until shortly before expiry and are never returned.
+
+The two components are independent. Missing Reddit OAuth credentials produce structured `not_configured` profile metadata while the Apify post component can still report its own result, and the combined response can be `partial` when only one component succeeds. No anonymous Reddit profile scraping is used.
 
 ### Apify TikTok Profile
 
@@ -345,16 +382,19 @@ The following targeted compatibility routes remain available and can create sepa
 - `POST /api/v1/apify/facebook/pages`
 - `POST /api/v1/apify/facebook/posts`
 
-The legacy Apify LinkedIn routes are not registered. Use `/api/v1/providers/linkedin/profile` for the supported Bright Data LinkedIn capability.
+The legacy Apify LinkedIn bulk/post-search routes are not registered. Use `/api/v1/providers/linkedin/profile` for the supported Apify-backed public-profile capability.
 
 Current social Actor defaults:
 
 ```env
 APIFY_API_TOKEN=your-apify-token
 APIFY_BASE_URL=https://api.apify.com/v2
-APIFY_TWITTER_PROFILE_ACTOR_ID=apidojo/twitter-profile-scraper
+APIFY_TWITTER_PROFILE_ACTOR_ID=scraper_one/x-profile-posts-scraper
+APIFY_TWITTER_ENRICHMENT_ACTOR_ID=apidojo/twitter-profile-scraper
 APIFY_TWITTER_TWEET_ACTOR_ID=apidojo/tweet-scraper
 APIFY_REDDIT_ACTOR_ID=automation-lab/reddit-scraper
+APIFY_LINKEDIN_PROFILE_ACTOR_ID=bebity/linkedin-premium-actor
+APIFY_LINKEDIN_POSTS_ACTOR_ID=apimaestro/linkedin-posts-search-scraper-no-cookies
 APIFY_FACEBOOK_PAGES_ACTOR_ID=apify/facebook-pages-scraper
 APIFY_FACEBOOK_POSTS_ACTOR_ID=apify/facebook-posts-scraper
 APIFY_TIKTOK_ACTOR_ID=clockworks/tiktok-scraper
@@ -375,7 +415,7 @@ SERPAPI_RESULTS_PER_QUERY=5
 # Empty means worldwide/global; set a two-letter code only for case-specific bias.
 SERPAPI_COUNTRY_CODE=
 
-# Bright Data web and LinkedIn
+# Bright Data general web scraping
 BRIGHTDATA_WEB_API_KEY=
 BRIGHTDATA_WEB_BASE_URL=https://api.brightdata.com/request
 BRIGHTDATA_WEB_ZONE=web_unlocker1
@@ -411,6 +451,22 @@ GITHUB_API_BASE_URL=https://api.github.com
 GITHUB_API_VERSION=2026-03-10
 GITHUB_TIMEOUT_SECONDS=15
 GITHUB_REPO_LIMIT=10
+GITHUB_ORGANIZATION_LIMIT=30
+
+# YouTube Data API v3
+YOUTUBE_API_KEY=
+YOUTUBE_API_BASE_URL=https://www.googleapis.com/youtube/v3
+YOUTUBE_TIMEOUT_SECONDS=15
+YOUTUBE_RECENT_VIDEO_LIMIT=5
+
+# Reddit application-only OAuth profile metadata
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+REDDIT_USER_AGENT=
+REDDIT_OAUTH_TOKEN_URL=https://www.reddit.com/api/v1/access_token
+REDDIT_OAUTH_BASE_URL=https://oauth.reddit.com
+REDDIT_TIMEOUT_SECONDS=15
+REDDIT_TOKEN_EXPIRY_SKEW_SECONDS=30
 
 # Optional authorized Telegram session. Third-party bot queries remain off.
 TELEGRAM_MTPROTO_ENABLED=false

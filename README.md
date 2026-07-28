@@ -11,18 +11,21 @@ The current architecture is quota-aware: every external capability has one appro
 | Google dorking/search | SerpAPI |
 | General public web scraping | Bright Data Web Unlocker |
 | Instagram profiles and posts | Existing Apify Instagram Actors |
-| X/Twitter profiles | Existing Apify X Actor |
-| LinkedIn public profiles | Bright Data Web Unlocker |
+| X/Twitter profiles and ordinary posts | Apify Scraper One X profile/posts Actor |
+| X/Twitter optional replies/About enrichment and explicit search | Apify Apidojo Actors |
+| LinkedIn public profiles | Apify LinkedIn profile Actors |
 | Facebook public Pages and posts | Existing Apify Facebook Actors |
-| Reddit public data | Existing Apify Reddit Actor |
+| Reddit public profile metadata | Reddit OAuth Data API |
+| Reddit public posts | Existing Apify Reddit Actor |
 | Telegram | Existing public `t.me` and optional read-only MTProto collectors |
 | TikTok public profiles and recent videos | Configurable Apify TikTok Actor |
-| GitHub profiles and repositories | GitHub REST API |
+| YouTube public channels and recent uploads | YouTube Data API v3 |
+| GitHub profiles, repositories, organizations, and contributions | GitHub REST and GraphQL APIs |
 | Email discovery and verification | Hunter.io |
 | Phone lookup | Twilio Lookup |
 | Structured extraction from explicit URLs | Firecrawl Extract API |
 
-There is no provider loop. A SerpAPI failure does not call Bright Data or Apify; a Bright Data LinkedIn failure does not call an Apify LinkedIn Actor; and a social Actor failure is returned without trying another vendor.
+There is no cross-vendor provider loop. A SerpAPI failure does not call Bright Data or Apify, and a social-provider failure is returned as structured status data. The X Actor split and Reddit OAuth-plus-Apify composition are explicit capability assignments, not failure fallbacks: ordinary X profile/post collection uses Scraper One, optional X replies/About use the configured enrichment Actor, Reddit account metadata uses Reddit OAuth, and Reddit posts use Apify.
 
 `GET /api/v1/providers/status` exposes the active routing and configuration booleans without returning credentials.
 
@@ -30,10 +33,12 @@ There is no provider loop. A SerpAPI failure does not call Bright Data or Apify;
 
 - Public profile discovery across common social, professional, developer, and regional platforms.
 - Capability-routed collection with per-provider provenance and structured partial failures.
-- Instagram, X/Twitter, Reddit, Facebook, and TikTok collection through bounded Apify Actor runs.
-- LinkedIn and general web-page retrieval through Bright Data Web Unlocker.
+- Instagram, X/Twitter, LinkedIn, Reddit posts, Facebook, and TikTok collection through bounded Apify Actor runs.
+- Reddit karma, account age, bio, and avatar collection through the Reddit OAuth Data API.
+- YouTube channel metadata and bounded recent-upload collection through YouTube Data API v3.
+- General public web-page retrieval through Bright Data Web Unlocker.
 - Global-first SerpAPI-only Google dorking with requested-platform priority, category-balanced queries, exact-username filtering, and optional country bias.
-- GitHub REST profile and repository enrichment.
+- GitHub REST profile, repository, and public-organization enrichment plus GraphQL contribution totals.
 - Hunter.io email discovery, finding, and verification.
 - Twilio phone formatting, validation, and optional intelligence packages.
 - Firecrawl structured extraction from small explicit URL sets.
@@ -116,13 +121,26 @@ Core provider secrets:
 SERPAPI_KEY=
 SERPAPI_COUNTRY_CODE=
 
-# General web pages and LinkedIn
+# General public web pages
 BRIGHTDATA_WEB_API_KEY=
 BRIGHTDATA_WEB_ZONE=web_unlocker1
 
-# Instagram, X/Twitter, Reddit, Facebook, and TikTok
+# Instagram, X/Twitter, LinkedIn, Reddit posts, Facebook, and TikTok
 APIFY_API_TOKEN=
+APIFY_TWITTER_PROFILE_ACTOR_ID=scraper_one/x-profile-posts-scraper
+APIFY_TWITTER_ENRICHMENT_ACTOR_ID=apidojo/twitter-profile-scraper
+APIFY_TWITTER_TWEET_ACTOR_ID=apidojo/tweet-scraper
+APIFY_LINKEDIN_PROFILE_ACTOR_ID=bebity/linkedin-premium-actor
+APIFY_LINKEDIN_POSTS_ACTOR_ID=apimaestro/linkedin-posts-search-scraper-no-cookies
 APIFY_TIKTOK_ACTOR_ID=clockworks/tiktok-scraper
+
+# Reddit public account metadata (application-only OAuth)
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+REDDIT_USER_AGENT=
+
+# YouTube public channels and uploads
+YOUTUBE_API_KEY=
 
 # Email
 HUNTER_API_KEY=
@@ -137,8 +155,9 @@ TWILIO_AUTH_TOKEN=
 # Structured extraction
 FIRECRAWL_API_KEY=
 
-# GitHub REST
+# GitHub REST and GraphQL
 GITHUB_TOKEN=
+GITHUB_ORGANIZATION_LIMIT=30
 
 # Optional durable local history (plaintext; default off)
 INVESTIGATION_HISTORY_PERSIST_ENABLED=false
@@ -147,24 +166,29 @@ INVESTIGATION_HISTORY_DB_PATH=./data/investigations.sqlite3
 
 The complete URLs, timeouts, Actor IDs, data-package settings, and limits are in [`backend/.env.example`](backend/.env.example).
 
+Configuration is capability-specific: X and LinkedIn require `APIFY_API_TOKEN`; Reddit metadata requires all of `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and a descriptive `REDDIT_USER_AGENT`, while Reddit posts separately require `APIFY_API_TOKEN`; YouTube requires `YOUTUBE_API_KEY`; and all GitHub REST/GraphQL enrichments require `GITHUB_TOKEN`. Leave unrelated provider credentials empty when those capabilities are not used.
+
 ### Apify Actor Defaults
 
-The approved path keeps the existing social Actors and adds a configurable TikTok Actor:
+The approved Apify defaults are:
 
 | Platform | Actor |
 |---|---|
 | Instagram profile | `apify/instagram-profile-scraper` |
 | Instagram posts | `apify/instagram-scraper` |
-| X/Twitter profile | `apidojo/twitter-profile-scraper` |
+| X/Twitter profile and ordinary posts | `scraper_one/x-profile-posts-scraper` |
+| X/Twitter optional replies/About | `apidojo/twitter-profile-scraper` |
 | X/Twitter explicit search | `apidojo/tweet-scraper` |
 | Reddit | `automation-lab/reddit-scraper` |
+| LinkedIn profiles | `bebity/linkedin-premium-actor` |
+| LinkedIn post search | `apimaestro/linkedin-posts-search-scraper-no-cookies` |
 | Facebook Pages | `apify/facebook-pages-scraper` |
 | Facebook posts | `apify/facebook-posts-scraper` |
 | TikTok | `clockworks/tiktok-scraper`, configurable with `APIFY_TIKTOK_ACTOR_ID` |
 
-LinkedIn is not part of the automatic Apify path; it uses Bright Data.
+LinkedIn uses Apify consistently in automatic investigations and at the direct provider endpoint. Bright Data remains available for explicit general web-page scraping, not as the LinkedIn profile provider.
 
-Automatic X profile collection requests five items and leaves separately billable Replies and About queries off. The explicit X endpoint can opt into those features within hard caps.
+Automatic X profile collection requests five items from Scraper One and leaves separately billable replies/About enrichment off. The explicit X profile endpoint can opt into those features within hard caps, which selects the configured Apidojo enrichment Actor. Explicit X search uses the separate tweet-search Actor.
 
 ## Run an Investigation
 
@@ -184,7 +208,7 @@ Minimal request:
 }
 ```
 
-Supported primary platforms are `instagram`, `twitter`, `telegram`, `linkedin`, `reddit`, `facebook`, `tiktok`, and `github`.
+Supported primary platforms are `instagram`, `twitter`, `telegram`, `linkedin`, `reddit`, `facebook`, `tiktok`, `github`, and `youtube`.
 
 Optional specialist inputs are explicit:
 
@@ -232,11 +256,16 @@ Use these routes when a full investigation is unnecessary:
 | `POST /api/v1/providers/email/find` | Hunter email finder |
 | `POST /api/v1/providers/email/verify` | Hunter email verification |
 | `POST /api/v1/providers/phone/lookup` | Twilio Lookup |
-| `POST /api/v1/providers/github/profile` | GitHub profile and repositories |
-| `POST /api/v1/providers/linkedin/profile` | Bright Data LinkedIn public page |
+| `POST /api/v1/providers/github/profile` | GitHub profile, repositories, organizations, and contribution totals |
+| `POST /api/v1/providers/linkedin/profile` | Apify LinkedIn public profile |
+| `POST /api/v1/providers/youtube/channel` | YouTube channel metadata and recent uploads |
+| `POST /api/v1/providers/reddit/profile` | Reddit OAuth account metadata plus bounded Apify posts |
 | `POST /api/v1/providers/tiktok/profile` | Configured Apify TikTok Actor |
+| `POST /api/v1/apify/twitter/profile` | X profile/posts; optional replies/About select the enrichment Actor |
+| `POST /api/v1/apify/twitter/search` | Explicit bounded X tweet search |
+| `POST /api/v1/apify/reddit/collect` | Explicit Apify-only Reddit post collection |
 
-Targeted Apify routes remain under `/api/v1/apify/...` for X, Reddit, and Facebook; each call can create a separately billable Actor run. LinkedIn is exposed only through the approved Bright Data endpoint.
+Targeted Apify routes remain under `/api/v1/apify/...` for X, Reddit post collection, and Facebook; each call can create a separately billable Actor run. The direct LinkedIn route is Apify-backed. The direct Reddit route combines Reddit OAuth profile metadata with bounded Apify post collection; its two provider components can report partial failure independently.
 
 ## Telegram Privacy Guard
 

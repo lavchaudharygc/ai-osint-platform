@@ -16,6 +16,30 @@ test("AI confidence is evidence-based and preserves zero", () => {
     );
 });
 
+test("actor item counts treat YouTube video aliases as one collection", () => {
+    const videos = [
+        { video_id: "video-1" },
+        { video_id: "video-2" }
+    ];
+
+    assert.equal(
+        mappers.actorItemCount({ recent_videos: videos, videos }),
+        2
+    );
+    assert.equal(
+        mappers.actorItemCount({ recent_videos: [], videos }),
+        2
+    );
+    assert.equal(
+        mappers.actorItemCount({
+            posts: [{ id: "post-1" }],
+            comments: [{ id: "comment-1" }],
+            repositories: [{ id: "repo-1" }]
+        }),
+        3
+    );
+});
+
 test("Telegram invite preview falls back to canonical platform_data", () => {
     const invitePreview = {
         platform: "telegram",
@@ -348,7 +372,12 @@ test("GitHub specialized provider results create a renderable confirmed platform
                         avatar_url: "https://avatars.example/octocat.png",
                         public_repos: 1
                     },
-                    repositories: [{ id: 1, name: "hello-world", stars: 80 }]
+                    repositories: [{ id: 1, name: "hello-world", stars: 80 }],
+                    organizations: [{ id: 2, username: "github" }],
+                    contributions: {
+                        total_contributions: 148,
+                        commit_contributions: 120
+                    }
                 }
             }
         }
@@ -358,9 +387,67 @@ test("GitHub specialized provider results create a renderable confirmed platform
     const [entry] = mappers.buildPlatformEntries(response);
     assert.equal(github.full_name, "The Octocat");
     assert.equal(github.repositories[0].name, "hello-world");
+    assert.equal(github.organizations[0].username, "github");
+    assert.equal(github.contributions.total_contributions, 148);
     assert.equal(entry.platform, "github");
     assert.equal(entry.exists, true);
     assert.equal(entry.scraper_confirmed, true);
+});
+
+test("provider-neutral YouTube and Reddit results expose channel and OAuth-plus-activity data", () => {
+    const response = {
+        provider_results: {
+            social: {
+                reddit: {
+                    success: true,
+                    status: "completed",
+                    exists: true,
+                    platform: "reddit",
+                    username: "canonical_redditor",
+                    bio: "OAuth profile biography",
+                    total_karma: 15123,
+                    account_age_days: 3650,
+                    profile: {
+                        avatar_url: "https://styles.redditmedia.com/avatar.png"
+                    },
+                    posts: [{ id: "reddit-post", title: "Public submission" }]
+                },
+                youtube: {
+                    success: true,
+                    status: "completed",
+                    exists: true,
+                    platform: "youtube",
+                    username: "canonicalchannel",
+                    full_name: "Canonical YouTube Channel",
+                    subscriber_count: 1234,
+                    channel: {
+                        channel_id: "UC1234567890123456789012",
+                        published_at: "2018-05-04T10:00:00Z"
+                    },
+                    recent_videos: [{
+                        video_id: "video-1",
+                        url: "https://www.youtube.com/watch?v=video-1",
+                        title: "Recent video"
+                    }]
+                }
+            }
+        }
+    };
+
+    const reddit = mappers.getRenderablePlatformData(response, "reddit");
+    const youtube = mappers.getRenderablePlatformData(response, "youtube");
+    const entries = mappers.buildPlatformEntries(response);
+
+    assert.equal(reddit.bio, "OAuth profile biography");
+    assert.equal(reddit.total_karma, 15123);
+    assert.equal(reddit.avatar_url, "https://styles.redditmedia.com/avatar.png");
+    assert.equal(reddit.posts[0].id, "reddit-post");
+    assert.equal(youtube.full_name, "Canonical YouTube Channel");
+    assert.equal(youtube.channel_id, "UC1234567890123456789012");
+    assert.equal(youtube.recent_videos[0].title, "Recent video");
+    assert.equal(youtube.posts[0].video_id, "video-1");
+    assert.equal(entries.find(entry => entry.platform === "reddit").scraper_confirmed, true);
+    assert.equal(entries.find(entry => entry.platform === "youtube").scraper_confirmed, true);
 });
 
 test("production frontend contains no hard-coded 65 percent AI fallback", () => {

@@ -27,6 +27,7 @@
         "provider_error", "orchestration_error", "error", "failed",
         "timeout", "timed-out", "aborted"
     ]);
+    const SPECIALIZED_PLATFORM_KEYS = new Set(["github", "reddit", "youtube"]);
 
     function firstDefined(...values) {
         return values.find(value => value !== undefined && value !== null && value !== "");
@@ -139,19 +140,24 @@
         return [];
     }
 
+    function specializedPlatformSources(response, platform) {
+        const normalizedPlatform = String(platform || "").toLowerCase();
+        if (!SPECIALIZED_PLATFORM_KEYS.has(normalizedPlatform)
+            || !isRecord(response)
+            || !isRecord(response.provider_results)
+            || !isRecord(response.provider_results.specialized)
+            || !isRecord(response.provider_results.specialized[normalizedPlatform])) {
+            return [];
+        }
+        return [response.provider_results.specialized[normalizedPlatform]];
+    }
+
     function providerSourcesFor(response, platform) {
         const normalizedPlatform = String(platform || "").toLowerCase();
         const neutralSources = neutralPlatformSources(response, normalizedPlatform);
-        if (neutralSources !== null) return neutralSources;
-
-        if (normalizedPlatform === "github"
-            && isRecord(response)
-            && isRecord(response.provider_results)
-            && isRecord(response.provider_results.specialized)
-            && isRecord(response.provider_results.specialized.github)) {
-            return [response.provider_results.specialized.github];
-        }
-        return legacyPlatformSources(response, normalizedPlatform);
+        const specializedSources = specializedPlatformSources(response, normalizedPlatform);
+        if (neutralSources !== null) return [...neutralSources, ...specializedSources];
+        return [...legacyPlatformSources(response, normalizedPlatform), ...specializedSources];
     }
 
     function resolveTelegramData(response) {
@@ -179,7 +185,10 @@
         if (normalizedPlatform === "facebook") {
             return firstList(payload.pages)[0] || payload.page || payload.profile || {};
         }
-        if (["tiktok", "github"].includes(normalizedPlatform)) {
+        if (normalizedPlatform === "youtube") {
+            return payload.channel || payload.profile || {};
+        }
+        if (["tiktok", "github", "reddit"].includes(normalizedPlatform)) {
             return payload.profile || {};
         }
         return payload.profile || {};
@@ -251,7 +260,12 @@
             ...domainPayload(primary)
         };
 
-        const actorPosts = actorSources.flatMap(source => firstList(source.posts, source.recent_posts));
+        const actorPosts = actorSources.flatMap(source => firstList(
+            source.posts,
+            source.recent_posts,
+            source.recent_videos,
+            source.videos
+        ));
         const actorTweets = actorSources.flatMap(source => firstList(source.tweets, source.recent_posts));
         const actorReplies = actorSources.flatMap(source => asList(source.replies));
         const actorComments = actorSources.flatMap(source => asList(source.comments));
@@ -318,7 +332,11 @@
         const status = String(payload.status || "").toLowerCase();
         if (payload.exists === false || NON_EVIDENCE_STATUSES.has(status)) return false;
         if (payload.exists === true) return true;
-        const hasContent = ["posts", "tweets", "replies", "comments", "recent_posts", "profiles", "pages", "repositories"].some(
+        const hasContent = [
+            "posts", "tweets", "replies", "comments", "recent_posts",
+            "recent_videos", "videos", "profiles", "pages", "repositories",
+            "organizations"
+        ].some(
             key => Array.isArray(payload[key]) && payload[key].length > 0
         );
         if (hasContent) return true;
@@ -330,29 +348,30 @@
         const hasIdentityMetadata = [
             "full_name", "display_name", "name", "bio", "description",
             "profile_pic_url", "profile_pic_hd", "profile_url", "avatar_url",
-            "follower_count", "member_count", "subscriber_count", "public_repos"
+            "follower_count", "member_count", "subscriber_count", "public_repos",
+            "channel_id", "channel_name", "video_count", "total_karma",
+            "account_created_at"
         ].some(key => payload[key] !== undefined && payload[key] !== null && payload[key] !== "");
         return payload.success === true && hasIdentityMetadata;
     }
 
     function profileProviderSourcesFor(response, platform) {
         const normalizedPlatform = String(platform || "").toLowerCase();
+        const specializedSources = specializedPlatformSources(response, normalizedPlatform);
         const social = neutralSocialMap(response);
         if (social && Object.prototype.hasOwnProperty.call(social, normalizedPlatform)) {
             const payload = social[normalizedPlatform];
-            if (!isRecord(payload)) return [];
+            if (!isRecord(payload)) return specializedSources;
             if (["instagram", "facebook"].includes(normalizedPlatform)) {
-                return isRecord(payload.profile) ? [payload.profile] : [];
+                return [
+                    ...(isRecord(payload.profile) ? [payload.profile] : []),
+                    ...specializedSources
+                ];
             }
-            return [payload];
+            return [payload, ...specializedSources];
         }
 
-        if (normalizedPlatform === "github"
-            && isRecord(response.provider_results)
-            && isRecord(response.provider_results.specialized)
-            && isRecord(response.provider_results.specialized.github)) {
-            return [response.provider_results.specialized.github];
-        }
+        if (specializedSources.length > 0) return specializedSources;
 
         const actors = response.apify_social_results && response.apify_social_results.actors;
         const actorMap = isRecord(actors) ? actors : {};
@@ -426,9 +445,14 @@
             Object.keys(neutralSocial).forEach(platform => candidates.add(platform.toLowerCase()));
         }
         if (isRecord(response.provider_results)
-            && isRecord(response.provider_results.specialized)
-            && isRecord(response.provider_results.specialized.github)) {
-            candidates.add("github");
+            && isRecord(response.provider_results.specialized)) {
+            Object.keys(response.provider_results.specialized).forEach(platform => {
+                const normalizedPlatform = platform.toLowerCase();
+                if (SPECIALIZED_PLATFORM_KEYS.has(normalizedPlatform)
+                    && isRecord(response.provider_results.specialized[platform])) {
+                    candidates.add(normalizedPlatform);
+                }
+            });
         }
 
         candidates.forEach(platform => {
@@ -465,8 +489,18 @@
 
     function actorItemCount(actor) {
         if (!isRecord(actor)) return 0;
-        const keys = ["posts", "tweets", "replies", "comments", "pages", "profiles", "companies", "reels", "repositories"];
-        const arrayTotal = keys.reduce((total, key) => total + asList(actor[key]).length, 0);
+        const keys = [
+            "posts", "tweets", "replies", "comments", "pages", "profiles",
+            "companies", "reels", "repositories", "organizations"
+        ];
+        // YouTube exposes the same bounded collection through both canonical
+        // aliases. Count the first populated alias once instead of inflating
+        // collection coverage when both fields are present.
+        const videoTotal = firstList(actor.recent_videos, actor.videos).length;
+        const arrayTotal = keys.reduce(
+            (total, key) => total + asList(actor[key]).length,
+            videoTotal
+        );
         if (arrayTotal > 0) return arrayTotal;
         const reported = Number(firstDefined(actor.total, actor.result_count, 0));
         return Number.isFinite(reported) ? reported : 0;

@@ -6,12 +6,19 @@ from unittest.mock import AsyncMock, patch
 
 from backend.api.endpoints import investigation as investigation_endpoint
 from backend.api.endpoints import providers as providers_endpoint
+from backend.core.config import Settings
 from backend.main import app
 from backend.schemas.investigation import (
     InvestigationResponse,
     UsernameInvestigationRequest,
 )
-from backend.schemas.providers import SearchUsernameRequest
+from backend.schemas.providers import (
+    GitHubProfileRequest,
+    LinkedInProfileRequest,
+    RedditProfileRequest,
+    SearchUsernameRequest,
+    YouTubeChannelRequest,
+)
 from backend.services.investigation_policy import (
     ProviderCallBudget,
     request_cache_key,
@@ -22,13 +29,14 @@ EXPECTED_PROVIDER_ROUTING = {
     "google_search": "serpapi",
     "web_scraping": "bright_data",
     "instagram": "apify_instagram_scraper",
-    "twitter": "apify_x_scraper",
-    "reddit": "apify_reddit_scraper",
+    "twitter": "apify_x_profile_posts_plus_optional_enrichment",
+    "reddit": "reddit_oauth_plus_apify",
     "linkedin": "apify_linkedin_profile_scraper",
     "facebook": "apify_facebook_scraper",
     "telegram": "existing_telegram_collectors",
     "tiktok": "apify_tiktok_scraper",
-    "github": "github_rest_api",
+    "github": "github_rest_plus_graphql",
+    "youtube": "youtube_data_api_v3",
     "email": "hunter_io",
     "phone": "twilio_lookup",
     "structured_extraction": "firecrawl",
@@ -44,6 +52,8 @@ EXPECTED_PROVIDER_ROUTES = {
     "/api/v1/providers/email/verify",
     "/api/v1/providers/phone/lookup",
     "/api/v1/providers/github/profile",
+    "/api/v1/providers/youtube/channel",
+    "/api/v1/providers/reddit/profile",
     "/api/v1/providers/linkedin/profile",
     "/api/v1/providers/tiktok/profile",
 }
@@ -57,6 +67,29 @@ class ProviderEndpointPolicyTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         providers_endpoint._PROVIDER_CACHE.clear()
         providers_endpoint._PROVIDER_INFLIGHT.clear()
+
+    def test_successful_partial_results_are_cacheable_but_failures_are_not(self) -> None:
+        self.assertTrue(
+            providers_endpoint._cacheable_result(
+                {"success": True, "status": "partial"}
+            )
+        )
+        self.assertFalse(
+            providers_endpoint._cacheable_result(
+                {"success": False, "status": "partial"}
+            )
+        )
+
+    def test_github_organization_limit_matches_the_service_page_bound(self) -> None:
+        request = GitHubProfileRequest(username="octocat", organization_limit=30)
+        configured = Settings(_env_file=None, GITHUB_ORGANIZATION_LIMIT=30)
+
+        self.assertEqual(request.organization_limit, 30)
+        self.assertEqual(configured.github_organization_limit, 30)
+        with self.assertRaises(ValueError):
+            GitHubProfileRequest(username="octocat", organization_limit=31)
+        with self.assertRaises(ValueError):
+            Settings(_env_file=None, GITHUB_ORGANIZATION_LIMIT=31)
 
     async def test_routes_and_status_expose_approved_routing_without_secrets(self) -> None:
         self.assertTrue(EXPECTED_PROVIDER_ROUTES.issubset(app.openapi()["paths"]))
@@ -87,9 +120,12 @@ class ProviderEndpointPolicyTests(unittest.IsolatedAsyncioTestCase):
             patch.object(providers_endpoint, "TwilioLookupService") as twilio,
             patch.object(providers_endpoint, "FirecrawlService") as firecrawl,
             patch.object(providers_endpoint, "GitHubService") as github,
+            patch.object(providers_endpoint, "RedditService") as reddit,
+            patch.object(providers_endpoint, "YouTubeService") as youtube,
         ):
-            for service in (bright_data, hunter, twilio, firecrawl, github):
+            for service in (bright_data, hunter, twilio, firecrawl, github, youtube):
                 service.return_value.is_configured.return_value = True
+            reddit.return_value.profile_service.is_configured.return_value = True
             status = await providers_endpoint.provider_status()
 
         self.assertEqual(status["routing"], EXPECTED_PROVIDER_ROUTING)
@@ -148,6 +184,69 @@ class ProviderEndpointPolicyTests(unittest.IsolatedAsyncioTestCase):
             limit=3,
             preferred_platform=None,
             country_code=None,
+        )
+
+    async def test_multiplatform_direct_routes_use_the_integrated_collectors(self) -> None:
+        github_result = {"success": True, "status": "completed", "platform": "github"}
+        youtube_result = {"success": True, "status": "completed", "platform": "youtube"}
+        reddit_result = {"success": True, "status": "completed", "platform": "reddit"}
+        linkedin_result = {"success": True, "status": "completed", "platform": "linkedin"}
+
+        with (
+            patch.object(providers_endpoint, "GitHubService") as github_class,
+            patch.object(providers_endpoint, "YouTubeService") as youtube_class,
+            patch.object(providers_endpoint, "RedditService") as reddit_class,
+            patch.object(providers_endpoint, "LinkedInApifyService") as linkedin_class,
+        ):
+            github_class.return_value.get_profile = AsyncMock(return_value=github_result)
+            youtube_class.return_value.get_channel = AsyncMock(return_value=youtube_result)
+            reddit_class.return_value.get_profile = AsyncMock(return_value=reddit_result)
+            linkedin_class.return_value.get_profile = AsyncMock(return_value=linkedin_result)
+
+            self.assertEqual(
+                await providers_endpoint.github_profile(
+                    GitHubProfileRequest(
+                        username="octocat",
+                        repo_limit=7,
+                        organization_limit=11,
+                    )
+                ),
+                github_result,
+            )
+            self.assertEqual(
+                await providers_endpoint.youtube_channel(
+                    YouTubeChannelRequest(target="@GoogleDevelopers", recent_video_limit=4)
+                ),
+                youtube_result,
+            )
+            self.assertEqual(
+                await providers_endpoint.reddit_profile(
+                    RedditProfileRequest(username="example_user", max_posts=9)
+                ),
+                reddit_result,
+            )
+            self.assertEqual(
+                await providers_endpoint.linkedin_profile(
+                    LinkedInProfileRequest(username="example-user")
+                ),
+                linkedin_result,
+            )
+
+        github_class.return_value.get_profile.assert_awaited_once_with(
+            "octocat",
+            repo_limit=7,
+            organization_limit=11,
+        )
+        youtube_class.return_value.get_channel.assert_awaited_once_with(
+            "@GoogleDevelopers",
+            recent_video_limit=4,
+        )
+        reddit_class.return_value.get_profile.assert_awaited_once_with(
+            "example_user",
+            max_posts=9,
+        )
+        linkedin_class.return_value.get_profile.assert_awaited_once_with(
+            "example-user"
         )
 
 
@@ -401,12 +500,12 @@ class SpecializedProviderBudgetTests(unittest.IsolatedAsyncioTestCase):
             extraction_prompt="Extract the public profile.",
             cache_mode="bypass",
         )
-        budget = ProviderCallBudget(maximum=2)
+        budget = ProviderCallBudget(maximum=4)
         github_result = {
             "success": True,
             "configured": True,
             "status": "completed",
-            "provider": "github_rest",
+            "provider": "github_rest_plus_graphql",
             "profile": {"username": "target-user"},
             "repositories": [],
         }
@@ -448,6 +547,7 @@ class SpecializedProviderBudgetTests(unittest.IsolatedAsyncioTestCase):
         github.get_profile.assert_awaited_once_with(
             "target-user",
             repo_limit=providers_endpoint.settings.github_repo_limit,
+            organization_limit=providers_endpoint.settings.github_organization_limit,
         )
         hunter.verify_email.assert_not_awaited()
         hunter.find_email.assert_not_awaited()
@@ -462,11 +562,11 @@ class SpecializedProviderBudgetTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["contact"]["phone_lookup"]["status"], "budget_exhausted")
         self.assertEqual(result["web_scrapes"][0]["status"], "budget_exhausted")
         self.assertEqual(result["structured_extraction"]["status"], "budget_exhausted")
-        self.assertEqual(budget.used, 2)
+        self.assertEqual(budget.used, 4)
         self.assertEqual(budget.remaining, 0)
         self.assertEqual(
             budget.reservations,
-            [{"capability": "specialized.github", "calls": 2}],
+            [{"capability": "specialized.github", "calls": 4}],
         )
         self.assertEqual(
             [item["capability"] for item in budget.skipped],

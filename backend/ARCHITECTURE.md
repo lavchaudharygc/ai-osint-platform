@@ -9,20 +9,39 @@ The backend uses capability-based routing. Each external capability has one appr
 | Google dorking/search | SerpAPI | `GoogleDorkingService` |
 | General public web scraping | Bright Data Web Unlocker | `BrightDataWebService` |
 | Instagram profile and posts | Existing Apify Instagram Actors | `InstagramProfileService`, `InstagramPostsService` |
-| X/Twitter profile data | Existing Apify X Actor | `TwitterApifyService` |
-| LinkedIn public profile pages | Bright Data Web Unlocker | `LinkedInBrightDataService` |
+| X/Twitter profiles and ordinary posts | Apify Scraper One X profile/posts Actor | `TwitterApifyService` |
+| X/Twitter optional replies/About and explicit search | Apify Apidojo enrichment/search Actors | `TwitterApifyService` |
+| LinkedIn public profile pages | Apify LinkedIn profile Actors | `LinkedInApifyService` |
 | Facebook public Page data and posts | Existing Apify Facebook Actors | `FacebookApifyService` |
-| Reddit public data | Existing Apify Reddit Actor | `RedditApifyService` |
+| Reddit public account metadata | Reddit OAuth Data API | `RedditProfileService` |
+| Reddit public posts | Existing Apify Reddit Actor | `RedditApifyService` |
 | Telegram | Existing public `t.me` and optional read-only MTProto collectors | `TelegramDataService`, `TelegramMTProtoService` |
 | TikTok public profile and recent videos | Configurable Apify TikTok Actor | `TikTokApifyService` |
-| GitHub public profile and repositories | GitHub REST API | `GitHubService` |
+| YouTube public channel and recent uploads | YouTube Data API v3 | `YouTubeService` |
+| GitHub public profile, repositories, organizations, and contributions | GitHub REST and GraphQL APIs | `GitHubService` |
 | Email discovery, finding, and verification | Hunter.io | `HunterService` |
 | Phone formatting and intelligence | Twilio Lookup | `TwilioLookupService` |
 | Structured extraction from explicit URLs | Firecrawl Extract API | `FirecrawlService` |
 
-`GET /api/v1/providers/status` returns this routing map, credential-presence booleans, global/country search scope, quota ceilings, safe Telegram/Twilio modes, `automatic_fallback: false`, and the configured TikTok Actor ID. It does not make live provider calls and never includes credentials.
+`GET /api/v1/providers/status` returns this routing map, credential-presence booleans, global/country search scope, quota ceilings, safe Telegram/Twilio modes, `automatic_fallback: false`, and configured public Actor identifiers. It does not make live provider calls and never includes credentials.
 
-Legacy targeted routes under `/api/v1/apify/...` still exist for compatibility and testing. They do not define the automatic investigation architecture. In particular, LinkedIn investigations use Bright Data, and Google search uses SerpAPI.
+Targeted routes under `/api/v1/apify/...` remain for direct X, Reddit-post, and Facebook Actor operations. They do not redefine automatic routing. LinkedIn uses Apify in both investigations and its provider route, general explicit web scraping uses Bright Data, and Google search uses SerpAPI.
+
+The two intentional provider splits are capability-level composition rather than retry fallback:
+
+- X profile/post collection normally uses `APIFY_TWITTER_PROFILE_ACTOR_ID`. Only an explicit replies/About request selects `APIFY_TWITTER_ENRICHMENT_ACTOR_ID`; explicit tweet search uses `APIFY_TWITTER_TWEET_ACTOR_ID`.
+- Reddit profile metadata comes from application-only OAuth at `/user/{username}/about`; Reddit post history comes from `APIFY_REDDIT_ACTOR_ID`. A combined result may be `partial` when one component succeeds and the other does not.
+
+Relevant configuration names are:
+
+| Capability | Required credentials | Optional endpoint, timeout, or limit settings |
+|---|---|---|
+| Apify social collection, including X, LinkedIn, and Reddit posts | `APIFY_API_TOKEN` | `APIFY_BASE_URL`, `APIFY_TWITTER_PROFILE_ACTOR_ID`, `APIFY_TWITTER_ENRICHMENT_ACTOR_ID`, `APIFY_TWITTER_TWEET_ACTOR_ID`, `APIFY_LINKEDIN_PROFILE_ACTOR_ID`, `APIFY_LINKEDIN_POSTS_ACTOR_ID`, `APIFY_REDDIT_ACTOR_ID` |
+| Reddit profile metadata | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` | `REDDIT_OAUTH_TOKEN_URL`, `REDDIT_OAUTH_BASE_URL`, `REDDIT_TIMEOUT_SECONDS`, `REDDIT_TOKEN_EXPIRY_SKEW_SECONDS` |
+| YouTube channels and uploads | `YOUTUBE_API_KEY` | `YOUTUBE_API_BASE_URL`, `YOUTUBE_TIMEOUT_SECONDS`, `YOUTUBE_RECENT_VIDEO_LIMIT` |
+| GitHub identity and activity | `GITHUB_TOKEN` | `GITHUB_API_BASE_URL`, `GITHUB_API_VERSION`, `GITHUB_TIMEOUT_SECONDS`, `GITHUB_REPO_LIMIT`, `GITHUB_ORGANIZATION_LIMIT` |
+
+Credentials are read from `backend/.env` or the process environment and must not be committed.
 
 ## Investigation Flow
 
@@ -31,8 +50,8 @@ Legacy targeted routes under `/api/v1/apify/...` still exist for compatibility a
 3. Return a fresh cache hit when `cache_mode` is `use`.
 4. Reserve bounded provider-call units before paid work is scheduled.
 5. Probe public profile URLs and prioritize the requested primary platform.
-6. Collect at most four paid social platforms by default. Telegram retains its existing collector and does not consume a paid-provider unit.
-7. Run explicitly requested specialist work: Hunter, Twilio, Bright Data web scraping, Firecrawl extraction, and GitHub when selected or discovered.
+6. Collect at most four paid social platforms by default. Telegram retains its existing collector and does not consume a paid-provider unit. Reddit composes OAuth profile metadata with bounded Apify posts; YouTube resolves a public channel and reads one bounded uploads-playlist page.
+7. Run explicitly requested specialist work: Hunter, Twilio, Bright Data web scraping, Firecrawl extraction, and GitHub when selected or discovered. GitHub reads the profile first, then concurrently requests bounded repositories, public organizations, and GraphQL contribution totals.
 8. Run a global-first, requested-platform-prioritized, category-balanced SerpAPI plan of at most ten queries, subject to the remaining provider-call budget. Country bias is optional.
 9. Normalize provider results, separate reachable candidates from collected profiles and corroborated identities, and assess risk only from bounded public evidence.
 10. Cache the completed response unless `cache_mode` is `bypass`.
@@ -85,6 +104,8 @@ Authorized Telegram username lookup does not query third-party bots unless `TELE
 - Provider adapters accept only the minimum target data needed for their capability.
 - Bright Data and Firecrawl routes reject localhost, credentials in URLs, and private or reserved IP literals.
 - Provider errors are bounded and normalized; secrets are not returned.
+- Reddit OAuth client credentials and access tokens remain server-side. The normalized response exposes public account metadata and rate-limit state, never OAuth secrets.
+- YouTube collection is limited to public channel metadata and one bounded recent-uploads page. Private videos and private subscriber information are not inferred.
 - Same-username results are identity candidates, not proof. Human corroboration is required.
 - HTTP reachability, collector-confirmed presence, independently corroborated identity, and direct identity evidence are separate result tiers.
 - AI correlation text cannot override deterministic evidence scoring. Elevated automated risk requires a substantial exact quote, a valid evidence source reference, and a narrow explicit harmful-conduct signal; otherwise the result is `unknown`.

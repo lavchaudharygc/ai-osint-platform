@@ -337,6 +337,40 @@ class GitHubServiceTests(unittest.IsolatedAsyncioTestCase):
                         }
                     ],
                 )
+            if request.url.path == "/users/octocat/orgs":
+                return httpx.Response(
+                    200,
+                    json=[
+                        {
+                            "id": 20,
+                            "login": "github",
+                            "description": "How people build software",
+                            "avatar_url": "https://avatars.example/github.png",
+                            "url": "https://api.github.test/orgs/github",
+                        }
+                    ],
+                )
+            if request.url.path == "/graphql":
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": {
+                            "user": {
+                                "contributionsCollection": {
+                                    "startedAt": "2025-07-28T00:00:00Z",
+                                    "endedAt": "2026-07-28T00:00:00Z",
+                                    "hasAnyRestrictedContributions": True,
+                                    "restrictedContributionsCount": 3,
+                                    "totalCommitContributions": 120,
+                                    "totalIssueContributions": 4,
+                                    "totalPullRequestContributions": 12,
+                                    "totalPullRequestReviewContributions": 9,
+                                    "contributionCalendar": {"totalContributions": 148},
+                                }
+                            }
+                        }
+                    },
+                )
             raise AssertionError(f"Unexpected request: {request.url}")
 
         service = GitHubService(
@@ -348,7 +382,7 @@ class GitHubServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         result = await service.get_profile(" @octocat ", repo_limit=99)
 
-        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(requests), 4)
         for request in requests:
             self.assertEqual(request.headers["Accept"], "application/vnd.github+json")
             self.assertEqual(request.headers["Authorization"], "Bearer github-secret")
@@ -362,10 +396,91 @@ class GitHubServiceTests(unittest.IsolatedAsyncioTestCase):
             "per_page": "5",
             "page": "1",
         })
+        orgs_request = next(request for request in requests if request.url.path.endswith("/orgs"))
+        self.assertEqual(dict(orgs_request.url.params), {
+            "per_page": "30",
+            "page": "1",
+        })
+        graphql_request = next(request for request in requests if request.url.path == "/graphql")
+        self.assertEqual(graphql_request.method, "POST")
+        graphql_body = json.loads(graphql_request.content)
+        self.assertEqual(graphql_body["variables"], {"login": "octocat"})
+        self.assertIn("contributionsCollection", graphql_body["query"])
         self.assertEqual(result["profile"]["full_name"], "The Octocat")
         self.assertEqual(result["repositories"][0]["stars"], 80)
         self.assertEqual(result["repositories"][0]["license"], "MIT")
+        self.assertEqual(result["organizations"][0]["username"], "github")
+        self.assertEqual(result["organization_count"], 1)
+        self.assertEqual(result["contributions"]["total_contributions"], 148)
+        self.assertEqual(result["contributions"]["commit_contributions"], 120)
+        self.assertTrue(result["contributions"]["has_restricted_contributions"])
+        self.assertEqual(result["status"], "completed")
         self.assertNotIn("github-secret", json.dumps(result, allow_nan=False))
+
+    async def test_enrichment_failures_return_partial_profile_without_losing_successes(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/users/octocat":
+                return httpx.Response(200, json={"id": 1, "login": "octocat"})
+            if request.url.path == "/users/octocat/repos":
+                return httpx.Response(
+                    200,
+                    json=[{"id": 10, "name": "survives", "stargazers_count": 5}],
+                )
+            if request.url.path == "/users/octocat/orgs":
+                return httpx.Response(503, json={"message": "Organizations unavailable"})
+            if request.url.path == "/graphql":
+                return httpx.Response(
+                    200,
+                    json={"errors": [{"message": "Contributions unavailable"}]},
+                )
+            raise AssertionError(f"Unexpected request: {request.url}")
+
+        result = await GitHubService(
+            token="github-secret",
+            base_url="https://github.test",
+            transport=httpx.MockTransport(handler),
+        ).get_profile("octocat")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["profile"]["username"], "octocat")
+        self.assertEqual(result["repositories"][0]["name"], "survives")
+        self.assertEqual(result["organizations"], [])
+        self.assertIsNone(result["contributions"])
+        self.assertEqual(
+            [error["message"] for error in result["errors"]],
+            ["Organizations unavailable", "Contributions unavailable"],
+        )
+
+    async def test_graphql_partial_errors_preserve_available_contribution_data(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "user": {
+                            "contributionsCollection": {
+                                "totalCommitContributions": 7,
+                                "contributionCalendar": {"totalContributions": 9},
+                            }
+                        }
+                    },
+                    "errors": [{"message": "Some private data was unavailable"}],
+                },
+            )
+
+        result = await GitHubService(
+            token="github-secret",
+            base_url="https://github.test",
+            transport=httpx.MockTransport(handler),
+        ).get_contributions("octocat")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["provider"], "github_graphql")
+        self.assertEqual(result["contributions"]["total_contributions"], 9)
+        self.assertEqual(result["contributions"]["commit_contributions"], 7)
+        self.assertEqual(result["error"]["code"], "provider_partial_error")
 
     async def test_missing_github_token_prevents_unauthenticated_calls(self) -> None:
         calls = 0

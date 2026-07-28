@@ -15,22 +15,26 @@ from backend.schemas.providers import (
     GitHubProfileRequest,
     LinkedInProfileRequest,
     PhoneLookupRequest,
+    RedditProfileRequest,
     SearchUsernameRequest,
     StructuredExtractRequest,
     TikTokProfileRequest,
     WebScrapeRequest,
+    YouTubeChannelRequest,
 )
 from backend.services.brightdata_web_service import BrightDataWebService
 from backend.services.firecrawl_service import FirecrawlService
 from backend.services.github_service import GitHubService
 from backend.services.google_dorking import GoogleDorkingService
 from backend.services.hunter_service import HunterService
-from backend.services.linkedin_brightdata_service import LinkedInBrightDataService
+from backend.services.linkedin_apify_service import LinkedInApifyService
+from backend.services.reddit_service import RedditService
 from backend.services.investigation_policy import InvestigationResultCache, request_cache_key
 from backend.services.tiktok_apify_service import TikTokApifyService
 from backend.services.twilio_lookup_service import TwilioLookupService
 from backend.services.telegram_mtproto_service import TelegramMTProtoService
 from backend.services.telegram_cti_service import TelegramCTIService
+from backend.services.youtube_service import YouTubeService
 
 
 router = APIRouter(prefix="/api/v1/providers", tags=["capability-providers"])
@@ -44,6 +48,8 @@ _PROVIDER_INFLIGHT: dict[str, asyncio.Task[dict[str, Any]]] = {}
 def _cacheable_result(result: dict[str, Any]) -> bool:
     return result.get("success") is not False and str(result.get("status") or "").casefold() in {
         "completed",
+        "completed_with_warnings",
+        "partial",
         "empty_dataset",
         "not_found",
     }
@@ -91,6 +97,8 @@ async def _cached_call(
 async def provider_status() -> dict[str, Any]:
     """Expose routing and configuration state without returning credentials."""
     twilio = TwilioLookupService()
+    reddit = RedditService()
+    youtube = YouTubeService()
     telegram_authorized = TelegramMTProtoService().status()
     twilio_credential_mode = getattr(twilio, "credential_type", None)
     if twilio_credential_mode not in {"api_key", "account_sid", None}:
@@ -103,13 +111,14 @@ async def provider_status() -> dict[str, Any]:
             "google_search": "serpapi",
             "web_scraping": "bright_data",
             "instagram": "apify_instagram_scraper",
-            "twitter": "apify_x_scraper",
-            "reddit": "apify_reddit_scraper",
+            "twitter": "apify_x_profile_posts_plus_optional_enrichment",
+            "reddit": "reddit_oauth_plus_apify",
             "linkedin": "apify_linkedin_profile_scraper",
             "facebook": "apify_facebook_scraper",
             "telegram": "existing_telegram_collectors",
             "tiktok": "apify_tiktok_scraper",
-            "github": "github_rest_api",
+            "github": "github_rest_plus_graphql",
+            "youtube": "youtube_data_api_v3",
             "email": "hunter_io",
             "phone": "twilio_lookup",
             "structured_extraction": "firecrawl",
@@ -122,6 +131,8 @@ async def provider_status() -> dict[str, Any]:
             "twilio_lookup": twilio.is_configured(),
             "firecrawl": FirecrawlService().is_configured(),
             "github_rest": GitHubService().is_configured(),
+            "reddit_oauth": reddit.profile_service.is_configured(),
+            "youtube_data_api": youtube.is_configured(),
             # Public t.me metadata lookup is always available; credentials only
             # control the existing optional authorized MTProto path.
             "telegram": True,
@@ -165,6 +176,11 @@ async def provider_status() -> dict[str, Any]:
             "apify_tiktok_actor_id",
             "clockworks/tiktok-scraper",
         ),
+        "twitter_actor_ids": {
+            "profile_posts": settings.apify_twitter_profile_actor_id,
+            "optional_enrichment": settings.apify_twitter_enrichment_actor_id,
+        },
+        "linkedin_actor_id": settings.apify_linkedin_profile_actor_id,
     }
 
 
@@ -265,7 +281,34 @@ async def github_profile(request: GitHubProfileRequest) -> dict[str, Any]:
         lambda: GitHubService().get_profile(
             request.username,
             repo_limit=request.repo_limit,
+            organization_limit=request.organization_limit,
         )
+    )
+
+
+@router.post("/youtube/channel")
+async def youtube_channel(request: YouTubeChannelRequest) -> dict[str, Any]:
+    service = YouTubeService()
+    return await _cached_call(
+        "youtube.channel",
+        request.model_dump(mode="json"),
+        lambda: service.get_channel(
+            request.target,
+            recent_video_limit=request.recent_video_limit,
+        ),
+    )
+
+
+@router.post("/reddit/profile")
+async def reddit_profile(request: RedditProfileRequest) -> dict[str, Any]:
+    service = RedditService()
+    return await _cached_call(
+        "reddit.profile",
+        request.model_dump(mode="json"),
+        lambda: service.get_profile(
+            request.username,
+            max_posts=request.max_posts,
+        ),
     )
 
 
@@ -274,7 +317,7 @@ async def linkedin_profile(request: LinkedInProfileRequest) -> dict[str, Any]:
     return await _cached_call(
         "linkedin.profile",
         request.model_dump(mode="json"),
-        lambda: LinkedInBrightDataService().get_profile(request.username)
+        lambda: LinkedInApifyService().get_profile(request.username)
     )
 
 

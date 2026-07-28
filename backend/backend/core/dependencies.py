@@ -10,11 +10,12 @@ from backend.services.cross_platform import CrossPlatformSearchService
 from backend.services.facebook_apify_service import FacebookApifyService
 from backend.services.github_service import GitHubService
 from backend.services.instagram_profile_service import InstagramProfileService
-from backend.services.linkedin_brightdata_service import LinkedInBrightDataService
-from backend.services.reddit_apify_service import RedditApifyService
+from backend.services.linkedin_apify_service import LinkedInApifyService
+from backend.services.reddit_service import RedditService
 from backend.services.telegram_service import TelegramDataService
 from backend.services.tiktok_apify_service import TikTokApifyService
 from backend.services.twitter_apify_service import TwitterApifyService
+from backend.services.youtube_service import YouTubeService
 
 
 def get_app_settings() -> Settings:
@@ -34,10 +35,11 @@ def get_platform_service(platform: str):
         "instagram": InstagramProfileService(),
         "twitter": TwitterApifyService(),
         "telegram": TelegramDataService(),
-        "linkedin": LinkedInBrightDataService(),
-        "reddit": RedditApifyService(),
+        "linkedin": LinkedInApifyService(),
+        "reddit": RedditService(),
         "facebook": FacebookApifyService(),
         "tiktok": TikTokApifyService(settings.apify_tiktok_actor_id),
         "github": GitHubService(),
+        "youtube": YouTubeService(),
     }
     return services.get(platform)

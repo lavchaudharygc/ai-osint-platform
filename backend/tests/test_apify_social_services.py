@@ -8,7 +8,8 @@ from backend.services.reddit_apify_service import RedditApifyService
 from backend.services.twitter_apify_service import TwitterApifyService
 
 
-TWITTER_PROFILE_ACTOR = "apidojo/twitter-profile-scraper"
+TWITTER_PROFILE_ACTOR = "scraper_one/x-profile-posts-scraper"
+TWITTER_ENRICHMENT_ACTOR = "apidojo/twitter-profile-scraper"
 TWITTER_TWEET_ACTOR = "apidojo/tweet-scraper"
 REDDIT_ACTOR = "automation-lab/reddit-scraper"
 LINKEDIN_BULK_ACTOR = "bebity/linkedin-premium-actor"
@@ -86,6 +87,7 @@ class FailingActorClient(RecordingActorClient):
 def twitter_service(client: RecordingActorClient) -> TwitterApifyService:
     service = TwitterApifyService(client=client)  # type: ignore[arg-type]
     service.profile_actor_id = TWITTER_PROFILE_ACTOR
+    service.enrichment_actor_id = TWITTER_ENRICHMENT_ACTOR
     service.tweet_actor_id = TWITTER_TWEET_ACTOR
     return service
 
@@ -171,13 +173,10 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
             client.calls,
             [
                 {
-                    "actor_id": TWITTER_PROFILE_ACTOR,
+                    "actor_id": TWITTER_ENRICHMENT_ACTOR,
                     "run_input": {
                         "twitterHandles": ["TargetUser"],
-                        "profileUrls": ["https://x.com/TargetUser", "https://twitter.com/TargetUser"],
-                        "urls": ["https://x.com/TargetUser"],
                         "maxItems": 25,
-                        "maxPosts": 25,
                         "getReplies": True,
                         "minReplyCount": 4,
                         "getAboutData": True,
@@ -226,6 +225,10 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["username"], "elonmusk")
         self.assertEqual(result["full_name"], "Elon Musk")
         self.assertEqual(result["tweets"][0]["like_count"], 1238034)
+        self.assertEqual(
+            result["tweets"][0]["created_at"],
+            "2025-01-16T23:53:03+00:00",
+        )
 
     async def test_empty_profile_result_does_not_trigger_an_actor_fallback(self) -> None:
         client = RecordingActorClient([[]])
@@ -309,15 +312,9 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "actor_id": TWITTER_PROFILE_ACTOR,
                     "run_input": {
-                        "twitterHandles": ["alice"],
-                        "profileUrls": ["https://x.com/alice", "https://twitter.com/alice"],
-                        "urls": ["https://x.com/alice"],
-                        "maxItems": 5,
-                        "maxPosts": 5,
-                        "getReplies": False,
-                        "getAboutData": False,
-                        "includeNativeRetweets": False,
-                        "onlyImages": False,
+                        "profileUrls": ["https://x.com/alice"],
+                        "resultsLimit": 5,
+                        "skipPinnedPosts": False,
                     },
                     "dataset_limit": 5,
                 }
@@ -345,6 +342,7 @@ class TwitterApifyServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         call = client.calls[0]
+        self.assertEqual(call["actor_id"], TWITTER_ENRICHMENT_ACTOR)
         self.assertEqual(call["dataset_limit"], 40)
         self.assertEqual(call["run_input"]["maxItems"], 40)
         self.assertTrue(call["run_input"]["getReplies"])

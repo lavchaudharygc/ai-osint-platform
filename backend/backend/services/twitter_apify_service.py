@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from backend.core.config import settings
@@ -10,7 +11,7 @@ from backend.services.apify_client import ApifyActorClient, ApifyClientError
 
 
 class TwitterApifyService:
-    """Use the two requested Apidojo actors with their actor-specific inputs."""
+    """Use cost-bounded X actors with actor-specific, validated inputs."""
 
     # The profile Actor's current input contract defaults reply and About
     # queries to false because both can trigger additional billable events.
@@ -25,6 +26,11 @@ class TwitterApifyService:
     def __init__(self, client: ApifyActorClient | None = None) -> None:
         self.client = client or ApifyActorClient()
         self.profile_actor_id = settings.apify_twitter_profile_actor_id
+        self.enrichment_actor_id = getattr(
+            settings,
+            "apify_twitter_enrichment_actor_id",
+            "apidojo/twitter-profile-scraper",
+        )
         self.tweet_actor_id = settings.apify_twitter_tweet_actor_id
 
     def is_configured(self) -> bool:
@@ -49,37 +55,49 @@ class TwitterApifyService:
             min_reply_count,
             field_name="min_reply_count",
         )
+        enrichment_requested = bool(get_replies or get_about_data)
+        selected_actor_id = (
+            self.enrichment_actor_id if enrichment_requested else self.profile_actor_id
+        )
         if not self.is_configured():
-            return self._not_configured(handle, self.profile_actor_id)
+            return self._not_configured(handle, selected_actor_id)
 
-        run_input: dict[str, Any] = {
-            "twitterHandles": [handle],
-            "profileUrls": [f"https://x.com/{handle}", f"https://twitter.com/{handle}"],
-            "urls": [f"https://x.com/{handle}"],
-            "maxItems": item_limit,
-            "maxPosts": item_limit,
-            "getReplies": bool(get_replies),
-            "getAboutData": bool(get_about_data),
-            "includeNativeRetweets": False,
-            "onlyImages": False,
-        }
-        if get_replies:
-            run_input["minReplyCount"] = reply_threshold
+        # Scraper One is the normal profile-post collector. Apidojo is retained
+        # only for explicit reply/About requests because those options are not
+        # part of Scraper One's input contract and can trigger extra charges.
+        if enrichment_requested:
+            run_input: dict[str, Any] = {
+                "twitterHandles": [handle],
+                "maxItems": item_limit,
+                "getReplies": bool(get_replies),
+                "getAboutData": bool(get_about_data),
+                "includeNativeRetweets": False,
+                "onlyImages": False,
+            }
+            if get_replies:
+                run_input["minReplyCount"] = reply_threshold
+        else:
+            run_input = {
+                "profileUrls": [f"https://x.com/{handle}"],
+                "resultsLimit": item_limit,
+                "skipPinnedPosts": False,
+            }
         collection_options = {
             "requested_max_items": max_items,
             "max_items": item_limit,
             "get_replies": bool(get_replies),
             "min_reply_count": reply_threshold if get_replies else None,
             "get_about_data": bool(get_about_data),
+            "actor_mode": "enrichment" if enrichment_requested else "profile_posts",
         }
         try:
             run = await self.client.run_actor(
-                self.profile_actor_id,
+                selected_actor_id,
                 run_input,
                 dataset_limit=item_limit,
             )
         except ApifyClientError as exc:
-            return self._error(handle, self.profile_actor_id, exc)
+            return self._error(handle, selected_actor_id, exc)
 
         return self._normalize_profile(
             handle,
@@ -273,6 +291,7 @@ class TwitterApifyService:
             "followersCount",
             "following",
             "followingCount",
+            "friendsCount",
             "statusesCount",
             "tweetsCount",
             "about",
@@ -389,19 +408,20 @@ class TwitterApifyService:
         run_metadata: dict[str, Any],
         collection_options: dict[str, Any],
     ) -> dict[str, Any]:
+        actor_id = str(run_metadata.get("actor_id") or self.profile_actor_id)
         data_items, actor_diagnostics = self._partition_actor_output(items)
         if not data_items:
             if actor_diagnostics:
                 result = self._actor_output_failure(
                     username=handle,
-                    actor_id=self.profile_actor_id,
+                    actor_id=actor_id,
                     diagnostics=actor_diagnostics,
                     run_metadata=run_metadata,
                 )
             else:
                 result = self._empty_result(
                     username=handle,
-                    actor_id=self.profile_actor_id,
+                    actor_id=actor_id,
                     run_metadata=run_metadata,
                     message=(
                         "Twitter profile Actor succeeded but returned no dataset items "
@@ -457,14 +477,14 @@ class TwitterApifyService:
             if actor_diagnostics:
                 result = self._actor_output_failure(
                     username=handle,
-                    actor_id=self.profile_actor_id,
+                    actor_id=actor_id,
                     diagnostics=actor_diagnostics,
                     run_metadata=run_metadata,
                 )
             else:
                 result = self._empty_result(
                     username=handle,
-                    actor_id=self.profile_actor_id,
+                    actor_id=actor_id,
                     run_metadata=run_metadata,
                     message=(
                         "Twitter profile Actor returned data, but no record matched "
@@ -549,6 +569,7 @@ class TwitterApifyService:
                 author,
                 "following",
                 "followingCount",
+                "friendsCount",
                 "following_count",
             ),
             "post_count": self._profile_value(
@@ -584,7 +605,7 @@ class TwitterApifyService:
             "discarded_related_items": len(data_items) - len(tweets) - len(replies),
             "status": status,
             "source": "apify_twitter_profile_scraper",
-            "actor_id": self.profile_actor_id,
+            "actor_id": actor_id,
             "run": run_metadata,
             "collection_options": collection_options,
             "actor_diagnostics": actor_diagnostics,
@@ -613,13 +634,21 @@ class TwitterApifyService:
         if not author_pic:
             author_pic = item.get("author.profileImageUrl") or item.get("author.profilePicture") or item.get("author.profile_pic_url") or item.get("author.profilePictureUrl")
             
-        author_followers = author.get("followers") or author.get("followersCount")
-        if not author_followers:
-            author_followers = item.get("author.followers") or item.get("author.followersCount")
+        author_followers = TwitterApifyService._first_not_none(
+            author.get("followers"),
+            author.get("followersCount"),
+            item.get("author.followers"),
+            item.get("author.followersCount"),
+        )
             
-        author_following = author.get("following") or author.get("followingCount")
-        if not author_following:
-            author_following = item.get("author.following") or item.get("author.followingCount")
+        author_following = TwitterApifyService._first_not_none(
+            author.get("following"),
+            author.get("followingCount"),
+            author.get("friendsCount"),
+            item.get("author.following"),
+            item.get("author.followingCount"),
+            item.get("author.friendsCount"),
+        )
             
         author_verified = author.get("isVerified") or author.get("isBlueVerified")
         if author_verified is None:
@@ -663,20 +692,9 @@ class TwitterApifyService:
                     fallback_keys=("url", "display_url"),
                 )
 
-        created_at = item.get("createdAt")
-        if not created_at and item.get("timestamp"):
-            ts = item["timestamp"]
-            if isinstance(ts, (int, float)):
-                if ts > 1e11:
-                    ts = ts / 1000.0
-                created_at = datetime.fromtimestamp(ts, UTC).isoformat()
-            elif isinstance(ts, str) and ts.strip():
-                # ISO-8601 or other parseable string from scraper API
-                try:
-                    from dateutil import parser as _dateutil_parser
-                    created_at = _dateutil_parser.parse(ts).isoformat()
-                except Exception:
-                    created_at = ts  # keep raw string rather than losing it
+        created_at = TwitterApifyService._normalize_timestamp(
+            item.get("createdAt") or item.get("timestamp")
+        )
 
         return {
             "type": item.get("type") or ("reply" if item.get("isReply") else "tweet"),
@@ -687,12 +705,27 @@ class TwitterApifyService:
             "created_at": created_at,
             "language": item.get("lang"),
             "source_app": item.get("source"),
-            "like_count": item.get("favouriteCount") or item.get("likeCount") or item.get("like_count") or item.get("favorite_count"),
-            "retweet_count": item.get("repostCount") or item.get("retweetCount") or item.get("retweet_count"),
-            "reply_count": item.get("replyCount") or item.get("reply_count"),
-            "quote_count": item.get("quoteCount") or item.get("quote_count"),
-            "view_count": item.get("viewCount") or item.get("view_count"),
-            "bookmark_count": item.get("bookmarkCount") or item.get("bookmark_count"),
+            "like_count": TwitterApifyService._first_not_none(
+                item.get("favouriteCount"),
+                item.get("likeCount"),
+                item.get("like_count"),
+                item.get("favorite_count"),
+            ),
+            "retweet_count": TwitterApifyService._first_not_none(
+                item.get("repostCount"), item.get("retweetCount"), item.get("retweet_count")
+            ),
+            "reply_count": TwitterApifyService._first_not_none(
+                item.get("replyCount"), item.get("reply_count")
+            ),
+            "quote_count": TwitterApifyService._first_not_none(
+                item.get("quoteCount"), item.get("quote_count")
+            ),
+            "view_count": TwitterApifyService._first_not_none(
+                item.get("viewCount"), item.get("view_count")
+            ),
+            "bookmark_count": TwitterApifyService._first_not_none(
+                item.get("bookmarkCount"), item.get("bookmark_count")
+            ),
             "conversation_id": item.get("conversationId"),
             "in_reply_to_status_id": item.get("inReplyToStatusId"),
             "is_reply": bool(item.get("isReply") or str(item.get("type", "")).lower() == "reply"),
@@ -712,6 +745,37 @@ class TwitterApifyService:
                 "is_blue_verified": author.get("isBlueVerified") or item.get("author.isBlueVerified"),
             },
         }
+
+    @staticmethod
+    def _normalize_timestamp(value: Any) -> Any:
+        """Normalize epoch, ISO-8601, and Twitter/RFC-style timestamps."""
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            seconds = value / 1000.0 if value > 1e11 else value
+            try:
+                return datetime.fromtimestamp(seconds, UTC).isoformat()
+            except (OverflowError, OSError, ValueError):
+                return value
+        if not isinstance(value, str) or not value.strip():
+            return value
+        candidate = value.strip()
+        try:
+            numeric = float(candidate)
+        except ValueError:
+            numeric = None
+        if numeric is not None:
+            seconds = numeric / 1000.0 if numeric > 1e11 else numeric
+            try:
+                return datetime.fromtimestamp(seconds, UTC).isoformat()
+            except (OverflowError, OSError, ValueError):
+                return candidate
+        try:
+            return datetime.fromisoformat(candidate.replace("Z", "+00:00")).isoformat()
+        except ValueError:
+            pass
+        try:
+            return parsedate_to_datetime(candidate).isoformat()
+        except (TypeError, ValueError, OverflowError):
+            return candidate
 
     @staticmethod
     def _entity_values(

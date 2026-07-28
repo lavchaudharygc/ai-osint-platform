@@ -99,10 +99,18 @@ test("Twitter renderer consumes canonical profile and engagement fields", () => 
     assert.doesNotMatch(html, />999</);
 });
 
-test("Reddit renderer consumes canonical text, dates, and comment counts", () => {
+test("Reddit renderer combines OAuth profile metadata with Apify activity", () => {
     const html = renderDetails("reddit", {
         success: true,
         username: "canonical_redditor",
+        bio: "Canonical public Reddit bio",
+        profile_pic_url: "https://styles.redditmedia.com/avatar.png",
+        profile_url: "https://www.reddit.com/user/canonical_redditor/",
+        link_karma: 12000,
+        comment_karma: 3000,
+        total_karma: 15123,
+        account_created_at: "2016-07-09T08:15:00Z",
+        account_age_days: 3650,
         posts: [{
             id: "rd-post",
             title: "Canonical title",
@@ -122,6 +130,18 @@ test("Reddit renderer consumes canonical text, dates, and comment counts", () =>
         }]
     });
 
+    assert.match(html, /Canonical public Reddit bio/);
+    assert.match(html, /styles\.redditmedia\.com/);
+    assert.match(html, /Post Karma/);
+    assert.match(html, /12,000/);
+    assert.match(html, /Comment Karma/);
+    assert.match(html, /3,000/);
+    assert.match(html, /Total Karma/);
+    assert.match(html, /15,123/);
+    assert.match(html, /Account Age/);
+    assert.match(html, /3,650 days/);
+    assert.match(html, /Cake Day/);
+    assert.match(html, /OAuth profile \+ Apify activity/);
     assert.match(html, /Canonical Reddit post text/);
     assert.match(html, /Canonical Reddit comment text/);
     assert.match(html, /23<\/span>/);
@@ -209,7 +229,23 @@ test("GitHub renderer exposes profile metadata and public repositories", () => {
             forks: 9,
             open_issues: 1,
             updated_at: "2026-07-07T11:00:00Z"
-        }]
+        }],
+        organizations: [{
+            id: 20,
+            username: "github",
+            description: "How people build software"
+        }],
+        contributions: {
+            period_start: "2025-07-28T00:00:00Z",
+            period_end: "2026-07-28T00:00:00Z",
+            total_contributions: 148,
+            commit_contributions: 120,
+            issue_contributions: 4,
+            pull_request_contributions: 12,
+            pull_request_review_contributions: 9,
+            restricted_contributions: 3,
+            has_restricted_contributions: true
+        }
     });
 
     assert.match(html, /The Octocat/);
@@ -219,6 +255,55 @@ test("GitHub renderer exposes profile metadata and public repositories", () => {
     assert.match(html, /Stars 80/);
     assert.match(html, /JavaScript/);
     assert.match(html, /MIT/);
+    assert.match(html, /Contribution Activity/);
+    assert.match(html, /Total Contributions/);
+    assert.match(html, /148/);
+    assert.match(html, /Commits/);
+    assert.match(html, /120/);
+    assert.match(html, /restricted\/private contributions/);
+    assert.match(html, /Public Organizations/);
+    assert.match(html, /@github/);
+    assert.match(html, /How people build software/);
+});
+
+test("YouTube renderer exposes channel metadata, subscribers, and recent videos", () => {
+    const html = renderDetails("youtube", {
+        success: true,
+        exists: true,
+        channel_id: "UC1234567890123456789012",
+        handle: "canonicalchannel",
+        channel_name: "Canonical YouTube Channel",
+        description: "Public channel description",
+        profile_url: "https://www.youtube.com/@canonicalchannel",
+        avatar_url: "https://yt3.googleusercontent.com/channel-avatar",
+        subscriber_count: 1234,
+        view_count: 98765,
+        video_count: 42,
+        channel: {
+            published_at: "2018-05-04T10:00:00Z",
+            country: "IN",
+            default_language: "en"
+        },
+        recent_videos: [{
+            video_id: "video-1",
+            title: "Canonical recent video",
+            description: "Recent video description",
+            published_at: "2026-07-26T10:00:00Z",
+            url: "https://www.youtube.com/watch?v=video-1",
+            channel_name: "Canonical YouTube Channel"
+        }]
+    });
+
+    assert.match(html, /YouTube Channel/);
+    assert.match(html, /Canonical YouTube Channel/);
+    assert.match(html, /Public channel description/);
+    assert.match(html, /Subscribers/);
+    assert.match(html, /1,234/);
+    assert.match(html, /Channel Views/);
+    assert.match(html, /98,765/);
+    assert.match(html, /Recent YouTube Videos/);
+    assert.match(html, /Canonical recent video/);
+    assert.match(html, /Recent video description/);
 });
 
 test("collection coverage renders normalized content and actor health consistently", () => {
@@ -275,8 +360,10 @@ test("collection coverage prefers provider-neutral results and shows routing, bu
             status: "completed_with_warnings",
             routing: {
                 google_search: "serpapi",
-                linkedin: "bright_data",
-                github: "github_rest_api"
+                linkedin: "apify_linkedin_profile_scraper",
+                reddit: "reddit_oauth_plus_apify",
+                github: "github_rest_plus_graphql",
+                youtube: "youtube_data_api_v3"
             },
             social: {
                 twitter: {
@@ -314,6 +401,10 @@ test("collection coverage prefers provider-neutral results and shows routing, bu
     assert.match(results.innerHTML, /Capability routing/);
     assert.match(results.innerHTML, /google search/);
     assert.match(results.innerHTML, /serpapi/);
+    assert.match(results.innerHTML, /apify linkedin profile scraper/);
+    assert.match(results.innerHTML, /reddit oauth plus apify/);
+    assert.match(results.innerHTML, /github rest plus graphql/);
+    assert.match(results.innerHTML, /youtube data api v3/);
     assert.match(results.innerHTML, /Neutral social result/);
     assert.doesNotMatch(results.innerHTML, /Stale legacy social result/);
     assert.match(results.innerHTML, /skipped to stay within/);
@@ -326,12 +417,67 @@ test("Google dorking configuration copy names SerpAPI as the only provider", () 
     assert.doesNotMatch(appSource, /APIFY_API_TOKEN/);
 });
 
-test("primary platform selector includes TikTok and GitHub", () => {
+test("primary platform selector includes TikTok, GitHub, and YouTube", () => {
     const html = fs.readFileSync(path.join(frontendRoot, "index.html"), "utf8");
     assert.match(html, /<div class="form-row">\s*<label>Target Platform<\/label>/);
     assert.match(html, /<option value="tiktok">TikTok<\/option>/);
     assert.match(html, /<option value="github">GitHub<\/option>/);
+    assert.match(html, /<option value="youtube">YouTube<\/option>/);
     assert.doesNotMatch(html, /<div class="form-row" style="display:\s*none;">\s*<label>Target Platform/);
+});
+
+test("on-demand routes use YouTube Data API and combined Reddit OAuth plus Apify contracts", async () => {
+    const youtubeDetails = fakeElement();
+    const redditDetails = fakeElement();
+    const app = loadApp({
+        "youtube-details": youtubeDetails,
+        "reddit-details": redditDetails
+    });
+    const requests = [];
+    app.fetch = async (url, options) => {
+        requests.push({ url, options });
+        if (String(url).endsWith("/providers/youtube/channel")) {
+            return {
+                ok: true,
+                json: async () => ({
+                    success: true,
+                    channel_name: "Routed YouTube Channel",
+                    handle: "routed",
+                    recent_videos: []
+                })
+            };
+        }
+        return {
+            ok: true,
+            json: async () => ({
+                success: true,
+                username: "routed_redditor",
+                total_karma: 9,
+                posts: [],
+                comments: []
+            })
+        };
+    };
+
+    await app.scrapePlatformOnDemand("youtube", "@routed", "youtube-details", fakeElement());
+    await app.scrapePlatformOnDemand("reddit", "routed_redditor", "reddit-details", fakeElement());
+
+    assert.equal(requests.length, 2);
+    assert.match(String(requests[0].url), /\/api\/v1\/providers\/youtube\/channel$/);
+    assert.deepEqual(JSON.parse(requests[0].options.body), {
+        target: "@routed",
+        recent_video_limit: 5
+    });
+    assert.match(String(requests[1].url), /\/api\/v1\/providers\/reddit\/profile$/);
+    assert.deepEqual(JSON.parse(requests[1].options.body), {
+        username: "routed_redditor",
+        max_posts: 10
+    });
+    assert.match(youtubeDetails.innerHTML, /Routed YouTube Channel/);
+    assert.match(redditDetails.innerHTML, /Total Karma/);
+    assert.match(appSource, /linkedin: "Apify LinkedIn collector"/);
+    assert.match(appSource, /reddit: "Reddit OAuth \+ Apify collector"/);
+    assert.doesNotMatch(appSource, /linkedin: "Bright Data collector"/);
 });
 
 test("advanced provider inputs expose and send every investigation schema field", () => {

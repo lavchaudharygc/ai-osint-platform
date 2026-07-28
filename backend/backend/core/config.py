@@ -50,8 +50,12 @@ class Settings(BaseSettings):
     apify_run_timeout_seconds: float = Field(default=300.0, ge=10.0, le=900.0, validation_alias="APIFY_RUN_TIMEOUT_SECONDS")
     apify_poll_wait_seconds: int = Field(default=20, ge=1, le=60, validation_alias="APIFY_POLL_WAIT_SECONDS")
     apify_twitter_profile_actor_id: str = Field(
-        default="apidojo/twitter-profile-scraper",
+        default="scraper_one/x-profile-posts-scraper",
         validation_alias="APIFY_TWITTER_PROFILE_ACTOR_ID",
+    )
+    apify_twitter_enrichment_actor_id: str = Field(
+        default="apidojo/twitter-profile-scraper",
+        validation_alias="APIFY_TWITTER_ENRICHMENT_ACTOR_ID",
     )
     apify_twitter_tweet_actor_id: str = Field(
         default="apidojo/tweet-scraper",
@@ -80,6 +84,55 @@ class Settings(BaseSettings):
     apify_tiktok_actor_id: str = Field(
         default="clockworks/tiktok-scraper",
         validation_alias="APIFY_TIKTOK_ACTOR_ID",
+    )
+    youtube_api_key: str | None = Field(default=None, validation_alias="YOUTUBE_API_KEY")
+    youtube_api_base_url: str = Field(
+        default="https://www.googleapis.com/youtube/v3",
+        validation_alias="YOUTUBE_API_BASE_URL",
+    )
+    youtube_timeout_seconds: float = Field(
+        default=15.0,
+        ge=1.0,
+        le=60.0,
+        validation_alias="YOUTUBE_TIMEOUT_SECONDS",
+    )
+    youtube_recent_video_limit: int = Field(
+        default=5,
+        ge=0,
+        le=50,
+        validation_alias="YOUTUBE_RECENT_VIDEO_LIMIT",
+    )
+    reddit_client_id: str | None = Field(
+        default=None,
+        validation_alias="REDDIT_CLIENT_ID",
+    )
+    reddit_client_secret: str | None = Field(
+        default=None,
+        validation_alias="REDDIT_CLIENT_SECRET",
+    )
+    reddit_user_agent: str | None = Field(
+        default=None,
+        validation_alias="REDDIT_USER_AGENT",
+    )
+    reddit_oauth_token_url: str = Field(
+        default="https://www.reddit.com/api/v1/access_token",
+        validation_alias="REDDIT_OAUTH_TOKEN_URL",
+    )
+    reddit_oauth_base_url: str = Field(
+        default="https://oauth.reddit.com",
+        validation_alias="REDDIT_OAUTH_BASE_URL",
+    )
+    reddit_timeout_seconds: float = Field(
+        default=15.0,
+        ge=1.0,
+        le=60.0,
+        validation_alias="REDDIT_TIMEOUT_SECONDS",
+    )
+    reddit_token_expiry_skew_seconds: float = Field(
+        default=30.0,
+        ge=0.0,
+        le=300.0,
+        validation_alias="REDDIT_TOKEN_EXPIRY_SKEW_SECONDS",
     )
     flashapi_host: str = Field(default="flashapi1.p.rapidapi.com", validation_alias="FLASHAPI_HOST")
     flashapi_base_url: str = Field(default="https://flashapi1.p.rapidapi.com", validation_alias="FLASHAPI_BASE_URL")
@@ -203,6 +256,12 @@ class Settings(BaseSettings):
         ge=1,
         le=30,
         validation_alias="GITHUB_REPO_LIMIT",
+    )
+    github_organization_limit: int = Field(
+        default=30,
+        ge=1,
+        le=30,
+        validation_alias="GITHUB_ORGANIZATION_LIMIT",
     )
     brightdata_web_api_key: str | None = Field(
         default=None,

@@ -34,15 +34,15 @@ from backend.services.instagram_posts_service import InstagramPostsService
 from backend.services.instagram_profile_service import InstagramProfileService
 from backend.services.facebook_apify_service import FacebookApifyService
 from backend.services.linkedin_apify_service import LinkedInApifyService
-from backend.services.reddit_apify_service import RedditApifyService
+from backend.services.reddit_service import RedditService
 from backend.services.tiktok_apify_service import TikTokApifyService
 from backend.services.telegram_cti_service import get_cti_service
 from backend.services.brightdata_web_service import BrightDataWebService
-from backend.services.linkedin_brightdata_service import LinkedInBrightDataService
 from backend.services.firecrawl_service import FirecrawlService
 from backend.services.github_service import GitHubService
 from backend.services.hunter_service import HunterService
 from backend.services.twilio_lookup_service import TwilioLookupService
+from backend.services.youtube_service import YouTubeService
 from backend.services.intelligence.hashtag_analyzer import HashtagIntelligenceAnalyzer
 from backend.services.intelligence.content_intelligence import ContentIntelligenceExtractor
 from backend.services.intelligence.reverse_lookup import ReverseKeywordLookup
@@ -162,13 +162,14 @@ PROVIDER_ROUTING = {
     "google_search": "serpapi",
     "web_scraping": "bright_data",
     "instagram": "apify_instagram_scraper",
-    "twitter": "apify_x_scraper",
-    "reddit": "apify_reddit_scraper",
+    "twitter": "apify_x_profile_posts_plus_optional_enrichment",
+    "reddit": "reddit_oauth_plus_apify",
     "linkedin": "apify_linkedin_profile_scraper",
     "facebook": "apify_facebook_scraper",
     "telegram": "existing_telegram_collectors",
     "tiktok": "apify_tiktok_scraper",
-    "github": "github_rest_api",
+    "github": "github_rest_plus_graphql",
+    "youtube": "youtube_data_api_v3",
     "email": "hunter_io",
     "phone": "twilio_lookup",
     "structured_extraction": "firecrawl",
@@ -409,11 +410,12 @@ async def run_all_social_scrapers(
     instagram_posts_service = InstagramPostsService()
     twitter_apify_service = TwitterApifyService()
     linkedin_service = LinkedInApifyService()
-    reddit_service = RedditApifyService()
+    reddit_service = RedditService()
     facebook_service = FacebookApifyService()
     tiktok_service = TikTokApifyService(
         getattr(settings, "apify_tiktok_actor_id", "clockworks/tiktok-scraper")
     )
+    youtube_service = YouTubeService()
     result_limit = int(getattr(settings, "investigation_social_result_limit", 20))
     twitter_result_limit = min(
         int(getattr(settings, "investigation_twitter_result_limit", 5)),
@@ -421,7 +423,8 @@ async def run_all_social_scrapers(
     )
 
     active = active_platforms if active_platforms is not None else {
-        "instagram", "twitter", "telegram", "linkedin", "reddit", "facebook", "tiktok"
+        "instagram", "twitter", "telegram", "linkedin", "reddit", "facebook", "tiktok",
+        "youtube",
     }
 
     def skipped_result(
@@ -522,8 +525,8 @@ async def run_all_social_scrapers(
         {
             "key": "reddit",
             "platform": "reddit",
-            "provider": "apify",
-            "calls": 1,
+            "provider": "reddit_oauth_plus_apify",
+            "calls": reddit_service.provider_call_units(),
             "factory": lambda: reddit_service.get_profile(
                 username,
                 max_posts=result_limit,
@@ -535,7 +538,7 @@ async def run_all_social_scrapers(
             "key": "linkedin",
             "platform": "linkedin",
             "provider": "apify",
-            "calls": 1,
+            "calls": linkedin_service.provider_call_units(),
             "factory": lambda: linkedin_service.get_profile(username),
             "configured": linkedin_service.is_configured(),
             "actor_id": settings.apify_linkedin_profile_actor_id,
@@ -571,6 +574,17 @@ async def run_all_social_scrapers(
             "factory": lambda: scrape_platform(username, "telegram"),
             "configured": True,
         },
+        {
+            "key": "youtube",
+            "platform": "youtube",
+            "provider": "youtube_data_api_v3",
+            "calls": 2 if youtube_service.recent_video_limit else 1,
+            "factory": lambda: youtube_service.get_channel(
+                username,
+                recent_video_limit=youtube_service.recent_video_limit,
+            ),
+            "configured": youtube_service.is_configured(),
+        },
     ]
     priority = list(dict.fromkeys(platform_priority or []))
     priority_rank = {platform: index for index, platform in enumerate(priority)}
@@ -599,6 +613,7 @@ async def run_all_social_scrapers(
         "facebook_combined": "facebook",
         "tiktok": "tiktok",
         "telegram": "telegram",
+        "youtube": "youtube",
     }
     for key, value in list(collected.items()):
         if isinstance(value, BaseException):
@@ -644,7 +659,7 @@ async def run_all_social_scrapers(
         "facebook_posts": facebook_posts,
         "tiktok": collected["tiktok"],
     }
-    provider_outputs = [*actors.values(), collected["linkedin"]]
+    provider_outputs = [*actors.values(), collected["linkedin"], collected["youtube"]]
     outcomes = [_actor_outcome(result) for result in provider_outputs]
     summary = {
         "total": len(provider_outputs),
@@ -665,7 +680,14 @@ async def run_all_social_scrapers(
     }
     budget_skipped = bool(budget and budget.skipped)
     has_warnings = bool(
-        summary["failed"] or summary["not_configured"] or telegram_failed or budget_skipped
+        summary["failed"]
+        or summary["not_configured"]
+        or telegram_failed
+        or budget_skipped
+        or any(
+            str(result.get("status") or "").casefold() == "partial"
+            for result in provider_outputs
+        )
     )
     completed_at = datetime.now(UTC)
     envelope = {
@@ -695,6 +717,7 @@ async def run_all_social_scrapers(
             },
             "tiktok": collected["tiktok"],
             "telegram": collected["telegram"],
+            "youtube": collected["youtube"],
         },
         "telegram": collected["telegram"],
     }
@@ -706,6 +729,7 @@ async def run_all_social_scrapers(
         "reddit": collected["reddit"],
         "facebook": facebook_combined,
         "tiktok": collected["tiktok"],
+        "youtube": collected["youtube"],
     }
     return platform_profiles, instagram_posts, envelope
 
@@ -731,10 +755,10 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
             call = TelegramIntelligenceExtractor().get_profile(username)
             timeout = 35.0
         elif platform == "linkedin":
-            call = LinkedInBrightDataService().get_profile(username)
-            timeout = float(getattr(settings, "brightdata_web_timeout_seconds", 45.0)) + 5.0
+            call = LinkedInApifyService().get_profile(username)
+            timeout = settings.apify_run_timeout_seconds + 15.0
         elif platform == "reddit":
-            call = RedditApifyService().get_profile(username, max_posts=result_limit)
+            call = RedditService().get_profile(username, max_posts=result_limit)
             timeout = settings.apify_run_timeout_seconds + 15.0
         elif platform == "facebook":
             call = FacebookApifyService().get_profile(username, posts_limit=result_limit)
@@ -746,7 +770,15 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
             timeout = settings.apify_run_timeout_seconds + 15.0
         elif platform == "github":
             call = GitHubService().get_profile(username, repo_limit=result_limit)
-            timeout = float(getattr(settings, "github_timeout_seconds", 15.0)) * 2 + 5.0
+            timeout = float(getattr(settings, "github_timeout_seconds", 15.0)) * 4 + 5.0
+        elif platform == "youtube":
+            call = YouTubeService().get_channel(
+                username,
+                recent_video_limit=int(
+                    getattr(settings, "youtube_recent_video_limit", 5)
+                ),
+            )
+            timeout = float(getattr(settings, "youtube_timeout_seconds", 15.0)) * 2 + 5.0
         else:
             return {
                 "success": False,
@@ -772,9 +804,9 @@ async def scrape_platform(username: str, platform: str) -> dict[str, Any]:
 
 async def cross_platform_search(username: str, platform_data: dict[str, Any], depth: int) -> list[dict[str, Any]]:
     results = await CrossPlatformSearchService().search_all_platforms(username)
-    # Always include the eight supported primary surfaces; higher depth
+    # Always include the nine supported primary surfaces; higher depth
     # progressively exposes the additional regional/developer platforms.
-    return results[: max(depth * 4, 8)]
+    return results[: max(depth * 4, 9)]
 
 
 async def google_dork_username(
@@ -1748,9 +1780,19 @@ def reserve_priority_provider_calls(
     elif primary_platform == "twitter":
         reserve("social.twitter.twitter_profile_and_replies", 1, apify_configured)
     elif primary_platform == "reddit":
-        reserve("social.reddit.reddit", 1, apify_configured)
+        reddit = RedditService()
+        reserve(
+            "social.reddit.reddit",
+            reddit.provider_call_units(),
+            reddit.is_configured(),
+        )
     elif primary_platform == "linkedin":
-        reserve("social.linkedin.linkedin", 1, LinkedInBrightDataService().is_configured())
+        linkedin = LinkedInApifyService()
+        reserve(
+            "social.linkedin.linkedin",
+            linkedin.provider_call_units(),
+            linkedin.is_configured(),
+        )
     elif primary_platform == "facebook":
         reserve("social.facebook.facebook_combined", 2, apify_configured)
     elif primary_platform == "tiktok":
@@ -1762,7 +1804,14 @@ def reserve_priority_provider_calls(
             ).is_configured(),
         )
     elif primary_platform == "github":
-        reserve("specialized.github", 2, GitHubService().is_configured())
+        reserve("specialized.github", 4, GitHubService().is_configured())
+    elif primary_platform == "youtube":
+        youtube = YouTubeService()
+        reserve(
+            "social.youtube.youtube",
+            2 if youtube.recent_video_limit else 1,
+            youtube.is_configured(),
+        )
 
     hunter_configured = HunterService().is_configured()
     if request.email:
@@ -1833,12 +1882,15 @@ async def run_specialized_provider_enrichment(
     if github_requested:
         schedule(
             "github",
-            provider="github_rest",
-            calls=2,
+            provider="github_rest_plus_graphql",
+            calls=4,
             configured=github.is_configured(),
             factory=lambda: github.get_profile(
                 request.username,
                 repo_limit=int(getattr(settings, "github_repo_limit", 10)),
+                organization_limit=int(
+                    getattr(settings, "github_organization_limit", 30)
+                ),
             ),
         )
 
@@ -2150,6 +2202,7 @@ async def _investigate_username_impl(
 
     # 1. Run cross platform check to find where username exists
     cross_matches = await CrossPlatformSearchService().search_all_platforms(request.username)
+    cross_matches = cross_matches[: max(request.correlation_depth * 4, 9)]
     selected_platforms = [
         str(match["platform"]).lower()
         for match in cross_matches
@@ -2161,7 +2214,8 @@ async def _investigate_username_impl(
         getattr(settings, "investigation_max_social_platforms", 7)
     )
     paid_social_platforms = {
-        "instagram", "twitter", "linkedin", "reddit", "facebook", "tiktok", "telegram"
+        "instagram", "twitter", "linkedin", "reddit", "facebook", "tiktok",
+        "youtube",
     }
     active_platforms: set[str] = set()
     paid_count = 0
@@ -2204,7 +2258,7 @@ async def _investigate_username_impl(
             **github_result,
             **github_profile,
             "platform": "github",
-            "source": "github_rest_api",
+            "source": "github_rest_plus_graphql",
             "username": github_profile.get("username") or request.username,
             "profile_pic_url": github_profile.get("avatar_url"),
             "follower_count": github_profile.get("followers"),
@@ -2221,7 +2275,7 @@ async def _investigate_username_impl(
     else:
         for plat in [
             "instagram", "twitter", "telegram", "linkedin", "reddit", "facebook",
-            "tiktok", "github",
+            "tiktok", "youtube", "github",
         ]:
             res = platform_profiles.get(plat)
             if res and isinstance(res, dict) and res.get("success") is not False:
@@ -2758,7 +2812,10 @@ async def _investigate_username_impl(
         timestamp=datetime.now(UTC),
     )
     _store_investigation(response)
-    if request.cache_mode != "bypass" and response.status == "completed":
+    if request.cache_mode != "bypass" and response.status in {
+        "completed",
+        "completed_with_warnings",
+    }:
         _INVESTIGATION_CACHE.set(cache_key, response)
     return response
 
@@ -2851,6 +2908,10 @@ async def trigger_hitek_indexing() -> dict[str, Any]:
 @router.get("/proxy-image")
 async def proxy_image(url: str = Query(...)):
     """Proxy image requests to bypass referrer/CORS blocks on CDNs."""
+    allowed_exact_cdn_hosts = {
+        "yt3.googleusercontent.com",
+        "yt3.ggpht.com",
+    }
     allowed_cdn_suffixes = (
         "cdninstagram.com",
         "fbcdn.net",
@@ -2876,7 +2937,7 @@ async def proxy_image(url: str = Query(...)):
     hostname = parsed.hostname.casefold()
     if hostname == "localhost" or hostname.endswith(".localhost"):
         raise HTTPException(status_code=422, detail="Private image targets are not allowed")
-    if not any(
+    if hostname not in allowed_exact_cdn_hosts and not any(
         hostname == suffix or hostname.endswith(f".{suffix}")
         for suffix in allowed_cdn_suffixes
     ):

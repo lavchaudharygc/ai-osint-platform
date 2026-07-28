@@ -16,6 +16,7 @@ SupportedPlatform = Literal[
     "facebook",
     "tiktok",
     "github",
+    "youtube",
 ]
 
 

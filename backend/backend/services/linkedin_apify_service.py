@@ -17,6 +17,8 @@ LinkedInQueryMode = Literal["keyword", "name", "url"]
 class LinkedInApifyService:
     """Use Bebity bulk lookup and API Maestro's no-cookie post search."""
 
+    PROFILE_MAX_PROVIDER_CALLS = 3
+
     def __init__(self, client: ApifyActorClient | None = None) -> None:
         self.client = client or ApifyActorClient()
         self.profile_actor_id = settings.apify_linkedin_profile_actor_id
@@ -24,6 +26,10 @@ class LinkedInApifyService:
 
     def is_configured(self) -> bool:
         return self.client.is_configured()
+
+    def provider_call_units(self) -> int:
+        """Reserve the primary profile Actor plus both bounded fallbacks."""
+        return self.PROFILE_MAX_PROVIDER_CALLS if self.is_configured() else 0
 
     async def get_profile(self, username: str) -> dict[str, Any]:
         slug = self._profile_slug(username)

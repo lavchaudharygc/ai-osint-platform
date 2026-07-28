@@ -34,6 +34,7 @@ EXPECTED_PROVIDER_KEYS = [
     "facebook",
     "tiktok",
     "telegram",
+    "youtube",
 ]
 
 ALL_COLLECTORS = {
@@ -45,6 +46,7 @@ ALL_COLLECTORS = {
     "facebook",
     "tiktok",
     "telegram",
+    "youtube",
 }
 
 
@@ -113,7 +115,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                 "configured": True,
                 "platform": "reddit",
                 "status": "completed",
-                "source": "apify_reddit_scraper",
+                "source": "reddit_oauth_plus_apify",
                 "username": "target_user",
                 "run": {"run_status": "SUCCEEDED", "run_id": "reddit"},
             },
@@ -163,6 +165,16 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                 "status": "found",
                 "source": "telegram",
                 "username": "target_user",
+            },
+            "youtube": {
+                "success": True,
+                "configured": True,
+                "platform": "youtube",
+                "status": "completed",
+                "source": "youtube_data_api_v3",
+                "username": "target_user",
+                "channel_name": "Target Channel",
+                "recent_videos": [{"video_id": "video-1"}],
             },
         }
 
@@ -219,7 +231,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                 "backend.api.endpoints.investigation.TwitterApifyService"
             ) as twitter_class,
             patch(
-                "backend.api.endpoints.investigation.RedditApifyService"
+                "backend.api.endpoints.investigation.RedditService"
             ) as reddit_class,
             patch(
                 "backend.api.endpoints.investigation.LinkedInApifyService"
@@ -230,6 +242,9 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "backend.api.endpoints.investigation.TikTokApifyService"
             ) as tiktok_class,
+            patch(
+                "backend.api.endpoints.investigation.YouTubeService"
+            ) as youtube_class,
             patch(
                 "backend.api.endpoints.investigation.scrape_platform",
                 new=AsyncMock(side_effect=telegram_side_effect),
@@ -254,14 +269,22 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
             reddit_class.return_value.get_profile = AsyncMock(
                 side_effect=side_effect("reddit")
             )
+            reddit_class.return_value.provider_call_units.return_value = 3
+            reddit_class.return_value.is_configured.return_value = True
             linkedin_class.return_value.get_profile = AsyncMock(
                 side_effect=side_effect("linkedin")
             )
+            linkedin_class.return_value.provider_call_units.return_value = 3
             facebook_class.return_value.get_profile = AsyncMock(
                 side_effect=side_effect("facebook")
             )
             tiktok_class.return_value.get_profile = AsyncMock(
                 side_effect=side_effect("tiktok")
+            )
+            youtube_class.return_value.recent_video_limit = 5
+            youtube_class.return_value.is_configured.return_value = True
+            youtube_class.return_value.get_channel = AsyncMock(
+                side_effect=side_effect("youtube")
             )
 
             output = await run_all_social_scrapers(
@@ -280,6 +303,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                 "facebook": facebook_class.return_value.get_profile,
                 "tiktok": tiktok_class.return_value.get_profile,
                 "telegram": scrape_mock,
+                "youtube": youtube_class.return_value.get_channel,
                 "flashapi_class": flashapi_class,
                 "twitter_fallback_class": twitter_fallback_class,
                 "linkedin_apify_class": AsyncMock(),
@@ -295,8 +319,8 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(envelope["mode"], "capability_routing")
         self.assertEqual(list(envelope["actors"]), EXPECTED_ACTOR_KEYS)
         self.assertEqual(envelope["summary"], {
-            "total": 8,
-            "completed": 8,
+            "total": 9,
+            "completed": 9,
             "empty": 0,
             "skipped": 0,
             "failed": 0,
@@ -307,6 +331,10 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
         mocks["linkedin"].assert_awaited_once_with("target_user")
         mocks["tiktok"].assert_awaited_once()
         mocks["telegram"].assert_awaited_once_with("target_user", "telegram")
+        mocks["youtube"].assert_awaited_once_with(
+            "target_user",
+            recent_video_limit=5,
+        )
 
     async def test_one_approved_provider_is_used_per_platform(self) -> None:
         (_, _, envelope), _, mocks, raw_results = await self._run_fanout()
@@ -340,7 +368,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(started), ALL_COLLECTORS)
         self.assertEqual(envelope["status"], "completed_with_warnings")
         self.assertEqual(envelope["summary"]["failed"], 1)
-        self.assertEqual(envelope["summary"]["completed"], 7)
+        self.assertEqual(envelope["summary"]["completed"], 8)
         self.assertEqual(failure["status"], "orchestration_error")
         self.assertEqual(failure["error"]["code"], "unexpected_collector_error")
         self.assertEqual(failure["error"]["actor_id"], failure["actor_id"])
@@ -360,12 +388,14 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(envelope["providers"]["instagram"]["profile"]["status"], "skipped")
         self.assertEqual(envelope["providers"]["reddit"]["status"], "skipped")
         self.assertEqual(envelope["providers"]["facebook"]["profile"]["status"], "skipped")
+        self.assertEqual(envelope["providers"]["youtube"]["status"], "skipped")
         self.assertEqual(profiles["linkedin"]["source"], "apify_linkedin_profile_scraper")
 
         mocks["instagram_profile"].assert_not_awaited()
         mocks["instagram_posts"].assert_not_awaited()
         mocks["reddit"].assert_not_awaited()
         mocks["facebook"].assert_not_awaited()
+        mocks["youtube"].assert_not_awaited()
         mocks["twitter_profile"].assert_awaited_once()
         mocks["linkedin"].assert_awaited_once()
         mocks["tiktok"].assert_awaited_once()
@@ -385,7 +415,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(envelope["providers"]["twitter"]["status"], "budget_exhausted")
         self.assertEqual(envelope["providers"]["linkedin"]["status"], "budget_exhausted")
         self.assertEqual(envelope["providers"]["tiktok"]["status"], "budget_exhausted")
-        self.assertEqual(envelope["summary"]["skipped"], 6)
+        self.assertEqual(envelope["summary"]["skipped"], 7)
         self.assertEqual(envelope["summary"]["completed"], 2)
         self.assertEqual(
             budget.snapshot(),
@@ -405,7 +435,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                     },
                     {
                         "capability": "social.linkedin.linkedin",
-                        "requested_calls": 1,
+                        "requested_calls": 3,
                         "reason": "provider_call_limit_exceeded",
                     },
                     {
@@ -442,12 +472,13 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
             patch("backend.api.endpoints.investigation.InstagramProfileService") as instagram_profile,
             patch("backend.api.endpoints.investigation.InstagramPostsService") as instagram_posts,
             patch("backend.api.endpoints.investigation.TwitterApifyService") as twitter,
-            patch("backend.api.endpoints.investigation.RedditApifyService") as reddit,
+            patch("backend.api.endpoints.investigation.RedditService") as reddit,
             patch(
-                "backend.api.endpoints.investigation.LinkedInBrightDataService"
+                "backend.api.endpoints.investigation.LinkedInApifyService"
             ) as linkedin,
             patch("backend.api.endpoints.investigation.FacebookApifyService") as facebook,
             patch("backend.api.endpoints.investigation.TikTokApifyService") as tiktok,
+            patch("backend.api.endpoints.investigation.YouTubeService") as youtube,
             patch(
                 "backend.api.endpoints.investigation.scrape_platform",
                 new=AsyncMock(),
@@ -457,9 +488,13 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
             instagram_posts.return_value.is_configured.return_value = False
             twitter.return_value.is_configured.return_value = True
             reddit.return_value.is_configured.return_value = False
+            reddit.return_value.provider_call_units.return_value = 0
             linkedin.return_value.is_configured.return_value = False
+            linkedin.return_value.provider_call_units.return_value = 0
             facebook.return_value.is_configured.return_value = False
             tiktok.return_value.is_configured.return_value = False
+            youtube.return_value.is_configured.return_value = False
+            youtube.return_value.recent_video_limit = 5
             instagram_profile.return_value.fetch_profile = AsyncMock(
                 return_value=not_configured_profile
             )
@@ -490,11 +525,13 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(platform_profiles["linkedin"], raw_results["linkedin"])
         self.assertIs(platform_profiles["facebook"], raw_results["facebook"])
         self.assertIs(platform_profiles["tiktok"], raw_results["tiktok"])
+        self.assertIs(platform_profiles["youtube"], raw_results["youtube"])
         self.assertIs(envelope["providers"]["linkedin"], raw_results["linkedin"])
         self.assertEqual(mocks["twitter_profile"].await_count, 1)
         self.assertEqual(mocks["linkedin"].await_count, 1)
         self.assertEqual(mocks["facebook"].await_count, 1)
         self.assertEqual(mocks["tiktok"].await_count, 1)
+        self.assertEqual(mocks["youtube"].await_count, 1)
 
     async def test_endpoint_reuses_selected_primary_from_fanout(self) -> None:
         primary = {
@@ -502,8 +539,8 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
             "configured": True,
             "platform": "linkedin",
             "username": "target_user",
-            "full_name": "Selected Bright Data primary",
-            "source": "bright_data_linkedin",
+            "full_name": "Selected Apify primary",
+            "source": "apify_linkedin_profile_scraper",
         }
         profiles = {
             platform: {
@@ -520,6 +557,7 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
                 "reddit",
                 "facebook",
                 "tiktok",
+                "youtube",
             )
         }
         profiles["linkedin"] = primary
@@ -533,8 +571,8 @@ class InvestigationSocialFanoutTests(unittest.IsolatedAsyncioTestCase):
             "mode": "capability_routing",
             "routing": dict(PROVIDER_ROUTING),
             "summary": {
-                "total": 8,
-                "completed": 7,
+                "total": 9,
+                "completed": 8,
                 "empty": 1,
                 "failed": 0,
                 "not_configured": 0,

@@ -1,7 +1,8 @@
-"""Bounded GitHub REST profile and public-repository client."""
+"""Bounded GitHub profile, repository, organization, and contribution client."""
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import UTC, datetime
 from math import isfinite
@@ -14,10 +15,29 @@ from backend.core.config import settings
 
 
 _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
+_CONTRIBUTIONS_QUERY = """
+query PublicContributions($login: String!) {
+  user(login: $login) {
+    contributionsCollection {
+      startedAt
+      endedAt
+      hasAnyRestrictedContributions
+      restrictedContributionsCount
+      totalCommitContributions
+      totalIssueContributions
+      totalPullRequestContributions
+      totalPullRequestReviewContributions
+      contributionCalendar {
+        totalContributions
+      }
+    }
+  }
+}
+""".strip()
 
 
 class GitHubService:
-    """Read a GitHub profile and a single bounded repository page."""
+    """Read public GitHub identity and activity data with bounded requests."""
 
     def __init__(
         self,
@@ -27,6 +47,7 @@ class GitHubService:
         api_version: str | None = None,
         timeout_seconds: float | None = None,
         repo_limit: int | None = None,
+        organization_limit: int | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         configured_token = settings.github_token if token is None else token
@@ -35,6 +56,11 @@ class GitHubService:
         self.api_version = api_version or settings.github_api_version
         self.timeout_seconds = timeout_seconds or settings.github_timeout_seconds
         self.repo_limit = repo_limit or settings.github_repo_limit
+        self.organization_limit = (
+            settings.github_organization_limit
+            if organization_limit is None
+            else organization_limit
+        )
         self.transport = transport
 
     def is_configured(self) -> bool:
@@ -45,12 +71,20 @@ class GitHubService:
         username: str,
         *,
         repo_limit: int | None = None,
+        organization_limit: int | None = None,
     ) -> dict[str, Any]:
-        """Fetch one public user and their most recently updated repositories."""
+        """Fetch one public user and their public repositories and activity."""
         handle = self._clean_username(username)
         limit = self._bounded_repo_limit(repo_limit)
+        org_limit = self._bounded_organization_limit(organization_limit)
         if not self.is_configured():
-            return self._not_configured(handle, include_profile=True)
+            result = self._not_configured(handle, include_profile=True)
+            return {
+                **result,
+                "organizations": [],
+                "organization_count": 0,
+                "contributions": None,
+            }
 
         # Avoid spending a second REST call when the user does not exist or the
         # profile request already failed.
@@ -67,23 +101,39 @@ class GitHubService:
                 "profile": user_result.get("profile"),
                 "repositories": [],
                 "repository_count": 0,
+                "organizations": [],
+                "organization_count": 0,
+                "contributions": None,
                 "errors": [user_result["error"]]
                 if isinstance(user_result.get("error"), dict)
                 else [],
             }
 
-        repos_result = await self.list_repositories(handle, limit=limit)
-        repos_ok = bool(repos_result.get("success"))
-        status = "completed" if user_ok and repos_ok else "partial" if user_ok else user_result["status"]
+        repos_result, organizations_result, contributions_result = await asyncio.gather(
+            self.list_repositories(handle, limit=limit),
+            self.list_organizations(handle, limit=org_limit),
+            self.get_contributions(handle),
+        )
+        enrichment_results = (repos_result, organizations_result, contributions_result)
+        enrichments_complete = all(
+            bool(result.get("success")) and result.get("status") == "completed"
+            for result in enrichment_results
+        )
+        status = "completed" if enrichments_complete else "partial"
+        repositories = repos_result.get("repositories") or []
+        organizations = organizations_result.get("organizations") or []
         return {
             **self._base(success=user_ok, configured=True, status=status),
             "username": handle,
             "profile": user_result.get("profile"),
-            "repositories": repos_result.get("repositories") or [],
-            "repository_count": len(repos_result.get("repositories") or []),
+            "repositories": repositories,
+            "repository_count": len(repositories),
+            "organizations": organizations,
+            "organization_count": len(organizations),
+            "contributions": contributions_result.get("contributions"),
             "errors": [
                 result["error"]
-                for result in (user_result, repos_result)
+                for result in (user_result, *enrichment_results)
                 if isinstance(result.get("error"), dict)
             ],
         }
@@ -164,6 +214,141 @@ class GitHubService:
             "total": len(repositories),
         }
 
+    async def list_organizations(
+        self,
+        username: str,
+        *,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Return one bounded page of organizations publicly listed by a user."""
+        handle = self._clean_username(username)
+        result_limit = self._bounded_organization_limit(limit)
+        if not self.is_configured():
+            return {
+                **self._base(
+                    success=False,
+                    configured=False,
+                    status="not_configured",
+                    operation="list_organizations",
+                ),
+                "reason": "missing GITHUB_TOKEN",
+                "required_environment": ["GITHUB_TOKEN"],
+                "username": handle,
+                "organizations": [],
+                "total": 0,
+            }
+        payload_result = await self._get(
+            operation="list_organizations",
+            path=f"/users/{quote(handle, safe='')}/orgs",
+            params={"per_page": result_limit, "page": 1},
+        )
+        if not payload_result["success"]:
+            return {
+                **payload_result,
+                "username": handle,
+                "organizations": [],
+                "total": 0,
+            }
+        payload = payload_result.pop("_payload")
+        if not isinstance(payload, list):
+            return self._error(
+                "list_organizations",
+                "invalid_response",
+                "GitHub returned an unexpected organization response",
+                payload_result.get("http_status"),
+                {"username": handle, "organizations": [], "total": 0},
+            )
+        organizations = [
+            self._normalize_organization(item)
+            for item in payload[:result_limit]
+            if isinstance(item, dict)
+        ]
+        return {
+            **payload_result,
+            "username": handle,
+            "organizations": organizations,
+            "total": len(organizations),
+        }
+
+    async def get_contributions(self, username: str) -> dict[str, Any]:
+        """Return GitHub's public contribution totals for its default one-year window."""
+        handle = self._clean_username(username)
+        if not self.is_configured():
+            return {
+                **self._base(
+                    success=False,
+                    configured=False,
+                    status="not_configured",
+                    operation="get_contributions",
+                ),
+                "provider": "github_graphql",
+                "reason": "missing GITHUB_TOKEN",
+                "required_environment": ["GITHUB_TOKEN"],
+                "username": handle,
+                "contributions": None,
+            }
+
+        payload_result = await self._post_graphql(
+            operation="get_contributions",
+            query=_CONTRIBUTIONS_QUERY,
+            variables={"login": handle},
+        )
+        payload_result["provider"] = "github_graphql"
+        if not payload_result["success"]:
+            return {**payload_result, "username": handle, "contributions": None}
+
+        payload = payload_result.pop("_payload")
+        if not isinstance(payload, dict):
+            return {
+                **self._error(
+                    "get_contributions",
+                    "invalid_response",
+                    "GitHub returned an unexpected GraphQL response",
+                    payload_result.get("http_status"),
+                    {"username": handle, "contributions": None},
+                ),
+                "provider": "github_graphql",
+            }
+
+        graphql_errors = payload.get("errors")
+        data = payload.get("data")
+        user = data.get("user") if isinstance(data, dict) else None
+        collection = (
+            user.get("contributionsCollection") if isinstance(user, dict) else None
+        )
+        if not isinstance(collection, dict):
+            message = self._graphql_error_message(
+                graphql_errors,
+                "GitHub returned no contribution collection",
+            )
+            return {
+                **self._error(
+                    "get_contributions",
+                    "provider_error" if graphql_errors else "invalid_response",
+                    message,
+                    payload_result.get("http_status"),
+                    {"username": handle, "contributions": None},
+                ),
+                "provider": "github_graphql",
+            }
+
+        result = {
+            **payload_result,
+            "username": handle,
+            "contributions": self._normalize_contributions(collection),
+        }
+        if graphql_errors:
+            result["status"] = "partial"
+            result["error"] = {
+                "code": "provider_partial_error",
+                "message": self._graphql_error_message(
+                    graphql_errors,
+                    "GitHub returned partial contribution data",
+                )[:300],
+                "status_code": payload_result.get("http_status"),
+            }
+        return result
+
     async def _get(
         self,
         *,
@@ -222,6 +407,90 @@ class GitHubService:
             )
         return {
             **self._base(success=True, configured=True, status="completed", operation=operation),
+            "http_status": response.status_code,
+            "rate_limit": self._rate_limit(response.headers),
+            "_payload": payload,
+        }
+
+    async def _post_graphql(
+        self,
+        *,
+        operation: str,
+        query: str,
+        variables: dict[str, Any],
+    ) -> dict[str, Any]:
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {self.token}",
+            "X-GitHub-Api-Version": self.api_version,
+            "User-Agent": "public-osint-platform",
+        }
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.base_url,
+                headers=headers,
+                timeout=self.timeout_seconds,
+                transport=self.transport,
+            ) as client:
+                response = await client.post(
+                    "/graphql",
+                    json={"query": query, "variables": variables},
+                )
+        except httpx.TimeoutException:
+            result = self._error(
+                operation,
+                "timeout",
+                "GitHub GraphQL request timed out",
+                None,
+                {},
+            )
+            result["provider"] = "github_graphql"
+            return result
+        except httpx.HTTPError:
+            result = self._error(
+                operation,
+                "network_error",
+                "Could not communicate with GitHub GraphQL",
+                None,
+                {},
+            )
+            result["provider"] = "github_graphql"
+            return result
+
+        try:
+            payload = response.json()
+        except ValueError:
+            result = self._error(
+                operation,
+                "invalid_response",
+                "GitHub GraphQL returned a non-JSON response",
+                response.status_code,
+                {},
+            )
+            result["provider"] = "github_graphql"
+            return result
+        if response.is_error:
+            fallback = f"GitHub GraphQL returned HTTP {response.status_code}"
+            message = self._provider_message(payload, fallback)
+            if message == fallback and isinstance(payload, dict):
+                message = self._graphql_error_message(payload.get("errors"), fallback)
+            result = self._error(
+                operation,
+                "provider_error",
+                message,
+                response.status_code,
+                {},
+            )
+            result["provider"] = "github_graphql"
+            return result
+        return {
+            **self._base(
+                success=True,
+                configured=True,
+                status="completed",
+                operation=operation,
+            ),
+            "provider": "github_graphql",
             "http_status": response.status_code,
             "rate_limit": self._rate_limit(response.headers),
             "_payload": payload,
@@ -329,11 +598,53 @@ class GitHubService:
             "pushed_at": cls._optional_string(value.get("pushed_at")),
         }
 
+    @classmethod
+    def _normalize_organization(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": cls._safe_int(value.get("id")),
+            "username": cls._optional_string(value.get("login")),
+            "description": cls._optional_string(value.get("description")),
+            "avatar_url": cls._optional_string(value.get("avatar_url")),
+            "api_url": cls._optional_string(value.get("url")),
+        }
+
+    @classmethod
+    def _normalize_contributions(cls, value: dict[str, Any]) -> dict[str, Any]:
+        calendar = value.get("contributionCalendar")
+        calendar = calendar if isinstance(calendar, dict) else {}
+        return {
+            "period_start": cls._optional_string(value.get("startedAt")),
+            "period_end": cls._optional_string(value.get("endedAt")),
+            "total_contributions": cls._safe_int(calendar.get("totalContributions")),
+            "commit_contributions": cls._safe_int(value.get("totalCommitContributions")),
+            "issue_contributions": cls._safe_int(value.get("totalIssueContributions")),
+            "pull_request_contributions": cls._safe_int(
+                value.get("totalPullRequestContributions")
+            ),
+            "pull_request_review_contributions": cls._safe_int(
+                value.get("totalPullRequestReviewContributions")
+            ),
+            "restricted_contributions": cls._safe_int(
+                value.get("restrictedContributionsCount")
+            ),
+            "has_restricted_contributions": (
+                value.get("hasAnyRestrictedContributions")
+                if isinstance(value.get("hasAnyRestrictedContributions"), bool)
+                else None
+            ),
+        }
+
     def _bounded_repo_limit(self, value: int | None) -> int:
         result = self.repo_limit if value is None else value
         if result < 1:
             raise ValueError("repo limit must be at least 1")
         return min(result, self.repo_limit, 30)
+
+    def _bounded_organization_limit(self, value: int | None) -> int:
+        result = self.organization_limit if value is None else value
+        if result < 1:
+            raise ValueError("organization limit must be at least 1")
+        return min(result, self.organization_limit, 30)
 
     @staticmethod
     def _clean_username(value: str) -> str:
@@ -346,6 +657,18 @@ class GitHubService:
     def _provider_message(payload: Any, fallback: str) -> str:
         if isinstance(payload, dict) and payload.get("message"):
             return str(payload["message"])
+        return fallback
+
+    @staticmethod
+    def _graphql_error_message(errors: Any, fallback: str) -> str:
+        if isinstance(errors, list):
+            messages = [
+                str(item["message"])
+                for item in errors
+                if isinstance(item, dict) and item.get("message")
+            ]
+            if messages:
+                return "; ".join(messages)
         return fallback
 
     @staticmethod

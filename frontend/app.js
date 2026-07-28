@@ -2821,7 +2821,7 @@ function renderPlatformDossier(data) {
         const isExpandedByDefault = collectorConfirmed && activeProfileData && activeProfileData.success !== false && activeProfileData.status !== "error" && !activeProfileData.error;
         
         const isInstagramWithPosts = matchPlatform === "instagram" && data.instagram_posts && data.instagram_posts.posts && data.instagram_posts.posts.length > 0;
-        const isScrapable = ["twitter", "reddit", "linkedin", "facebook", "telegram", "tiktok", "github"].includes(matchPlatform);
+        const isScrapable = ["twitter", "reddit", "linkedin", "facebook", "telegram", "tiktok", "github", "youtube"].includes(matchPlatform);
         
         if (collectorConfirmed && (isPrimary || platformDorks.length > 0 || isInstagramWithPosts || isScrapable)) {
             hasExtraContent = true;
@@ -3151,7 +3151,7 @@ function renderSkeletonDossier() {
     const container = document.getElementById("platform-dossier-container");
     if (container) {
         container.innerHTML = "";
-        const platforms = ["instagram", "twitter", "reddit", "telegram", "linkedin", "tiktok", "github"];
+        const platforms = ["instagram", "twitter", "reddit", "telegram", "linkedin", "tiktok", "github", "youtube"];
         platforms.forEach(plat => {
             const card = document.createElement("div");
             card.className = "platform-intel-card skeleton-card skeleton-pulse";
@@ -3202,12 +3202,13 @@ async function scrapePlatformOnDemand(platform, username, collapsibleId, btn) {
     const plat = String(platform || "").toLowerCase();
     const routeLabels = {
         twitter: "Apify X collector",
-        reddit: "Apify Reddit collector",
-        linkedin: "Bright Data collector",
+        reddit: "Reddit OAuth + Apify collector",
+        linkedin: "Apify LinkedIn collector",
         facebook: "Apify Facebook collector",
         telegram: "Telegram collector",
         tiktok: "Apify TikTok collector",
-        github: "GitHub REST collector"
+        github: "GitHub REST + GraphQL collector",
+        youtube: "YouTube Data API collector"
     };
     const routeLabel = routeLabels[plat] || "routed platform collector";
     
@@ -3234,8 +3235,8 @@ async function scrapePlatformOnDemand(platform, username, collapsibleId, btn) {
             endpoint = `${API_BASE}/api/v1/apify/twitter/profile`;
             body = { username: username, max_items: 5 };
         } else if (plat === "reddit") {
-            endpoint = `${API_BASE}/api/v1/apify/reddit/collect`;
-            body = { urls: [`https://www.reddit.com/user/${username}/`] };
+            endpoint = `${API_BASE}/api/v1/providers/reddit/profile`;
+            body = { username: username, max_posts: 10 };
         } else if (plat === "linkedin") {
             endpoint = `${API_BASE}/api/v1/providers/linkedin/profile`;
             body = { username: username };
@@ -3251,6 +3252,9 @@ async function scrapePlatformOnDemand(platform, username, collapsibleId, btn) {
         } else if (plat === "github") {
             endpoint = `${API_BASE}/api/v1/providers/github/profile`;
             body = { username: username, repo_limit: 10 };
+        } else if (plat === "youtube") {
+            endpoint = `${API_BASE}/api/v1/providers/youtube/channel`;
+            body = { target: username, recent_video_limit: 5 };
         } else {
             throw new Error("No targeted collector configured for " + platform);
         }
@@ -3409,38 +3413,74 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             html += `</div>`;
         }
     } else if (plat === "reddit") {
-        const comments = data.comments || (Array.isArray(data) ? data.filter(i => i.dataType === "comment") : []);
-        const posts = DataMappers.firstList(data.posts, data.recent_posts, Array.isArray(data) ? data.filter(i => i.dataType === "post") : []);
-        const user = data.user || data.profile || data || {};
-        const linkKarma = DataMappers.firstDefined(user.link_karma, user.linkKarma);
-        const commentKarma = DataMappers.firstDefined(user.comment_karma, user.commentKarma);
-        const cakeDayValue = DataMappers.firstDefined(user.created_at, user.created_utc);
+        const profileEnvelope = data.profile && typeof data.profile === "object" ? data.profile : {};
+        const nestedProfile = profileEnvelope.profile && typeof profileEnvelope.profile === "object"
+            ? profileEnvelope.profile
+            : profileEnvelope;
+        const user = { ...nestedProfile, ...data };
+        const activity = data.activity && typeof data.activity === "object"
+            ? data.activity
+            : (data.apify_activity && typeof data.apify_activity === "object" ? data.apify_activity : {});
+        const comments = DataMappers.firstList(
+            data.comments,
+            activity.comments,
+            Array.isArray(data) ? data.filter(i => i.dataType === "comment") : []
+        );
+        const posts = DataMappers.firstList(
+            data.posts,
+            data.recent_posts,
+            activity.posts,
+            activity.recent_posts,
+            Array.isArray(data) ? data.filter(i => i.dataType === "post") : []
+        );
+        const linkKarma = DataMappers.firstDefined(user.link_karma, user.linkKarma, user.karma && user.karma.link);
+        const commentKarma = DataMappers.firstDefined(user.comment_karma, user.commentKarma, user.karma && user.karma.comment);
+        const totalKarma = DataMappers.firstDefined(user.total_karma, user.totalKarma, user.karma && user.karma.total);
+        const accountAgeDays = DataMappers.firstDefined(user.account_age_days, user.accountAgeDays);
+        const cakeDayValue = DataMappers.firstDefined(user.account_created_at, user.created_at, user.created_utc);
         const cakeDay = cakeDayValue !== undefined ? fmtDate(cakeDayValue) : "";
+        const bio = DataMappers.firstDefined(user.bio, user.public_description, user.description, "");
+        const profileUrl = safeExternalUrl(DataMappers.firstDefined(user.profile_url, data.profile_url));
+        let profilePic = safeImageSource(DataMappers.firstDefined(
+            user.profile_pic_hd,
+            user.profile_pic_url,
+            user.avatar_url,
+            user.icon_url,
+            user.snoovatar_url
+        ));
+        if (profilePic && !profilePic.startsWith("data:image/")) {
+            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+        }
 
         if (!excludeProfileCard) {
             html += sectionHeader("👤", "Redditor Profile");
             html += `<div class="scraped-profile-card">`;
             html += `  <div class="scraped-profile-header">`;
             html += `    <div class="scraped-profile-avatar-container" style="border-color:#ff4500; background:rgba(255,69,0,0.05);">`;
-            html += `      <span class="scraped-profile-avatar-placeholder" style="color:#ff4500;">RD</span>`;
+            if (profilePic) {
+                html += `      <img src="${esc(profilePic)}" class="scraped-profile-avatar" onerror="this.style.display='none'; this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\' style=\'color:#ff4500;\'>RD</span>';">`;
+            } else {
+                html += `      <span class="scraped-profile-avatar-placeholder" style="color:#ff4500;">RD</span>`;
+            }
             html += `    </div>`;
             html += `    <div class="scraped-profile-identity">`;
-            html += `      <span class="scraped-profile-name">u/${esc(DataMappers.firstDefined(user.name, data.username, username))}</span>`;
-            html += `      <span class="scraped-profile-handle" style="color:#ff4500;">Reddit Account</span>`;
+            html += `      <span class="scraped-profile-name">u/${esc(DataMappers.firstDefined(user.username, user.name, data.username, username))}</span>`;
+            html += `      <span class="scraped-profile-handle" style="color:#ff4500;">OAuth profile + Apify activity</span>`;
             html += `    </div>`;
             html += `  </div>`;
-            if (linkKarma !== undefined || commentKarma !== undefined) {
-                const resolvedLinkKarma = Number(linkKarma || 0);
-                const resolvedCommentKarma = Number(commentKarma || 0);
+            if (bio) html += `<div class="scraped-profile-bio">${esc(truncate(bio, 500))}</div>`;
+            if (linkKarma !== undefined || commentKarma !== undefined || totalKarma !== undefined || accountAgeDays !== undefined) {
                 html += `<div class="scraped-stats-grid">`;
                 if (linkKarma !== undefined) html += statTile("Post Karma", fmtNum(linkKarma), "blue");
                 if (commentKarma !== undefined) html += statTile("Comment Karma", fmtNum(commentKarma));
-                html += statTile("Total", fmtNum(resolvedLinkKarma + resolvedCommentKarma), "gold");
+                if (totalKarma !== undefined) html += statTile("Total Karma", fmtNum(totalKarma), "gold");
+                if (accountAgeDays !== undefined) html += statTile("Account Age", `${fmtNum(accountAgeDays)} days`);
                 html += `</div>`;
             } else if (data.profile_metadata_note) {
                 html += `<div class="scraped-profile-meta-line">${esc(data.profile_metadata_note)}</div>`;
             }
             if (cakeDay) html += `<div class="scraped-profile-meta-line">Cake Day: ${cakeDay}</div>`;
+            if (profileUrl) html += `<div class="scraped-profile-meta-line"><a href="${esc(profileUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">Reddit profile ↗</a></div>`;
             html += `</div>`;
         }
 
@@ -3671,10 +3711,92 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
         } else {
             html += `<div class="scraped-empty-state">No public TikTok videos were returned.</div>`;
         }
+    } else if (plat === "youtube") {
+        const nestedChannel = data.channel && typeof data.channel === "object" ? data.channel : {};
+        const channel = { ...nestedChannel, ...data };
+        const videos = DataMappers.firstList(
+            data.recent_videos,
+            data.videos,
+            data.recent_posts,
+            channel.recent_videos,
+            channel.videos
+        );
+        const channelName = DataMappers.firstDefined(channel.channel_name, channel.full_name, channel.name, username);
+        const rawHandle = String(DataMappers.firstDefined(channel.handle, channel.username, channel.channel_id, username));
+        const displayHandle = rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`;
+        const description = DataMappers.firstDefined(channel.description, channel.bio, "");
+        const subscribers = DataMappers.firstDefined(channel.subscriber_count, channel.follower_count);
+        const views = DataMappers.firstDefined(channel.view_count, channel.total_view_count);
+        const videoCount = DataMappers.firstDefined(channel.video_count, channel.post_count);
+        const profileUrl = safeExternalUrl(channel.profile_url);
+        let profilePic = safeImageSource(DataMappers.firstDefined(channel.avatar_url, channel.profile_pic_url, channel.profile_pic_hd));
+        if (profilePic && !profilePic.startsWith("data:image/")) {
+            profilePic = `${API_BASE}/api/v1/investigation/proxy-image?url=${encodeURIComponent(profilePic)}`;
+        }
+
+        if (!excludeProfileCard) {
+            html += sectionHeader("▶", "YouTube Channel");
+            html += `<div class="scraped-profile-card">`;
+            html += `  <div class="scraped-profile-header">`;
+            html += `    <div class="scraped-profile-avatar-container" style="border-color:#ff0000; background:rgba(255,0,0,0.05);">`;
+            if (profilePic) {
+                html += `      <img src="${esc(profilePic)}" class="scraped-profile-avatar" onerror="this.style.display='none'; this.parentNode.innerHTML='<span class=\'scraped-profile-avatar-placeholder\' style=\'color:#ff0000;\'>YT</span>';">`;
+            } else {
+                html += `      <span class="scraped-profile-avatar-placeholder" style="color:#ff0000;">YT</span>`;
+            }
+            html += `    </div>`;
+            html += `    <div class="scraped-profile-identity">`;
+            html += `      <span class="scraped-profile-name">${esc(channelName)}</span>`;
+            html += `      <span class="scraped-profile-handle" style="color:#ff4e45;">${esc(displayHandle)}</span>`;
+            html += `    </div>`;
+            html += `  </div>`;
+            if (description) html += `<div class="scraped-profile-bio">${esc(truncate(description, 500))}</div>`;
+            if (subscribers !== undefined || views !== undefined || videoCount !== undefined) {
+                html += `<div class="scraped-stats-grid">`;
+                if (subscribers !== undefined) html += statTile("Subscribers", fmtNum(subscribers), "blue");
+                if (views !== undefined) html += statTile("Channel Views", fmtNum(views));
+                if (videoCount !== undefined) html += statTile("Videos", fmtNum(videoCount), "gold");
+                html += `</div>`;
+            }
+            if (channel.subscriber_count_hidden === true) {
+                html += `<div class="scraped-profile-meta-line">Subscriber count is hidden by the channel.</div>`;
+            }
+            const channelMeta = [channel.country, channel.default_language].filter(Boolean).map(esc).join(" · ");
+            if (channelMeta) html += `<div class="scraped-profile-meta-line">${channelMeta}</div>`;
+            const published = fmtDate(channel.published_at);
+            if (published) html += `<div class="scraped-profile-meta-line">Channel created: ${esc(published)}</div>`;
+            if (profileUrl) html += `<div class="scraped-profile-meta-line"><a href="${esc(profileUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">YouTube channel ↗</a></div>`;
+            html += `</div>`;
+        }
+
+        if (videos.length > 0) {
+            html += sectionHeader("▶", "Recent YouTube Videos", videos.length);
+            html += `<div class="scraped-feed-list">`;
+            videos.slice(0, 8).forEach(video => {
+                const published = fmtDate(video.published_at);
+                const videoUrl = safeExternalUrl(video.url);
+                const title = esc(video.title || "Untitled video");
+                const titleHtml = videoUrl
+                    ? `<a href="${esc(videoUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue); text-decoration:none;"><strong>${title}</strong></a>`
+                    : `<strong>${title}</strong>`;
+                html += feedCard(
+                    published ? `<span class="scraped-feed-date">${esc(published)}</span>` : "",
+                    `${titleHtml}${video.description ? `<div class="scraped-feed-excerpt">${esc(truncate(video.description, 300))}</div>` : ""}`,
+                    video.channel_name ? `<span class="scraped-engagement">${esc(video.channel_name)}</span>` : ""
+                );
+            });
+            html += `</div>`;
+        } else {
+            html += `<div class="scraped-empty-state">No recent public YouTube videos were returned.</div>`;
+        }
     } else if (plat === "github") {
         const nestedProfile = data.profile && typeof data.profile === "object" ? data.profile : {};
         const profile = { ...data, ...nestedProfile };
         const repositories = DataMappers.firstList(data.repositories, profile.repositories);
+        const organizations = DataMappers.firstList(data.organizations, profile.organizations);
+        const contributions = data.contributions && typeof data.contributions === "object"
+            ? data.contributions
+            : (profile.contributions && typeof profile.contributions === "object" ? profile.contributions : {});
         const profileUrl = safeExternalUrl(profile.profile_url);
         const blogUrl = safeExternalUrl(profile.blog);
         let profilePic = safeImageSource(DataMappers.firstDefined(profile.avatar_url, profile.profile_pic_url));
@@ -3709,6 +3831,59 @@ function renderScrapedDetails(platform, data, container, username, excludeProfil
             if (profileUrl || blogUrl) {
                 html += `<div class="scraped-profile-meta-line">${profileUrl ? `<a href="${esc(profileUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">GitHub profile ↗</a>` : ""}${profileUrl && blogUrl ? " · " : ""}${blogUrl ? `<a href="${esc(blogUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue);">Website ↗</a>` : ""}</div>`;
             }
+            html += `</div>`;
+        }
+
+        const contributionMetrics = [
+            ["Total Contributions", contributions.total_contributions, "blue"],
+            ["Commits", contributions.commit_contributions, ""],
+            ["Pull Requests", contributions.pull_request_contributions, "gold"],
+            ["Issues", contributions.issue_contributions, ""],
+            ["PR Reviews", contributions.pull_request_review_contributions, ""]
+        ];
+        if (contributionMetrics.some(([, value]) => value !== undefined && value !== null)) {
+            html += sectionHeader("◆", "Contribution Activity");
+            html += `<div class="scraped-profile-card">`;
+            html += `<div class="scraped-stats-grid">`;
+            contributionMetrics.forEach(([label, value, accent]) => {
+                if (value !== undefined && value !== null) {
+                    html += statTile(label, fmtNum(value), accent);
+                }
+            });
+            html += `</div>`;
+            const periodStart = fmtDate(contributions.period_start);
+            const periodEnd = fmtDate(contributions.period_end);
+            if (periodStart || periodEnd) {
+                html += `<div class="scraped-profile-meta-line">Contribution window: ${esc(periodStart || "unknown")} to ${esc(periodEnd || "present")}</div>`;
+            }
+            if (contributions.has_restricted_contributions === true) {
+                const restricted = DataMappers.firstDefined(contributions.restricted_contributions, 0);
+                html += `<div class="scraped-profile-meta-line">Includes ${fmtNum(restricted)} restricted/private contributions reported by GitHub.</div>`;
+            }
+            html += `</div>`;
+        }
+
+        if (organizations.length > 0) {
+            html += sectionHeader("◎", "Public Organizations", organizations.length);
+            html += `<div class="scraped-feed-list">`;
+            organizations.slice(0, 8).forEach(organization => {
+                const organizationHandle = DataMappers.firstDefined(organization.username, organization.login, organization.name, "Unknown organization");
+                const organizationUrl = safeExternalUrl(
+                    DataMappers.firstDefined(
+                        organization.profile_url,
+                        organization.html_url,
+                        `https://github.com/${encodeURIComponent(organizationHandle)}`
+                    )
+                );
+                const title = organizationUrl
+                    ? `<a href="${esc(organizationUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue); text-decoration:none;"><strong>@${esc(organizationHandle)}</strong></a>`
+                    : `<strong>@${esc(organizationHandle)}</strong>`;
+                html += feedCard(
+                    `<span class="scraped-feed-tag">Organization</span>`,
+                    `${title}${organization.description ? `<div class="scraped-feed-excerpt">${esc(truncate(organization.description, 240))}</div>` : ""}`,
+                    ""
+                );
+            });
             html += `</div>`;
         }
 
