@@ -301,6 +301,82 @@ The domain-discovery limit is bounded by `HUNTER_DOMAIN_SEARCH_LIMIT`.
 
 Twilio API key credentials are preferred. Account SID/Auth Token credentials are also supported. Requested data packages may have separate Twilio charges.
 
+### Person Search
+
+Readiness and hard server ceilings:
+
+`GET /api/v1/person-search/status`
+
+Exact-full-name discovery:
+
+`POST /api/v1/person-search`
+
+```json
+{
+  "full_name": "Ada Lovelace",
+  "location": "London",
+  "organization": null,
+  "country_code": "GB",
+  "platforms": ["linkedin", "github", "twitter", "youtube"],
+  "max_profiles": 20,
+  "query_limit": 5,
+  "provider_call_limit": 12,
+  "enrich_profiles": true,
+  "max_enrichments": 4
+}
+```
+
+Supported platforms are `linkedin`, `github`, `twitter`, `instagram`, `facebook`, `tiktok`, `reddit`, `youtube`, and `telegram`. The request is name-only: it builds quoted full-name queries and never generates guessed usernames from the name. Optional location and organization values narrow the prepared searches. Request ceilings may lower, but never exceed, the configured server limits. `enrich_profiles` defaults to `false`; set it to `true` explicitly to authorize the additional platform-provider calls shown in the example.
+
+Discovery requires `PERSON_SEARCH_SERPAPI_KEY`; use a separately quota-managed key to protect the working investigation flow. Existing `SERPAPI_KEY`, platform-provider credentials, and shared provider resources such as public Telegram are unavailable to person search by default. `PERSON_SEARCH_ALLOW_SHARED_PROVIDER_CREDENTIALS=true` is an explicit operator opt-in that permits discovery fallback to `SERPAPI_KEY` and permits requested enrichment to reuse those configured resources.
+
+Discovery uses SerpAPI without an automatic vendor fallback. Search URLs are parsed with exact provider-host and profile-path rules before optional enrichment; the server never fetches an arbitrary URL returned by the search engine. Explicitly enabled enrichment uses the lightest existing public-profile path and is reserved before concurrent work: GitHub user only, YouTube channel without videos, Reddit OAuth metadata without posts, Facebook Page metadata without posts, public Telegram without MTProto, and bounded one-item collection where no profile-only adapter exists. One overall enrichment deadline includes time waiting for an enrichment-concurrency slot. Candidates beyond the intentional `max_enrichments` cap remain discovery-only; that planned limit is not an error and does not by itself make the search `partial`.
+
+The following is an intentionally abbreviated response excerpt, not a complete schema-valid response object. The OpenAPI schema shows every required normalized field:
+
+```json
+{
+  "success": true,
+  "status": "completed",
+  "query": {"full_name": "Ada Lovelace", "platforms": ["github"]},
+  "provider": "serpapi",
+  "profiles": [
+    {
+      "platform": "github",
+      "username": "example",
+      "profile_url": "https://github.com/example",
+      "display_name": "Ada Lovelace",
+      "photo_url": "https://avatars.githubusercontent.com/...",
+      "collector_confirmed": true,
+      "identity_status": "unverified_candidate"
+    }
+  ],
+  "usernames": [
+    {"platform": "github", "username": "example", "profile_url": "https://github.com/example"}
+  ],
+  "photos": [
+    {"platform": "github", "url": "https://avatars.githubusercontent.com/..."}
+  ],
+  "counts": {"profiles": 1, "usernames": 1, "photos": 1},
+  "errors": [],
+  "warnings": [],
+  "identity_notice": "Name matches are unverified candidates...",
+  "cache": {
+    "hit": false,
+    "stored": true,
+    "shared_inflight": false,
+    "age_seconds": null,
+    "mode": "use"
+  }
+}
+```
+
+`partial` preserves discovered candidates when a later query or requested enrichment fails. `empty_dataset` is a successful search with no accepted profile URLs. `not_configured` identifies a missing person-search discovery key or a disabled feature without performing discovery. Provider `rate_limited` results preserve `Retry-After` metadata. Only cleanly completed and empty results may use a feature-local in-process cache; completed-with-warnings, partial, failed, rate-limited, and missing-configuration responses are not cached, so transient warnings, errors, and `Retry-After` values cannot become stale. Person searches do not enter investigation history, internal databases, username fanout, AI analysis, or risk scoring.
+
+Before endpoint work is admitted, a feature-local fixed-window limiter counts requests by the direct client IP. Exceeding it returns HTTP 429 with `Retry-After`. A hard limit also bounds concurrently owned person-search executions; a new unique execution returns HTTP 503 when no slot is available. Identical requests may reuse a matching cache entry or share one in-flight execution internally. These optimizations are intentionally not exposed: public cache metadata always withholds hit, age, and shared-in-flight state (`hit: false`, `age_seconds: null`, and `shared_inflight: false`), including when reuse occurred. Original execution duration is also removed. `searched_at` is the response-generation time, while `execution_metadata.data_freshness_max_seconds` reports the maximum possible cache age without revealing whether reuse occurred. Provider work is cancelled only when its final waiting client disconnects; one cancelled coalesced caller cannot cancel work still awaited by another.
+
+Every profile remains an `unverified_candidate`. A collected public account is not proof that it belongs to the requested person; corroborate using independent evidence.
+
 ### GitHub Profile and Activity
 
 `POST /api/v1/providers/github/profile`
@@ -478,6 +554,22 @@ INVESTIGATION_HISTORY_PERSIST_ENABLED=false
 INVESTIGATION_HISTORY_DB_PATH=./data/investigations.sqlite3
 INVESTIGATION_HISTORY_MAX_ENTRIES=128
 INVESTIGATION_TWITTER_RESULT_LIMIT=5
+
+# Standalone full-name person search (dedicated quota by default)
+PERSON_SEARCH_SERPAPI_KEY=
+PERSON_SEARCH_ALLOW_SHARED_PROVIDER_CREDENTIALS=false
+PERSON_SEARCH_ENABLED=true
+PERSON_SEARCH_MAX_QUERIES=5
+PERSON_SEARCH_MAX_PROFILES=20
+PERSON_SEARCH_MAX_ENRICHMENTS=4
+PERSON_SEARCH_MAX_PROVIDER_CALLS=12
+PERSON_SEARCH_ENRICHMENT_CONCURRENCY=3
+PERSON_SEARCH_ENRICHMENT_TIMEOUT_SECONDS=180
+PERSON_SEARCH_CACHE_TTL_SECONDS=1800
+PERSON_SEARCH_CACHE_MAX_ENTRIES=128
+PERSON_SEARCH_MAX_CONCURRENT_REQUESTS=2
+PERSON_SEARCH_RATE_LIMIT_REQUESTS=10
+PERSON_SEARCH_RATE_LIMIT_WINDOW_SECONDS=60
 ```
 
 The legacy `BRIGHTDATA_SERP_*` and `APIFY_SERP_*` settings are not part of the supported search path. `RAPIDAPI_KEY`/FlashAPI and Instaloader are not automatic Instagram fallbacks under the capability-routing policy.

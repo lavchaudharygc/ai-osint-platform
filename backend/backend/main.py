@@ -7,7 +7,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from backend.api.endpoints import apify, investigation, providers, reports, training
+from backend.api.endpoints import (
+    apify,
+    investigation,
+    person_search_routes,
+    providers,
+    reports,
+    training,
+)
 from backend.core.config import settings
 
 
@@ -34,6 +41,7 @@ app.add_middleware(
 app.include_router(investigation.router)
 app.include_router(apify.router)
 app.include_router(providers.router)
+app.include_router(person_search_routes.router)
 app.include_router(reports.router)
 app.include_router(training.router)
 
@@ -51,6 +59,7 @@ async def root() -> dict[str, object]:
             "investigation_history": "/api/v1/investigation/history",
             "apify_social_status": "/api/v1/apify/status",
             "provider_routing_status": "/api/v1/providers/status",
+            "person_search": "/api/v1/person-search",
             "generate_report": "/api/v1/reports/generate-report/{investigation_id}",
             "training_dataset": "/api/v1/training/dataset/summary",
         },

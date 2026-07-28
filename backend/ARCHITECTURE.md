@@ -7,6 +7,7 @@ The backend uses capability-based routing. Each external capability has one appr
 | Capability | Approved provider | Runtime adapter |
 |---|---|---|
 | Google dorking/search | SerpAPI | `GoogleDorkingService` |
+| Exact-full-name person discovery | SerpAPI plus bounded existing profile adapters | `PersonSearchService`, `PersonSearchEnricher` |
 | General public web scraping | Bright Data Web Unlocker | `BrightDataWebService` |
 | Instagram profile and posts | Existing Apify Instagram Actors | `InstagramProfileService`, `InstagramPostsService` |
 | X/Twitter profiles and ordinary posts | Apify Scraper One X profile/posts Actor | `TwitterApifyService` |
@@ -58,6 +59,23 @@ Credentials are read from `backend/.env` or the process environment and must not
 
 The backward-compatible `apify_social_results` field now uses `mode: "capability_routing"`. New consumers should prefer `provider_results`, which separates `social`, `specialized`, and `search` results without assuming every result came from Apify.
 
+## Standalone Person Search Flow
+
+`POST /api/v1/person-search` is intentionally outside the username investigation orchestrator:
+
+1. Apply a feature-local, direct-client-IP fixed-window rate limit before endpoint work is admitted.
+2. Validate and normalize a required full name plus optional location, organization, country, platform selection, and lower request ceilings.
+3. Reuse a matching cache entry or identical in-flight execution internally when available; public response metadata does not reveal cache hits, entry age, shared executions, or original duration. Response time and a stable maximum-freshness bound remain explicit.
+4. Require a hard concurrent-request admission slot for each new owned execution, then build a bounded exact-name query plan. No username variants are guessed from the name.
+5. Require a separately quota-managed `PERSON_SEARCH_SERPAPI_KEY` by default, reserve its SerpAPI query units in a feature-local provider-call budget, and execute sequentially without cross-vendor fallback. Shared investigation/provider credentials require an explicit server-side opt-in.
+6. Accept only strict known provider hosts and profile URL paths, canonicalize them, and label every result `unverified_candidate`.
+7. Only when `enrich_profiles: true`, reserve and concurrently run a bounded set of lightweight profile adapters. The default is `false`, and arbitrary search-result URLs are never fetched.
+8. Bound the entire enrichment phase with one deadline, including semaphore wait time. Candidates beyond the intentional enrichment cap remain discovery-only and do not cause a partial result.
+9. Preserve discovery candidates if requested enrichment is missing, stale, rate-limited, or fails; return structured partial status.
+10. Cache only cleanly completed and empty responses in the person-search cache. Warning, partial, and failed results remain uncached so transient provider warnings, errors, and backoff values cannot become stale. Do not write person searches to investigation history or its optional SQLite store. Cancel provider work when its final waiter disconnects; one cancelled coalesced caller never cancels work still awaited by another.
+
+The feature has its own router, fixed-window limiter, admission gate, cache, in-flight map, schemas, query builder, normalizer, enricher, and service. It does not change `PROVIDER_ROUTING`, `SupportedPlatform`, current provider endpoints, automatic social fanout, AI analysis, local databases, or risk scoring.
+
 ## Quota Protection
 
 The policy is configured with these environment variables:
@@ -73,8 +91,22 @@ The policy is configured with these environment variables:
 | `INVESTIGATION_TWITTER_RESULT_LIMIT` | `5` | X profile items in an automatic investigation; replies/About remain off |
 | `INVESTIGATION_HISTORY_PERSIST_ENABLED` | `false` | Opt into plaintext local SQLite investigation history |
 | `INVESTIGATION_HISTORY_MAX_ENTRIES` | `128` | Maximum durable history rows when enabled |
+| `PERSON_SEARCH_ENABLED` | `true` | Enable the standalone person-search route; discovery still requires its dedicated key or explicit sharing opt-in |
+| `PERSON_SEARCH_SERPAPI_KEY` | unset | Separately quota-managed SerpAPI key for person discovery |
+| `PERSON_SEARCH_ALLOW_SHARED_PROVIDER_CREDENTIALS` | `false` | Explicitly allow fallback to investigation SerpAPI plus optional shared platform credentials/resources |
+| `PERSON_SEARCH_MAX_QUERIES` | `5` | Maximum exact-name SerpAPI queries per person search |
+| `PERSON_SEARCH_MAX_PROFILES` | `20` | Maximum normalized candidates returned |
+| `PERSON_SEARCH_MAX_ENRICHMENTS` | `4` | Maximum candidates considered for profile enrichment |
+| `PERSON_SEARCH_MAX_PROVIDER_CALLS` | `12` | Combined person-discovery and enrichment call-unit ceiling |
+| `PERSON_SEARCH_ENRICHMENT_CONCURRENCY` | `3` | Maximum profile enrichments running concurrently within one search |
+| `PERSON_SEARCH_ENRICHMENT_TIMEOUT_SECONDS` | `180` | Overall deadline for the complete enrichment phase, including concurrency wait time |
+| `PERSON_SEARCH_CACHE_TTL_SECONDS` | `1800` | Feature-local cache lifetime; `0` disables it |
+| `PERSON_SEARCH_CACHE_MAX_ENTRIES` | `128` | Maximum process-local person-search cache entries |
+| `PERSON_SEARCH_MAX_CONCURRENT_REQUESTS` | `2` | Hard admission limit for concurrently owned person-search executions |
+| `PERSON_SEARCH_RATE_LIMIT_REQUESTS` | `10` | Requests accepted per direct client within one fixed window |
+| `PERSON_SEARCH_RATE_LIMIT_WINDOW_SECONDS` | `60` | Person-search fixed-window duration |
 
-The request fields `provider_call_limit` and `dork_query_limit` may lower the configured ceilings but cannot raise them. The call budget counts logical operations reserved by the orchestrator; it is not a count of every HTTP request or provider-side polling request.
+Investigation requests may lower `provider_call_limit` and `dork_query_limit`; person-search requests may lower `provider_call_limit` and `query_limit`. None can raise the configured server ceilings. The call budget counts logical operations reserved by the orchestrator; it is not a count of every HTTP request or provider-side polling request.
 
 The explicitly requested platform reserves first, followed by explicit specialist inputs, inferred social candidates, at most one configured AI risk call, and finally SerpAPI dorks. Automatic identity correlation is deterministic and never spends an external model call or budget unit. Identical concurrent requests share one in-flight execution. Successful direct-provider reads are cached; failed or pending results are not.
 
@@ -94,6 +126,8 @@ Authorized Telegram username lookup does not query third-party bots unless `TELE
 - `backend/main.py`: FastAPI application assembly, CORS, health checks, and routers.
 - `backend/api/endpoints/investigation.py`: investigation orchestration, cache use, and provider budget enforcement.
 - `backend/api/endpoints/providers.py`: explicit capability-provider routes.
+- `backend/api/endpoints/person_search_routes.py`: standalone person-search route, cache, and in-flight deduplication.
+- `backend/services/person_search`: exact-name query construction, strict candidate parsing, lightweight enrichment, and orchestration.
 - `backend/services/investigation_policy.py`: in-process TTL/LRU cache and call-budget primitives.
 - `backend/services`: provider adapters and normalization.
 - `backend/schemas`: request and response contracts.
@@ -107,6 +141,7 @@ Authorized Telegram username lookup does not query third-party bots unless `TELE
 - Reddit OAuth client credentials and access tokens remain server-side. The normalized response exposes public account metadata and rate-limit state, never OAuth secrets.
 - YouTube collection is limited to public channel metadata and one bounded recent-uploads page. Private videos and private subscriber information are not inferred.
 - Same-username results are identity candidates, not proof. Human corroboration is required.
+- Same-name person-search results always remain unverified candidates, even when a collector confirms that the public account exists.
 - HTTP reachability, collector-confirmed presence, independently corroborated identity, and direct identity evidence are separate result tiers.
 - AI correlation text cannot override deterministic evidence scoring. Elevated automated risk requires a substantial exact quote, a valid evidence source reference, and a narrow explicit harmful-conduct signal; otherwise the result is `unknown`.
 - Only public or otherwise authorized data may be collected.

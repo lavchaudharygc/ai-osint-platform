@@ -343,6 +343,86 @@ class Settings(BaseSettings):
         le=40,
         validation_alias="INVESTIGATION_TWITTER_RESULT_LIMIT",
     )
+    # Person search is an isolated name-based discovery workflow. These caps
+    # cannot increase per request; callers may only request lower values.
+    person_search_serpapi_key: str | None = Field(
+        default=None,
+        validation_alias="PERSON_SEARCH_SERPAPI_KEY",
+    )
+    person_search_allow_shared_provider_credentials: bool = Field(
+        default=False,
+        validation_alias="PERSON_SEARCH_ALLOW_SHARED_PROVIDER_CREDENTIALS",
+    )
+    person_search_enabled: bool = Field(
+        default=True,
+        validation_alias="PERSON_SEARCH_ENABLED",
+    )
+    person_search_max_queries: int = Field(
+        default=5,
+        ge=1,
+        le=8,
+        validation_alias="PERSON_SEARCH_MAX_QUERIES",
+    )
+    person_search_max_profiles: int = Field(
+        default=20,
+        ge=1,
+        le=50,
+        validation_alias="PERSON_SEARCH_MAX_PROFILES",
+    )
+    person_search_max_enrichments: int = Field(
+        default=4,
+        ge=0,
+        le=8,
+        validation_alias="PERSON_SEARCH_MAX_ENRICHMENTS",
+    )
+    person_search_max_provider_calls: int = Field(
+        default=12,
+        ge=1,
+        le=20,
+        validation_alias="PERSON_SEARCH_MAX_PROVIDER_CALLS",
+    )
+    person_search_enrichment_concurrency: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        validation_alias="PERSON_SEARCH_ENRICHMENT_CONCURRENCY",
+    )
+    person_search_enrichment_timeout_seconds: float = Field(
+        default=180.0,
+        ge=5.0,
+        le=360.0,
+        validation_alias="PERSON_SEARCH_ENRICHMENT_TIMEOUT_SECONDS",
+    )
+    person_search_cache_ttl_seconds: int = Field(
+        default=1_800,
+        ge=0,
+        le=86_400,
+        validation_alias="PERSON_SEARCH_CACHE_TTL_SECONDS",
+    )
+    person_search_cache_max_entries: int = Field(
+        default=128,
+        ge=1,
+        le=10_000,
+        validation_alias="PERSON_SEARCH_CACHE_MAX_ENTRIES",
+    )
+    person_search_max_concurrent_requests: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        validation_alias="PERSON_SEARCH_MAX_CONCURRENT_REQUESTS",
+    )
+    person_search_rate_limit_requests: int = Field(
+        default=10,
+        ge=1,
+        le=1_000,
+        validation_alias="PERSON_SEARCH_RATE_LIMIT_REQUESTS",
+    )
+    person_search_rate_limit_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=3_600,
+        validation_alias="PERSON_SEARCH_RATE_LIMIT_WINDOW_SECONDS",
+    )
     hibp_api_key: str | None = Field(default=None, validation_alias="HIBP_API_KEY")
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:5500"]
 

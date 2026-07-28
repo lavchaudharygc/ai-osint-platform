@@ -9,6 +9,7 @@ The current architecture is quota-aware: every external capability has one appro
 | Capability | Approved provider |
 |---|---|
 | Google dorking/search | SerpAPI |
+| Full-name person discovery | SerpAPI plus bounded existing profile adapters |
 | General public web scraping | Bright Data Web Unlocker |
 | Instagram profiles and posts | Existing Apify Instagram Actors |
 | X/Twitter profiles and ordinary posts | Apify Scraper One X profile/posts Actor |
@@ -32,6 +33,7 @@ There is no cross-vendor provider loop. A SerpAPI failure does not call Bright D
 ## Main Capabilities
 
 - Public profile discovery across common social, professional, developer, and regional platforms.
+- Standalone exact-full-name person search returning unverified profile, username, and photo candidates.
 - Capability-routed collection with per-provider provenance and structured partial failures.
 - Instagram, X/Twitter, LinkedIn, Reddit posts, Facebook, and TikTok collection through bounded Apify Actor runs.
 - Reddit karma, account age, bio, and avatar collection through the Reddit OAuth Data API.
@@ -121,6 +123,22 @@ Core provider secrets:
 SERPAPI_KEY=
 SERPAPI_COUNTRY_CODE=
 
+# Standalone full-name person search ceilings
+PERSON_SEARCH_SERPAPI_KEY=
+PERSON_SEARCH_ALLOW_SHARED_PROVIDER_CREDENTIALS=false
+PERSON_SEARCH_ENABLED=true
+PERSON_SEARCH_MAX_QUERIES=5
+PERSON_SEARCH_MAX_PROFILES=20
+PERSON_SEARCH_MAX_ENRICHMENTS=4
+PERSON_SEARCH_MAX_PROVIDER_CALLS=12
+PERSON_SEARCH_ENRICHMENT_CONCURRENCY=3
+PERSON_SEARCH_ENRICHMENT_TIMEOUT_SECONDS=180
+PERSON_SEARCH_CACHE_TTL_SECONDS=1800
+PERSON_SEARCH_CACHE_MAX_ENTRIES=128
+PERSON_SEARCH_MAX_CONCURRENT_REQUESTS=2
+PERSON_SEARCH_RATE_LIMIT_REQUESTS=10
+PERSON_SEARCH_RATE_LIMIT_WINDOW_SECONDS=60
+
 # General public web pages
 BRIGHTDATA_WEB_API_KEY=
 BRIGHTDATA_WEB_ZONE=web_unlocker1
@@ -167,6 +185,8 @@ INVESTIGATION_HISTORY_DB_PATH=./data/investigations.sqlite3
 The complete URLs, timeouts, Actor IDs, data-package settings, and limits are in [`backend/.env.example`](backend/.env.example).
 
 Configuration is capability-specific: X and LinkedIn require `APIFY_API_TOKEN`; Reddit metadata requires all of `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and a descriptive `REDDIT_USER_AGENT`, while Reddit posts separately require `APIFY_API_TOKEN`; YouTube requires `YOUTUBE_API_KEY`; and all GitHub REST/GraphQL enrichments require `GITHUB_TOKEN`. Leave unrelated provider credentials empty when those capabilities are not used.
+
+Person search uses `PERSON_SEARCH_SERPAPI_KEY` by default; use a separately quota-managed SerpAPI key so name searches cannot exhaust the investigation search allowance. `PERSON_SEARCH_ALLOW_SHARED_PROVIDER_CREDENTIALS` defaults to `false`. Setting it to `true` deliberately permits fallback to `SERPAPI_KEY` and permits explicitly requested profile enrichment to use existing platform credentials or shared network resources such as public Telegram. Enrichment is still off by default and never calls a platform whose candidate was not discovered. No additional Python package is required.
 
 ### Apify Actor Defaults
 
@@ -250,6 +270,8 @@ Use these routes when a full investigation is unnecessary:
 |---|---|
 | `GET /api/v1/providers/status` | Routing and configuration status |
 | `POST /api/v1/providers/search/username` | SerpAPI username dorking |
+| `GET /api/v1/person-search/status` | Person-search readiness and server ceilings |
+| `POST /api/v1/person-search` | Exact-full-name profile, username, and photo candidate aggregation |
 | `POST /api/v1/providers/web/scrape` | Bright Data public-page scrape |
 | `POST /api/v1/providers/web/extract` | Firecrawl structured extraction |
 | `POST /api/v1/providers/email/discover` | Hunter domain search |
@@ -266,6 +288,33 @@ Use these routes when a full investigation is unnecessary:
 | `POST /api/v1/apify/reddit/collect` | Explicit Apify-only Reddit post collection |
 
 Targeted Apify routes remain under `/api/v1/apify/...` for X, Reddit post collection, and Facebook; each call can create a separately billable Actor run. The direct LinkedIn route is Apify-backed. The direct Reddit route combines Reddit OAuth profile metadata with bounded Apify post collection; its two provider components can report partial failure independently.
+
+## Person Search
+
+`POST /api/v1/person-search` is separate from username investigations and does not write to investigation history. It builds exact-name SerpAPI queries, strictly accepts only recognized public profile URL shapes, and can enrich a bounded number of candidates with the lightest existing profile collector. Enrichment is an explicit opt-in: `enrich_profiles` defaults to `false`.
+
+For quota isolation, configure `PERSON_SEARCH_SERPAPI_KEY` with a separately managed key. Existing investigation/provider credentials and shared provider resources remain unavailable to this feature unless the server operator explicitly sets `PERSON_SEARCH_ALLOW_SHARED_PROVIDER_CREDENTIALS=true`.
+
+```json
+{
+  "full_name": "Ada Lovelace",
+  "location": "London",
+  "organization": null,
+  "country_code": "GB",
+  "platforms": ["linkedin", "github", "twitter", "youtube"],
+  "max_profiles": 20,
+  "query_limit": 5,
+  "provider_call_limit": 12,
+  "enrich_profiles": true,
+  "max_enrichments": 4
+}
+```
+
+The response contains `profiles`, platform-mapped `usernames`, collected or clearly source-labeled `photos`, counts, provider metadata, the separate provider-call budget, structured partial errors, and non-sensitive cache metadata. Every result remains `identity_status: "unverified_candidate"`; collector success confirms only that a public account was collected, not that it belongs to the named person.
+
+When enrichment is enabled, the server applies one overall enrichment deadline. Candidates beyond the intentional `max_enrichments` cap remain discovery-only and are not treated as errors or as a reason to mark an otherwise successful search `partial`.
+
+Person search has a feature-local, per-client-IP fixed-window request limit and a hard concurrent-execution admission limit. Excess request rate returns HTTP 429 with `Retry-After`; a new execution that cannot obtain an admission slot returns HTTP 503. Matching cache reuse and identical-request in-flight deduplication remain internal implementation details. Public cache metadata deliberately reports no hit, age, shared-in-flight state, or original execution duration, so one caller cannot learn whether or when another caller searched the same name. `searched_at` is the response-generation time; `execution_metadata.data_freshness_max_seconds` discloses the maximum cache age without revealing whether reuse occurred. Provider work is cancelled when the final waiting client disconnects, while cancellation by one coalesced caller does not cancel work still awaited by another.
 
 ## Telegram Privacy Guard
 
