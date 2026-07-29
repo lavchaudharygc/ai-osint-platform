@@ -82,10 +82,19 @@ async def health_check() -> dict[str, str]:
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(_, exc: Exception) -> JSONResponse:
-    return JSONResponse(status_code=500, content={"detail": "Internal server error", "error": str(exc)})
+    # Do NOT include str(exc) in the response — it can leak internal paths,
+    # module names, or sensitive data. Log it server-side instead.
+    import logging as _logging
+    _logging.getLogger(__name__).exception("Unhandled exception: %s", exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
 
-    uvicorn.run("backend.main:app", host=settings.host, port=settings.port, reload=True)
+    # Enable hot-reload only when DEBUG=1 is set explicitly.
+    # Never enable in production — it spawns extra processes and
+    # re-imports the entire application on every file change.
+    _reload = os.environ.get("DEBUG", "").strip() in ("1", "true", "yes")
+    uvicorn.run("backend.main:app", host=settings.host, port=settings.port, reload=_reload)

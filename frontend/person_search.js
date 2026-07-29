@@ -9,7 +9,10 @@
 })(typeof window !== "undefined" ? window : globalThis, function (root) {
     "use strict";
 
-    const API_BASE = "http://127.0.0.1:8010";
+    // Inherit the host-level API_BASE defined in app.js so all environments
+    // (dev / staging / prod) share a single source of truth. The fallback
+    // only activates when this module is loaded in isolation (e.g. unit tests).
+    const API_BASE = (root && root.API_BASE) || "http://127.0.0.1:8010";
     const IDENTITY_NOTICE = "Name matches are unverified candidates, not proof that profiles belong to the same person. Corroborate with independent public evidence.";
     const PLATFORM_ORDER = [
         "linkedin",

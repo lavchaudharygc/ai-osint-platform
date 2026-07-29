@@ -73,10 +73,14 @@ class _FixedWindowRateLimiter:
             started, count = self._buckets.get(key, (now, 0))
             elapsed = now - started
             if elapsed >= self.window_seconds:
-                started, count = now, 0
+                # Align the new window to a multiple of window_seconds from the
+                # original start, not to `now` — prevents burst at boundaries.
+                windows_elapsed = int(elapsed / self.window_seconds)
+                started = started + windows_elapsed * self.window_seconds
+                count = 0
             if count >= self.requests:
                 self._buckets.move_to_end(key)
-                return max(0.001, self.window_seconds - elapsed)
+                return max(0.001, self.window_seconds - (now - started))
             self._buckets[key] = (started, count + 1)
             self._buckets.move_to_end(key)
             while len(self._buckets) > self._MAX_CLIENT_BUCKETS:
@@ -95,6 +99,7 @@ _PERSON_SEARCH_CACHE = InvestigationResultCache(
 )
 _PERSON_SEARCH_INFLIGHT: dict[str, asyncio.Task[dict[str, Any]]] = {}
 _PERSON_SEARCH_WAITERS: dict[str, int] = {}
+_PERSON_SEARCH_LOCK = asyncio.Lock()  # guards both dicts above
 _PERSON_SEARCH_ADMISSION = _AdmissionGate(
     int(settings.person_search_max_concurrent_requests)
 )
@@ -216,6 +221,9 @@ def _finish_inflight(
     except Exception:
         pass
     finally:
+        # _finish_inflight is a sync done-callback, so we can't hold the
+        # async lock; use dict.pop() which is GIL-atomic in CPython and
+        # safe for the non-critical cleanup path.
         if _PERSON_SEARCH_INFLIGHT.get(key) is task:
             _PERSON_SEARCH_INFLIGHT.pop(key, None)
         if admission_acquired:
@@ -295,32 +303,42 @@ async def person_search(
                 headers={"Retry-After": "1"},
             )
         try:
-            task = asyncio.create_task(_execute_search(service, request))
-            _PERSON_SEARCH_INFLIGHT[key] = task
-            task.add_done_callback(
-                lambda completed, cache_key=key: _finish_inflight(
-                    cache_key,
-                    completed,
-                    admission_acquired=True,
-                )
-            )
+            async with _PERSON_SEARCH_LOCK:
+                # Re-check under the lock in case another coroutine created
+                # the task between our initial check and lock acquisition.
+                task = _PERSON_SEARCH_INFLIGHT.get(key)
+                if task is None:
+                    task = asyncio.create_task(_execute_search(service, request))
+                    _PERSON_SEARCH_INFLIGHT[key] = task
+                    task.add_done_callback(
+                        lambda completed, cache_key=key: _finish_inflight(
+                            cache_key,
+                            completed,
+                            admission_acquired=True,
+                        )
+                    )
+                else:
+                    # Task was created by a concurrent coroutine; release slot.
+                    _PERSON_SEARCH_ADMISSION.release()
         except BaseException:
             _PERSON_SEARCH_ADMISSION.release()
             raise
 
     # Shield the shared task from any one waiter. If every waiting client has
     # disconnected, the final waiter explicitly cancels the provider work.
-    _PERSON_SEARCH_WAITERS[key] = _PERSON_SEARCH_WAITERS.get(key, 0) + 1
+    async with _PERSON_SEARCH_LOCK:
+        _PERSON_SEARCH_WAITERS[key] = _PERSON_SEARCH_WAITERS.get(key, 0) + 1
     try:
         result = await asyncio.shield(task)
     finally:
-        remaining = max(0, _PERSON_SEARCH_WAITERS.get(key, 1) - 1)
-        if remaining:
-            _PERSON_SEARCH_WAITERS[key] = remaining
-        else:
-            _PERSON_SEARCH_WAITERS.pop(key, None)
-            if not task.done():
-                task.cancel()
+        async with _PERSON_SEARCH_LOCK:
+            remaining = max(0, _PERSON_SEARCH_WAITERS.get(key, 1) - 1)
+            if remaining:
+                _PERSON_SEARCH_WAITERS[key] = remaining
+            else:
+                _PERSON_SEARCH_WAITERS.pop(key, None)
+                if not task.done():
+                    task.cancel()
     return _prepare_public_result(
         result,
         stored=_PERSON_SEARCH_CACHE.enabled and _cacheable_result(result),

@@ -424,7 +424,14 @@ class Settings(BaseSettings):
         validation_alias="PERSON_SEARCH_RATE_LIMIT_WINDOW_SECONDS",
     )
     hibp_api_key: str | None = Field(default=None, validation_alias="HIBP_API_KEY")
-    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:5500"]
+    cors_origins: list[str] = Field(
+        default=["http://localhost:3000", "http://127.0.0.1:5500"],
+        validation_alias="CORS_ORIGINS",
+        description=(
+            "Comma-separated or JSON-array list of allowed CORS origins. "
+            "Example: CORS_ORIGINS='https://osint.example.com,http://localhost:3000'"
+        ),
+    )
 
 
 @lru_cache

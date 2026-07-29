@@ -151,8 +151,8 @@ class PersonSearchCandidate(BaseModel):
     full_name: str | None = Field(default=None, max_length=200)
     display_name: str | None = Field(default=None, max_length=200)
     title: str | None = Field(default=None, max_length=500)
-    bio: str | None = Field(default=None, max_length=5_000)
-    snippet: str | None = Field(default=None, max_length=5_000)
+    bio: str | None = Field(default=None, max_length=500)      # matches PersonSearchNormalizer.MAX_BIO_LENGTH
+    snippet: str | None = Field(default=None, max_length=1_000)
     location: str | None = Field(default=None, max_length=200)
     organization: str | None = Field(default=None, max_length=200)
     photo_url: str | None = Field(default=None, max_length=2_048)

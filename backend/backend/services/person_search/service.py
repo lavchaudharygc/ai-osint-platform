@@ -493,7 +493,7 @@ class PersonSearchService:
                         normalized = self._search_result(item, query)
                         if normalized is not None:
                             results.append(normalized)
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, httpx.InvalidURL) as exc:
             errors.append(
                 self._discovery_error(
                     "configuration_error",
