@@ -3170,4 +3170,137 @@ a.person-username-card:hover {
     }
 }
 
+/* FAST AETHER ENGINE UI STYLES */
+.engine-switch-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+    margin-bottom: 12px;
+}
+
+.engine-switch-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.engine-switch-label input[type="radio"] {
+    display: none;
+}
+
+.engine-switch-badge {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+}
+
+.engine-switch-label input[type="radio"]:checked + .engine-switch-badge.fast {
+    background: rgba(0, 230, 255, 0.15);
+    border-color: #00e6ff;
+    color: #00e6ff;
+    box-shadow: 0 0 12px rgba(0, 230, 255, 0.3);
+}
+
+.engine-switch-label input[type="radio"]:checked + .engine-switch-badge.standard {
+    background: rgba(255, 170, 0, 0.15);
+    border-color: #ffaa00;
+    color: #ffaa00;
+    box-shadow: 0 0 12px rgba(255, 170, 0, 0.3);
+}
+
+.btn-action-sm {
+    padding: 6px 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 4px;
+    background: rgba(0, 188, 212, 0.15);
+    border: 1px solid var(--accent-blue);
+    color: var(--accent-blue);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-action-sm:hover {
+    background: var(--accent-blue);
+    color: #050811;
+}
+
+.btn-action-sm.gold {
+    background: rgba(255, 215, 0, 0.15);
+    border-color: var(--accent-gold);
+    color: var(--accent-gold);
+}
+
+.btn-action-sm.gold:hover {
+    background: var(--accent-gold);
+    color: #050811;
+}
+
+/* WMN Hits Grid */
+.wmn-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.wmn-hit-card {
+    background: rgba(10, 15, 30, 0.8);
+    border: 1px solid rgba(0, 230, 255, 0.2);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.wmn-hit-card:hover {
+    transform: translateY(-2px);
+    border-color: #00e6ff;
+}
+
+.wmn-hit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.wmn-site-name {
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: #ffffff;
+}
+
+.wmn-cat-tag {
+    font-size: 0.62rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--accent-gold);
+    text-transform: uppercase;
+}
+
+.wmn-url-link {
+    font-size: 0.72rem;
+    color: #00e6ff;
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.wmn-url-link:hover {
+    text-decoration: underline;
+}
+
 

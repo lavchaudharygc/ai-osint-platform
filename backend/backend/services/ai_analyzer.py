@@ -348,6 +348,7 @@ RECOMMENDATIONS:
             "account_type": profile_data.get("business_category") or profile_data.get("account_type"),
             "is_verified": bool(profile_data.get("is_verified", False)),
             "public_content_excerpts": excerpts,
+            "wmn_cross_platform": profile_data.get("wmn_cross_platform"),
         }
 
     def _parse_ai_response(self, response_text: str) -> dict[str, Any]:

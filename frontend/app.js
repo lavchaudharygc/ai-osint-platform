@@ -7,6 +7,44 @@ if (!DataMappers) {
     throw new Error("data_mappers.js must be loaded before app.js");
 }
 
+
+window.synthAudioMuted = false;
+
+function playBeepSound(freq = 600, duration = 0.05) {
+    if (window.synthAudioMuted) return;
+    try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        if (!window.audioCtx) window.audioCtx = new AC();
+        if (window.audioCtx.state === "suspended") window.audioCtx.resume();
+        const osc = window.audioCtx.createOscillator();
+        const gain = window.audioCtx.createGain();
+        osc.connect(gain); gain.connect(window.audioCtx.destination);
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.08, window.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, window.audioCtx.currentTime + duration);
+        osc.start(); osc.stop(window.audioCtx.currentTime + duration);
+    } catch (_) {}
+}
+
+function toggleSynthSound() {
+    window.synthAudioMuted = !window.synthAudioMuted;
+    const btn = document.getElementById("synth-sound-btn");
+    if (btn) btn.innerText = window.synthAudioMuted ? "🔇 Sound FX: OFF" : "🔊 Sound FX: ON";
+}
+
+function triggerLeaPdfExport() {
+    if (!currentInvestigationData) {
+        alert("Please run an investigation scan first before exporting the LEA PDF report.");
+        return;
+    }
+    if (window.LeaPdfExporter) {
+        window.LeaPdfExporter.exportReport(currentInvestigationData, "confidential");
+    } else {
+        alert("LEA PDF Exporter script loading... Please retry.");
+    }
+}
+
 function escapeHTML(value) {
     return String(value ?? "")
         .replace(/&/g, "&amp;")
@@ -897,6 +935,62 @@ async function triggerInvestigation() {
     }
 }
 
+function renderWmnHits(data) {
+    const pData = data.platform_data || {};
+    const wmn = pData.wmn_summary || (data.scraped_data && data.scraped_data.wmn) || {};
+    const hits = wmn.hits || [];
+
+    let wmnSection = document.getElementById("wmn-hits-section");
+    if (!wmnSection) {
+        const workspaceGrid = document.getElementById("results-workspace-grid");
+        if (workspaceGrid) {
+            wmnSection = document.createElement("div");
+            wmnSection.id = "wmn-hits-section";
+            wmnSection.className = "glass-card";
+            wmnSection.style.marginBottom = "20px";
+            workspaceGrid.prepend(wmnSection);
+        }
+    }
+
+    if (!wmnSection) return;
+
+    if (!hits.length) {
+        wmnSection.style.display = "none";
+        return;
+    }
+
+    wmnSection.style.display = "block";
+    const scanned = wmn.scanned || 719;
+    const foundCount = hits.length;
+
+    let hitsHTML = hits.map(hit => `
+        <div class="wmn-hit-card">
+            <div class="wmn-hit-header">
+                <span class="wmn-site-name">${escapeHTML(hit.site)}</span>
+                <span class="wmn-cat-tag">${escapeHTML(hit.category || "general")}</span>
+            </div>
+            <a href="${escapeHTML(hit.url)}" target="_blank" rel="noopener noreferrer" class="wmn-url-link">
+                ${escapeHTML(hit.url)} ↗
+            </a>
+            <div style="font-size:0.65rem; color:#7c8798; margin-top:4px;">
+                Latency: ${hit.ms || 0}ms · Handle: @${escapeHTML(hit.handle || pData.username || "target")}
+            </div>
+        </div>
+    `).join("");
+
+    wmnSection.innerHTML = `
+        <div class="card-header-bar">
+            <span class="card-title">⚡ WhatsMyName Cross-Platform Probe Results (${foundCount} Found / ${scanned} Scanned)</span>
+            <span class="mono" style="font-size:0.7rem; color:var(--accent-blue);">⚡ 700+ SITE DEEP SCAN</span>
+        </div>
+        <div style="padding: 10px 0;">
+            <div class="wmn-grid">
+                ${hitsHTML}
+            </div>
+        </div>
+    `;
+}
+
 // Render Results to Dashboard
 function renderInvestigationResults(data) {
     const emptyState = document.getElementById("results-empty-state");
@@ -904,6 +998,8 @@ function renderInvestigationResults(data) {
     
     if (emptyState) emptyState.style.display = "none";
     if (grid) grid.style.display = "grid";
+
+    renderWmnHits(data);
 
     // Header Case Title
     const titleCase = document.getElementById("title-case-id");

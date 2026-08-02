@@ -46,5 +46,15 @@ class TelegramIntelligenceExtractorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["intelligence_analysis"]["links_extracted"], [])
 
 
+    async def test_telegram_provider_endpoint(self) -> None:
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        client = TestClient(app)
+        response = client.post("/api/v1/providers/telegram/profile", json={"username": "durov"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data.get("platform"), "telegram")
+
+
 if __name__ == "__main__":
     unittest.main()

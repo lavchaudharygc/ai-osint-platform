@@ -141,7 +141,15 @@
                     <button class="sidebar-toggle-btn" id="sidebar-toggle">☰</button>
                     <h2 id="view-title">OSINT Investigation Engine</h2>
                 </div>
-                <div class="system-badge mono">CLASSIFIED // NOFORN</div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button class="btn-action-sm" id="synth-sound-btn" onclick="toggleSynthSound()" title="Toggle Audio FX">
+                        🔊 Sound FX: ON
+                    </button>
+                    <button class="btn-action-sm gold" onclick="triggerLeaPdfExport()" title="Export Official LEA PDF Report">
+                        📜 Export LEA PDF
+                    </button>
+                    <div class="system-badge mono">CLASSIFIED // NOFORN</div>
+                </div>
             </div>
 
             <div class="view-content">
@@ -165,6 +173,8 @@
                                     PROCESSING PROFILES...
                                 </div>
                             </div>
+
+
 
                             <div class="form-row">
                                 <label>Target Profile / Page Identifier</label>
@@ -681,6 +691,9 @@
     </div>
 
     <!-- Link External JS Script -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="lea_pdf_exporter.js"></script>
     <script src="data_mappers.js?v=20260722-response-wiring"></script>
     <script src="person_search.js?v=20260728-person-ui"></script>
     <script src="app.js?v=20260728-person-ui"></script>

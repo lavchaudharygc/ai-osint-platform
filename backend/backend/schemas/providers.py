@@ -121,6 +121,10 @@ class RedditProfileRequest(BaseModel):
     max_posts: int = Field(default=20, ge=1, le=100)
 
 
+class TelegramProfileRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=200, description="Telegram handle or invite URL")
+
+
 class SearchUsernameRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=200)
     full_name: str | None = Field(default=None, max_length=200)

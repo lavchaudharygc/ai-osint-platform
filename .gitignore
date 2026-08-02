@@ -38,3 +38,10 @@ failed_run.json
 
 backend/.env
 frontend/node_modules/
+osint.db
+app_js_diff.txt
+scratch_test_*.py
+backend/fetch_history.py
+backend/print_db.py
+backend/print_store.py
+backend/test_apify_scrapers.py

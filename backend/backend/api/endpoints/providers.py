@@ -18,6 +18,7 @@ from backend.schemas.providers import (
     RedditProfileRequest,
     SearchUsernameRequest,
     StructuredExtractRequest,
+    TelegramProfileRequest,
     TikTokProfileRequest,
     WebScrapeRequest,
     YouTubeChannelRequest,
@@ -331,3 +332,14 @@ async def tiktok_profile(request: TikTokProfileRequest) -> dict[str, Any]:
         request.model_dump(mode="json"),
         lambda: service.get_profile(request.username, max_items=request.max_items)
     )
+
+
+@router.post("/telegram/profile")
+async def telegram_profile(request: TelegramProfileRequest) -> dict[str, Any]:
+    from backend.services.intelligence.telegram_intel import TelegramIntelligenceExtractor
+    return await _cached_call(
+        "telegram.profile",
+        request.model_dump(mode="json"),
+        lambda: TelegramIntelligenceExtractor().get_profile(request.username)
+    )
+

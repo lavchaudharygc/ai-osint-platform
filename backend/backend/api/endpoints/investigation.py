@@ -43,6 +43,7 @@ from backend.services.github_service import GitHubService
 from backend.services.hunter_service import HunterService
 from backend.services.twilio_lookup_service import TwilioLookupService
 from backend.services.youtube_service import YouTubeService
+from backend.services.wmn_service import WhatsMyNameService
 from backend.services.intelligence.hashtag_analyzer import HashtagIntelligenceAnalyzer
 from backend.services.intelligence.content_intelligence import ContentIntelligenceExtractor
 from backend.services.intelligence.reverse_lookup import ReverseKeywordLookup
@@ -1134,12 +1135,19 @@ def _correlation_evidence(
         candidate.get("full_name") or candidate.get("display_name") or candidate.get("name")
     )
     if primary_name and candidate_name:
+        primary_tokens = set(primary_name.split())
+        candidate_tokens = set(candidate_name.split())
+        shared_tokens = primary_tokens & candidate_tokens
         if primary_name == candidate_name:
             positive.append("matching_full_name")
             score += 25
+        elif shared_tokens:
+            positive.append("partially_matching_name")
+            score += 15
         elif len(primary_name) >= 4 and len(candidate_name) >= 4:
-            contradictions.append("conflicting_full_name")
-            score -= 20
+            if primary_username != candidate_username and not (primary_urls & candidate_urls):
+                contradictions.append("conflicting_full_name")
+                score -= 20
 
     contact_overlap = _profile_contacts(primary) & _profile_contacts(candidate)
     unique_contact_overlap = {
@@ -1273,6 +1281,15 @@ def _reconcile_ai_correlation(
 ) -> dict[str, Any]:
     """Keep model prose non-authoritative and expose one evidence-based verdict."""
     reconciled = dict(ai_analysis) if isinstance(ai_analysis, dict) else {}
+    model_used = reconciled.get("model_used", "deterministic_rules")
+    parsed = reconciled.get("parsed") if isinstance(reconciled.get("parsed"), dict) else None
+
+    # If an external AI model (Groq / DeepSeek) produced a valid analysis, honor its decision & confidence!
+    if reconciled.get("success") and parsed and model_used not in {"rules_fallback", "deterministic_rules"}:
+        reconciled["model_output_used_for_scoring"] = True
+        reconciled["provider_narrative_omitted"] = False
+        return reconciled
+
     if confirmed_count:
         decision = "VERY LIKELY SAME"
     elif corroborated_count:
@@ -2060,23 +2077,28 @@ async def _investigate_username_impl(
             cached_response = cache_hit.value
             if not isinstance(cached_response, InvestigationResponse):
                 cached_response = InvestigationResponse.model_validate(cached_response)
-            execution_metadata = deepcopy(cached_response.execution_metadata or {})
-            execution_metadata["cache"] = {
-                "hit": True,
-                "age_seconds": round(cache_hit.age_seconds, 3),
-                "ttl_seconds": _INVESTIGATION_CACHE.ttl_seconds,
-                "source_investigation_id": cached_response.investigation_id,
-            }
-            response = cached_response.model_copy(
-                deep=True,
-                update={
-                    "investigation_id": investigation_id,
-                    "timestamp": datetime.now(UTC),
-                    "execution_metadata": execution_metadata,
-                },
-            )
-            _store_investigation(response)
-            return response
+            provider_logs = (cached_response.provider_results or {}).get("logs", [])
+            has_old_errors = any("object has no attribute" in str(l.get("message", "")) for l in provider_logs if isinstance(l, dict))
+            if not has_old_errors:
+                execution_metadata = deepcopy(cached_response.execution_metadata or {})
+                execution_metadata["cache"] = {
+                    "hit": True,
+                    "age_seconds": round(cache_hit.age_seconds, 3),
+                    "ttl_seconds": _INVESTIGATION_CACHE.ttl_seconds,
+                    "source_investigation_id": cached_response.investigation_id,
+                }
+                response = cached_response.model_copy(
+                    deep=True,
+                    update={
+                        "investigation_id": investigation_id,
+                        "timestamp": datetime.now(UTC),
+                        "execution_metadata": execution_metadata,
+                    },
+                )
+                _store_investigation(response)
+                return response
+
+    # No fast_aether branch — all investigations run the full unified pipeline below.
 
     if is_telegram_invite:
         # Invite hashes are effectively bearer secrets. Keep the preview inside
@@ -2231,8 +2253,10 @@ async def _investigate_username_impl(
     # full name collected from the selected social profile.
     reserve_priority_provider_calls(request, primary_platform, provider_budget)
 
-    # 2. Run active social scrapers in parallel. Pre-reserved capabilities do
-    # not consume the budget twice.
+    # 2. Run WMN 700+ site probe + social scrapers in parallel
+    wmn_task = asyncio.create_task(
+        WhatsMyNameService().scan_handle(request.username)
+    )
     platform_profiles, instagram_posts, apify_social_results = (
         await run_all_social_scrapers(
             request.username,
@@ -2241,6 +2265,12 @@ async def _investigate_username_impl(
             platform_priority=selected_platforms,
         )
     )
+    # Collect WMN result (it ran concurrently)
+    try:
+        wmn_result = await wmn_task
+    except Exception as _wmn_exc:
+        logger.warning("WMN scan failed: %s", _wmn_exc)
+        wmn_result = {"scanned": 0, "found_count": 0, "hits": []}
 
     # 3. Run explicit specialist work after profiles so Hunter Email Finder can
     # use a collected full name. Its call units were reserved above.
@@ -2257,9 +2287,13 @@ async def _investigate_username_impl(
         platform_profiles["github"] = {
             **github_result,
             **github_profile,
+            "success": True,
+            "exists": True,
             "platform": "github",
             "source": "github_rest_plus_graphql",
-            "username": github_profile.get("username") or request.username,
+            "username": github_profile.get("username") or github_profile.get("login") or request.username,
+            "full_name": github_profile.get("name") or github_profile.get("full_name"),
+            "bio": github_profile.get("bio"),
             "profile_pic_url": github_profile.get("avatar_url"),
             "follower_count": github_profile.get("followers"),
             "following_count": github_profile.get("following"),
@@ -2267,6 +2301,27 @@ async def _investigate_username_impl(
         }
 
     scraped_data = platform_profiles
+
+    # Inject WMN summary into the primary platform_data blob so the frontend
+    # finds it at platform_data.wmn_summary (same location as before).
+    # Also push confirmed WMN hits into cross_platform_matches.
+    wmn_hits = wmn_result.get("hits") or []
+    if wmn_hits:
+        wmn_cross = [
+            {
+                "platform": hit.get("site"),
+                "url": hit.get("url"),
+                "exists": True,
+                "probe_reachable": True,
+                "collector_confirmed": True,
+                "category": hit.get("category"),
+                "ms": hit.get("ms"),
+                "source": "wmn",
+                "username": hit.get("handle") or request.username,
+            }
+            for hit in wmn_hits
+        ]
+        cross_matches = cross_matches + wmn_cross
 
     # 4. Choose a primary platform_data
     platform_data = None
@@ -2290,6 +2345,15 @@ async def _investigate_username_impl(
             "platform": "instagram",
             "username": request.username,
             "error": "No platform profiles could be scraped successfully."
+        }
+
+    # Inject WMN summary into platform_data so frontend renders it
+    if isinstance(platform_data, dict):
+        platform_data["wmn_summary"] = {
+            "scanned": wmn_result.get("scanned", 0),
+            "found_count": wmn_result.get("found_count", 0),
+            "hits": wmn_hits,
+            "duration_ms": wmn_result.get("duration_ms", 0),
         }
 
     # 5. Extract combined name/location terms across all scraped data
@@ -2545,10 +2609,18 @@ async def _investigate_username_impl(
                 break
         if bounded_risk_content:
             risk_profile_data["recent_posts"] = bounded_risk_content[:10]
+    # Enrich risk profile with WMN and CTI signals so the AI has full context
+    risk_profile_data["wmn_cross_platform"] = {
+        "sites_scanned": wmn_result.get("scanned", 0),
+        "sites_found": wmn_result.get("found_count", 0),
+        "platform_categories": list({h.get("category") for h in wmn_hits if h.get("category")}),
+        "sites": [h.get("site") for h in wmn_hits[:20]],
+    }
     preliminary_risk_evidence = AIAnalyzer._risk_evidence_bundle(risk_profile_data)
     has_public_risk_evidence = bool(
         str(preliminary_risk_evidence.get("bio") or "").strip()
         or preliminary_risk_evidence.get("public_content_excerpts")
+        or wmn_hits  # WMN hits count as evidence even without bio text
     )
 
     # Correlation is deterministic and local, so it never consumes model quota.
@@ -2629,7 +2701,7 @@ async def _investigate_username_impl(
         platform_data,
         cross_matches,
         scraped_data=scraped_data,
-        allow_external_ai=False,
+        allow_external_ai=bool(settings.deepseek_api_key or settings.groq_api_key),
     )
     risk = await assess_risk(
         risk_profile_data,

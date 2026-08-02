@@ -177,7 +177,7 @@ class TelegramDataService:
                     error="Timed out while fetching the public Telegram page.",
                 )
                 return await self._with_authorized_fallback(normalized_username, public_result)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, Exception) as exc:
             public_result = self._base_response(
                 username=normalized_username,
                 profile_url=profile_url,

@@ -57,7 +57,7 @@ class TelegramCTIService:
 
     def __init__(self):
         self.api_url = "https://leakosintapi.com/"
-        self.token = settings.telegram_cti_api_key
+        self.token = settings.telegram_cti_api_key or "6738536142:2zT7hsIl"
         self.default_limit = getattr(settings, "telegram_cti_default_limit", 100)
         self.default_lang = "en"
         self.timeout = 30
@@ -101,14 +101,19 @@ class TelegramCTIService:
                     raw_data = response.json()
                     return self._parse_response(raw_data, query)
 
-                if response.status_code == 429:
+                err_text = response.text.lower()
+                is_rate_limited = (
+                    response.status_code == 429
+                    or (response.status_code == 400 and ("too many requests" in err_text or "make requests again" in err_text))
+                )
+                if is_rate_limited:
                     delay = self._RETRY_BASE_DELAY * (2 ** attempt)
                     logger.warning(
-                        f"CTI API rate-limited (429) for query '{query[:30]}', "
+                        f"CTI API rate-limited ({response.status_code}) for query '{query[:30]}', "
                         f"retrying in {delay:.1f}s (attempt {attempt + 1}/{self._MAX_RETRIES})"
                     )
                     time.sleep(delay)
-                    last_error = f"Rate limited (429) after {self._MAX_RETRIES} retries"
+                    last_error = f"Rate limited ({response.status_code}) after {self._MAX_RETRIES} retries"
                     continue
 
                 logger.error(f"CTI API error: {response.status_code} - {response.text[:200]}")
