@@ -13,6 +13,17 @@ from backend.services.training_dataset_service import get_training_dataset_servi
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+_PERSONALITY_CATEGORIES: list[dict[str, Any]] = [
+    {"name": "Cybersecurity & Incident Response", "keywords": ["cyber","security","hacking","osint","redteam","red team","ctf","malware","forensics","incident","ceh","ciso","pentest","pentesting","exploit","vulnerability","threat","soc","siem","firewall","investigator","cybercrime","crime","police","law enforcement","lea"]},
+    {"name": "Technology & Programming", "keywords": ["tech","coding","developer","programming","python","javascript","react","node","ai","ml","linux","github","software","engineer","data","cloud","docker","kubernetes","api","backend","frontend","devops","open source","database","algorithm","machine learning","artificial intelligence"]},
+    {"name": "Politics & Government", "keywords": ["politics","political","government","policy","minister","parliament","election","vote","democracy","bjp","congress","aap","party","leader","public service","ias","ips","modi","assembly","activist","campaign","administration"]},
+    {"name": "Student & Education", "keywords": ["student","study","education","school","college","university","homework","exam","degree","bachelor","master","phd","iit","nit","neet","jee","upsc","teacher","professor","coaching","institute","academy"]},
+    {"name": "Arts & Creativity", "keywords": ["art","artist","creative","painting","design","photography","music","musician","singer","dance","writing","poetry","author","film","cinema","actor","fashion","model","animation"]},
+    {"name": "Business & Entrepreneurship", "keywords": ["business","entrepreneur","startup","founder","ceo","cfo","company","marketing","sales","strategy","management","director","investor","venture","capital","ecommerce","brand","consulting"]},
+    {"name": "Healthcare & Medical", "keywords": ["doctor","medical","hospital","health","treatment","physician","nurse","dentist","mbbs","covid","vaccine","disease","therapy","wellness","nutrition"]},
+    {"name": "Sports & Fitness", "keywords": ["sports","athlete","player","coach","cricket","football","basketball","gym","fitness","workout","yoga","running","marathon","cycling","swimming","bodybuilding"]},
+]
+
 
 class AIAnalyzer:
     """DeepSeek-backed analyzer with deterministic fallback behavior."""
@@ -486,4 +497,135 @@ RECOMMENDATIONS:
             "reason": reason,
             "analysis": f"Automated risk assessment unavailable: {reason}.",
             "parsed": {"risk_level": "UNKNOWN", "risk_score": 0, "indicators": [], "recommendations": []},
+        }
+
+    # ------------------------------------------------------------------
+    # Structured Personality Analysis (aether-intel-dashboard parity)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _score_categories(corpus: str) -> list[dict[str, Any]]:
+        text = " " + corpus.lower() + " "
+        results = []
+        for cat in _PERSONALITY_CATEGORIES:
+            matched = []
+            for kw in cat["keywords"]:
+                if kw in text:
+                    matched.append(kw)
+            results.append({"category": cat["name"], "hits": len(matched), "matched": matched})
+        return sorted(results, key=lambda x: x["hits"], reverse=True)
+
+    @staticmethod
+    def _confidence_from_hits(hits: int) -> tuple[int, str]:
+        if hits >= 10: return 95, "very_high"
+        if hits >= 5:  return 78, "high"
+        if hits >= 2:  return 55, "moderate"
+        if hits >= 1:  return 25, "low"
+        return 0, "insufficient"
+
+    async def analyze_personality(
+        self,
+        corpus: str,
+        platform_count: int = 1,
+    ) -> dict[str, Any]:
+        """Return a structured AiPersonality dict matching the aether-intel-dashboard schema."""
+        trimmed = corpus.strip()
+        scored = self._score_categories(trimmed)
+        top = scored[0] if scored else None
+        secondaries = [s for s in scored[1:] if s["hits"] >= 1][:2]
+
+        if not trimmed or not top or top["hits"] == 0:
+            return {
+                "summary": "Insufficient public data to classify this subject.",
+                "traits": [], "interests": [], "tone": "unknown", "riskFlags": [],
+                "primaryCategory": "Unable to Classify",
+                "confidence": 0, "confidenceLabel": "insufficient",
+                "evidence": [], "secondaryCategories": [],
+                "crossPlatformNote": "Single Platform Analysis — Limited Data" if platform_count <= 1 else None,
+                "platformCount": platform_count,
+            }
+
+        pct, label = self._confidence_from_hits(top["hits"])
+        cross_note = None
+        if platform_count >= 3:
+            pct = min(100, pct + 15)
+            cross_note = f"Cross-Platform Verified across {platform_count} platforms"
+            if pct >= 90: label = "very_high"
+        elif platform_count <= 1:
+            pct = min(pct, 70)
+            cross_note = "Single Platform Analysis — Limited Data"
+
+        # Ask Groq/DeepSeek for narrative extras — structured JSON only
+        ai_extras: dict[str, Any] = {}
+        if self.is_configured():
+            try:
+                async with httpx.AsyncClient(timeout=20) as client:
+                    resp = await client.post(
+                        self.api_url,
+                        headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                        json={
+                            "model": self.model,
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "You are a behavioral analyst for OSINT investigations. "
+                                        "Given public profile text, return ONLY a JSON object with keys: "
+                                        "summary (1-2 sentences, evidence-based only), "
+                                        "traits (up to 5 short strings), "
+                                        "interests (up to 5 short strings), "
+                                        "tone (one word), "
+                                        "riskFlags (array of {label, severity: 'low'|'medium'|'high'}). "
+                                        "Base every field strictly on evidence in the input. Never invent. "
+                                        "Return {} if unsure. Return only raw JSON, no markdown."
+                                    ),
+                                },
+                                {"role": "user", "content": trimmed[:3000]},
+                            ],
+                            "temperature": 0.2,
+                            "max_tokens": 400,
+                            "response_format": {"type": "json_object"},
+                        },
+                    )
+                if resp.status_code == 200:
+                    raw = resp.json()["choices"][0]["message"]["content"]
+                    parsed = json.loads(raw) if isinstance(raw, str) else raw
+                    if isinstance(parsed, dict):
+                        ai_extras = {
+                            "summary": str(parsed.get("summary") or "")[:400],
+                            "traits": [str(x) for x in (parsed.get("traits") or [])[:6]],
+                            "interests": [str(x) for x in (parsed.get("interests") or [])[:6]],
+                            "tone": str(parsed.get("tone") or "neutral"),
+                            "riskFlags": [
+                                {
+                                    "label": str(f.get("label") or f)[:60],
+                                    "severity": f.get("severity") if f.get("severity") in {"low", "medium", "high"} else "low",
+                                }
+                                for f in (parsed.get("riskFlags") or [])[:6]
+                                if isinstance(f, dict)
+                            ],
+                        }
+            except Exception:
+                pass  # graceful degradation — keyword scoring still gives us a category
+
+        return {
+            "summary": ai_extras.get("summary") or f"Profile signals align with {top['category']}.",
+            "traits": ai_extras.get("traits") or [],
+            "interests": ai_extras.get("interests") or [],
+            "tone": ai_extras.get("tone") or "neutral",
+            "riskFlags": ai_extras.get("riskFlags") or [],
+            "primaryCategory": top["category"],
+            "confidence": pct,
+            "confidenceLabel": label,
+            "evidence": top["matched"][:8],
+            "secondaryCategories": [
+                {
+                    "category": s["category"],
+                    "confidence": self._confidence_from_hits(s["hits"])[0],
+                    "evidence": ", ".join(s["matched"][:3]),
+                }
+                for s in secondaries
+            ],
+            "crossPlatformNote": cross_note,
+            "platformCount": platform_count,
         }

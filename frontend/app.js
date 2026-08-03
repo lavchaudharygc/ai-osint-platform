@@ -7,30 +7,35 @@ if (!DataMappers) {
     throw new Error("data_mappers.js must be loaded before app.js");
 }
 
+/* ---------- Input classification (mirrors aether-intel-dashboard) ---------- */
 
-window.synthAudioMuted = false;
-
-function playBeepSound(freq = 600, duration = 0.05) {
-    if (window.synthAudioMuted) return;
-    try {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-        if (!window.audioCtx) window.audioCtx = new AC();
-        if (window.audioCtx.state === "suspended") window.audioCtx.resume();
-        const osc = window.audioCtx.createOscillator();
-        const gain = window.audioCtx.createGain();
-        osc.connect(gain); gain.connect(window.audioCtx.destination);
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.08, window.audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, window.audioCtx.currentTime + duration);
-        osc.start(); osc.stop(window.audioCtx.currentTime + duration);
-    } catch (_) {}
+function classifyInput(raw) {
+    const s = raw.trim();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return { kind: "email", raw: s };
+    if (/^\+?[0-9][0-9\s().\-]{6,}$/.test(s)) return { kind: "phone", raw: s.replace(/[^\d+]/g, "") };
+    const isUrl = /^https?:\/\//i.test(s);
+    const isDomain = /^[a-z0-9-]+\.(?:com|org|net|io|co|ai|app|dev|info|biz|edu|gov|in|uk|us|me|xyz)$/i.test(s);
+    if (isUrl || isDomain) return { kind: "domain", raw: s.replace(/^https?:\/\//i, "").replace(/\/.*$/, "") };
+    if (/\s/.test(s)) return { kind: "name", raw: s };
+    return { kind: "username", raw: s.replace(/^@/, "") };
 }
 
-function toggleSynthSound() {
-    window.synthAudioMuted = !window.synthAudioMuted;
-    const btn = document.getElementById("synth-sound-btn");
-    if (btn) btn.innerText = window.synthAudioMuted ? "🔇 Sound FX: OFF" : "🔊 Sound FX: ON";
+const INPUT_TYPE_LABELS = {
+    email:    "📧 Email",
+    phone:    "📱 Phone",
+    domain:   "🌐 Domain",
+    name:     "🔍 Full Name",
+    username: "👤 Username",
+};
+
+function detectInputType(value) {
+    const badge = document.getElementById("input-type-badge");
+    if (!badge) return;
+    if (!value.trim()) { badge.style.display = "none"; return; }
+    const { kind } = classifyInput(value);
+    badge.textContent = INPUT_TYPE_LABELS[kind] || kind;
+    badge.className = `input-type-badge kind-${kind}`;
+    badge.style.display = "inline-flex";
 }
 
 function triggerLeaPdfExport() {
@@ -271,48 +276,32 @@ function optionalBoundedInteger(elementId, minimum, maximum, label) {
     return parsed;
 }
 
-function buildInvestigationRequestFromForm({ username, platform, caseId, depth }) {
+function buildInvestigationRequestFromForm({ username, caseId }) {
     const valueOf = (id) => {
         const element = document.getElementById(id);
         return element ? String(element.value || "").trim() : "";
     };
-    const filterElement = document.getElementById("filter-hitek");
-    const webUrls = parseProviderUrlList(valueOf("web-urls"), "Bright Data web URLs");
-    const extractUrls = parseProviderUrlList(valueOf("extract-urls"), "Firecrawl extract URLs");
-    const dorkQueryLimit = optionalBoundedInteger("dork-query-limit", 0, 50, "SerpAPI query limit");
-    const providerCallLimit = optionalBoundedInteger("provider-call-limit", 1, 50, "Provider call limit");
     const email = valueOf("provider-email");
     const phoneNumber = valueOf("provider-phone");
-    const companyDomain = valueOf("company-domain");
-    const extractionPrompt = valueOf("extraction-prompt");
-    const cacheMode = valueOf("cache-mode") || "use";
 
     if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-        throw new Error("Hunter email must be a complete email address.");
+        throw new Error("Email must be a valid address.");
     }
     if (phoneNumber && (phoneNumber.length < 5 || phoneNumber.length > 32)) {
-        throw new Error("Twilio phone number must contain 5 to 32 characters, preferably in E.164 format.");
-    }
-    if (!["use", "refresh", "bypass"].includes(cacheMode)) {
-        throw new Error("Cache mode is invalid.");
+        throw new Error("Phone number must contain 5 to 32 characters.");
     }
 
     const request = {
         username,
-        platform,
         case_id: caseId,
-        correlation_depth: depth,
-        filter_hitek: filterElement ? filterElement.checked : true,
-        web_urls: webUrls,
-        extract_urls: extractUrls,
-        cache_mode: cacheMode
+        correlation_depth: 2,
+        filter_hitek: true,
+        web_urls: [],
+        extract_urls: [],
+        cache_mode: "use"
     };
     if (email) request.email = email;
     if (phoneNumber) request.phone_number = phoneNumber;
-    if (companyDomain) request.company_domain = companyDomain;
-    if (extractionPrompt) request.extraction_prompt = extractionPrompt;
-    if (dorkQueryLimit !== null) request.dork_query_limit = dorkQueryLimit;
-    if (providerCallLimit !== null) request.provider_call_limit = providerCallLimit;
     return request;
 }
 
@@ -799,26 +788,19 @@ function resetConsoleWorkspace() {
 // Trigger Scan
 async function triggerInvestigation() {
     const username = document.getElementById("target-username").value.trim();
-    const platform = document.getElementById("target-platform").value;
-    const depth = parseInt(document.getElementById("correlation-depth").value) || 2;
-    const customCase = document.getElementById("case-reference").value.trim();
 
     if (!username) {
-        alert("PLEASE ENTER A TARGET USERNAME TO COMMENCE.");
+        alert("PLEASE ENTER A TARGET IDENTIFIER TO COMMENCE.");
         return;
     }
 
-    if (customCase) {
-        currentCaseId = customCase;
-    }
+    const { kind } = classifyInput(username);
 
     let requestPayload;
     try {
         requestPayload = buildInvestigationRequestFromForm({
             username,
-            platform,
             caseId: currentCaseId,
-            depth
         });
     } catch (validationError) {
         alert(validationError.message);
@@ -859,10 +841,9 @@ async function triggerInvestigation() {
     }
 
     // Simulated terminal logs
-    await logLine(`[SYS] OSINT ENGAGE FOR TARGET SUBJECT: ${username}`, 50);
-    await logLine(`[NET] SELECTED PRIMARY COLLECTION PLATFORM: ${platform.toUpperCase()}`, 150);
-    await logLine(`[SYS] INTEGRATING PROFILE DEPTH ENVELOPE: ${depth}`, 100);
-    await logLine(`[NET] INITIATING DIRECTORIES SEARCH ENRICHMENTS...`, 150);
+    await logLine(`[SYS] OSINT ENGAGE — TARGET: ${username} (${kind.toUpperCase()})`, 50);
+    await logLine(`[NET] INITIATING MULTI-VECTOR COLLECTION PIPELINE...`, 150);
+    await logLine(`[SYS] PROBING CROSS-PLATFORM IDENTITY GRAPH...`, 100);
 
     // Set up a dynamic log heartbeat during network wait
     const progressMessages = [
@@ -991,6 +972,127 @@ function renderWmnHits(data) {
     `;
 }
 
+function renderConsolidatedIdentity(ci) {
+    const card = document.getElementById("consolidated-identity-card");
+    const body = document.getElementById("consolidated-identity-body");
+    const badge = document.getElementById("consolidated-confidence-badge");
+    if (!card || !body) return;
+    if (!ci) { card.style.display = "none"; return; }
+
+    card.style.display = "block";
+    const pct = ci.confidence_percentage || 0;
+    const colorMap = { high: "#00ff96", moderate: "#ffd700", low: "#ff6464" };
+    const color = colorMap[ci.overall_confidence] || "#8892b0";
+    if (badge) {
+        badge.textContent = `${pct}% CONFIDENCE`;
+        badge.style.color = color;
+    }
+
+    const row = (label, value) => value ? `
+        <div class="identity-row">
+            <span class="identity-row-label">${escapeHTML(label)}</span>
+            <span class="identity-row-value">${escapeHTML(value)}</span>
+        </div>` : "";
+
+    const emailsHTML = (ci.emails || []).length
+        ? `<div class="identity-row">
+            <span class="identity-row-label">Emails</span>
+            <span class="identity-row-value">${ci.emails.map(e => `<span class="identity-link-chip">${escapeHTML(e)}</span>`).join("")}</span>
+           </div>`
+        : "";
+
+    const linksHTML = (ci.links || []).length
+        ? `<div class="identity-row">
+            <span class="identity-row-label">Linked Profiles</span>
+            <span class="identity-row-value">${ci.links.map(l => {
+                const safe = safeExternalUrl(l);
+                return safe ? `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="identity-link-chip">${escapeHTML(l.replace(/^https?:\/\//, "").slice(0, 45))} ↗</a>` : `<span class="identity-link-chip">${escapeHTML(l)}</span>`;
+            }).join("")}</span>
+           </div>`
+        : "";
+
+    body.innerHTML = `
+        <div class="identity-confidence-bar">
+            <div class="identity-confidence-fill" style="width:${pct}%"></div>
+        </div>
+        ${row("Name", ci.likely_name)}
+        ${row("Location", ci.location)}
+        ${row("Category", ci.profession)}
+        ${emailsHTML}
+        ${linksHTML}
+    `;
+}
+
+function renderAiPersonality(ap) {
+    const container = document.getElementById("personality-profile-results");
+    const statusEl = document.getElementById("personality-profile-status");
+    if (!container) return;
+    if (!ap) {
+        if (statusEl) statusEl.textContent = "No Data";
+        return;
+    }
+
+    const pct = ap.confidence || 0;
+    const label = ap.confidenceLabel || "insufficient";
+    if (statusEl) statusEl.textContent = `${ap.primaryCategory || "Unknown"} · ${pct}%`;
+
+    const chipsHTML = (items, cls) => items && items.length
+        ? items.map(t => `<span class="personality-chip ${cls}">${escapeHTML(t)}</span>`).join("")
+        : `<span style="font-size:0.75rem; color:var(--text-secondary);">None detected</span>`;
+
+    const riskFlagsHTML = (flags) => {
+        if (!flags || !flags.length) return `<span style="font-size:0.75rem; color:#00dc82;">No risk flags detected</span>`;
+        const severityIcon = { high: "🔴", medium: "🟠", low: "🟡" };
+        return flags.map(f => `<span class="risk-flag-chip ${f.severity || "low"}">${severityIcon[f.severity] || "🟡"} ${escapeHTML(f.label)}</span>`).join("");
+    };
+
+    const secondariesHTML = (secs) => {
+        if (!secs || !secs.length) return "";
+        return secs.map(s => `<span class="secondary-category-tag">${escapeHTML(s.category)} · ${s.confidence}%</span>`).join("");
+    };
+
+    const crossNote = ap.crossPlatformNote
+        ? `<div style="font-size:0.72rem; color:var(--text-secondary); margin-top:6px; font-style:italic;">${escapeHTML(ap.crossPlatformNote)}</div>`
+        : "";
+
+    container.innerHTML = `
+        <div>
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                <span style="font-size:0.75rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; letter-spacing:0.5px;">Primary Category</span>
+                <span class="mono" style="font-size:0.8rem; color:var(--accent-blue); font-weight:700;">${escapeHTML(ap.primaryCategory || "Unknown")}</span>
+            </div>
+            <div class="personality-confidence-bar">
+                <div class="personality-confidence-fill ${label}" style="width:${pct}%"></div>
+            </div>
+            <div style="font-size:0.7rem; color:var(--text-secondary); margin-top:4px;">${pct}% confidence · ${label.replace("_", " ")}</div>
+            ${crossNote}
+        </div>
+        ${ap.summary ? `<div style="font-size:0.82rem; line-height:1.6; color:var(--text-primary);">${escapeHTML(ap.summary)}</div>` : ""}
+        <div>
+            <div style="font-size:0.72rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; margin-bottom:6px; letter-spacing:0.5px;">Behavioral Traits</div>
+            <div class="personality-chips">${chipsHTML(ap.traits, "")}</div>
+        </div>
+        <div>
+            <div style="font-size:0.72rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; margin-bottom:6px; letter-spacing:0.5px;">Detected Interests</div>
+            <div class="personality-chips">${chipsHTML(ap.interests, "interest")}</div>
+        </div>
+        <div>
+            <div style="font-size:0.72rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; margin-bottom:6px; letter-spacing:0.5px;">Risk Flags</div>
+            <div>${riskFlagsHTML(ap.riskFlags)}</div>
+        </div>
+        ${(ap.secondaryCategories && ap.secondaryCategories.length) ? `
+        <div>
+            <div style="font-size:0.72rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; margin-bottom:6px; letter-spacing:0.5px;">Secondary Categories</div>
+            <div>${secondariesHTML(ap.secondaryCategories)}</div>
+        </div>` : ""}
+        ${(ap.evidence && ap.evidence.length) ? `
+        <div>
+            <div style="font-size:0.72rem; text-transform:uppercase; color:var(--text-secondary); font-weight:600; margin-bottom:6px; letter-spacing:0.5px;">Evidence Keywords</div>
+            <div class="personality-chips">${ap.evidence.map(e => `<span class="personality-chip" style="background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.1); color:var(--text-secondary);">${escapeHTML(e)}</span>`).join("")}</div>
+        </div>` : ""}
+    `;
+}
+
 // Render Results to Dashboard
 function renderInvestigationResults(data) {
     const emptyState = document.getElementById("results-empty-state");
@@ -1000,6 +1102,8 @@ function renderInvestigationResults(data) {
     if (grid) grid.style.display = "grid";
 
     renderWmnHits(data);
+    renderConsolidatedIdentity(data.consolidated_identity);
+    renderAiPersonality(data.ai_personality);
 
     // Header Case Title
     const titleCase = document.getElementById("title-case-id");

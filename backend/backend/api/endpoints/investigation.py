@@ -2840,7 +2840,7 @@ async def _investigate_username_impl(
     telegram_cti_data = None
     cti_service = get_cti_service()
     if cti_service.is_configured() and getattr(settings, "telegram_cti_enabled", True):
-        cti_queries = []
+        cti_queries: list[str] = []
         if request.username:
             cti_queries.append(request.username)
         if request.email:
@@ -2850,17 +2850,122 @@ async def _investigate_username_impl(
         if fetched_name:
             cti_queries.append(fetched_name)
 
-        cti_results = []
-        for q in list(dict.fromkeys(cti_queries))[:5]:
+        # Collect discovered emails/phones from reverse lookup (scraped bios/captions)
+        if reverse_lookup_results and isinstance(reverse_lookup_results, dict):
+            c_intel = reverse_lookup_results.get("collected_intel") or {}
+            for e_val in c_intel.get("emails") or []:
+                if e_val and "@" in str(e_val):
+                    cti_queries.append(str(e_val).strip())
+
+        # Collect discovered emails from Hunter (stored under provider_results["contact"])
+        _hunter_contact = (provider_results or {}).get("contact") or {}
+        _hunter_data = None
+        for _hk in ("email_verification", "email_finder", "email_discovery"):
+            _v = _hunter_contact.get(_hk)
+            if isinstance(_v, dict) and (_v.get("data") or _v.get("emails")):
+                _hunter_data = _v
+                break
+        if _hunter_data:
+            h_data = _hunter_data.get("data") or {}
+            for e_item in h_data.get("emails") or []:
+                val = e_item.get("value") if isinstance(e_item, dict) else str(e_item)
+                if val and "@" in str(val):
+                    cti_queries.append(str(val).strip())
+
+        # Deduplicate and clean queries (min length 3)
+        clean_queries: list[str] = []
+        seen_queries: set[str] = set()
+        for q_raw in cti_queries:
+            q_str = str(q_raw or "").strip()
+            if len(q_str) >= 3 and q_str.casefold() not in seen_queries:
+                seen_queries.add(q_str.casefold())
+                clean_queries.append(q_str)
+
+        clean_queries = clean_queries[:5]
+        cti_results: list[dict[str, Any]] = []
+        total_records = 0
+        databases_found: set[str] = set()
+
+        for q in clean_queries:
             cti_res = await cti_service.search(q)
-            if cti_res and cti_res.status == "success" and cti_res.results:
-                cti_results.append(cti_res.model_dump())
+            if cti_res:
+                dump_data = cti_res.model_dump()
+                cti_results.append(dump_data)
+                if cti_res.status == "success" and cti_res.results:
+                    for db_rec in cti_res.results:
+                        databases_found.add(db_rec.database)
+                        total_records += len(db_rec.data)
 
         telegram_cti_data = {
-            "searches_performed": len(cti_queries),
-            "results": cti_results,
-            "query_count": len(cti_queries),
+            "searches_performed": len(clean_queries),
+            "total_records": total_records,
+            "databases": list(databases_found),
+            "results": [r for r in cti_results if r.get("status") == "success"],
+            "queries": cti_results,
+            "query_count": len(clean_queries),
         }
+
+    # --- Consolidated Identity synthesis ---
+    consolidated_identity: dict[str, Any] | None = None
+    try:
+        all_profiles = [v for v in (scraped_data or {}).values() if isinstance(v, dict) and v.get("success") is not False]
+        names = [p.get("full_name") or p.get("name") for p in all_profiles if p.get("full_name") or p.get("name")]
+        locations = [p.get("location") for p in all_profiles if p.get("location")]
+        bios = [p.get("bio") or p.get("description") for p in all_profiles if p.get("bio") or p.get("description")]
+        discovered_emails: list[str] = []
+        _hc = (provider_results or {}).get("contact") or {}
+        for _hk in ("email_verification", "email_finder", "email_discovery"):
+            _hv = _hc.get(_hk)
+            if isinstance(_hv, dict):
+                _hd = _hv.get("data") or {}
+                for ei in _hd.get("emails") or []:
+                    val = ei.get("value") if isinstance(ei, dict) else str(ei)
+                    if val and "@" in str(val): discovered_emails.append(str(val))
+        if request.email: discovered_emails.insert(0, request.email)
+        discovered_links: list[str] = []
+        for p in all_profiles:
+            for lk in [p.get("external_url"), p.get("blog"), p.get("website")]:
+                if lk and "://" in str(lk) and lk not in discovered_links: discovered_links.append(str(lk))
+        for hit in cross_matches:
+            lk = hit.get("url")
+            if lk and lk not in discovered_links: discovered_links.append(str(lk))
+
+        confirmed_plat = len([p for p in all_profiles if p.get("success")])
+        cp = min(100, 40 + confirmed_plat * 12 + (10 if discovered_emails else 0))
+
+        if names or discovered_emails or discovered_links:
+            consolidated_identity = {
+                "likely_name": names[0] if names else None,
+                "location": locations[0] if locations else None,
+                "profession": None,  # will be filled by ai_personality below
+                "emails": list(dict.fromkeys(discovered_emails))[:8],
+                "links": list(dict.fromkeys(discovered_links))[:10],
+                "overall_confidence": "high" if cp >= 70 else ("moderate" if cp >= 45 else "low"),
+                "confidence_percentage": cp,
+            }
+    except Exception:
+        pass
+
+    # --- AI Personality analysis ---
+    ai_personality: dict[str, Any] | None = None
+    try:
+        corpus_parts: list[str] = []
+        for p in (scraped_data or {}).values():
+            if not isinstance(p, dict): continue
+            if p.get("bio") or p.get("description"):
+                corpus_parts.append(f"[{p.get('platform', 'unknown')}] {p.get('username', '')}: {p.get('bio') or p.get('description')}")
+        if dorking_results and isinstance(dorking_results, dict):
+            for hit in (dorking_results.get("results") or [])[:8]:
+                if isinstance(hit, dict) and (hit.get("title") or hit.get("snippet")):
+                    corpus_parts.append(f"[dork] {hit.get('title', '')} — {hit.get('snippet', '')}")
+        corpus = "\n".join(corpus_parts)[:4000]
+        if corpus.strip():
+            platform_count = len([v for v in (scraped_data or {}).values() if isinstance(v, dict) and v.get("success") is not False])
+            ai_personality = await AIAnalyzer().analyze_personality(corpus, platform_count)
+            if consolidated_identity and ai_personality.get("primaryCategory"):
+                consolidated_identity["profession"] = ai_personality["primaryCategory"]
+    except Exception:
+        pass
 
     response = InvestigationResponse(
         investigation_id=investigation_id,
@@ -2881,6 +2986,8 @@ async def _investigate_username_impl(
         execution_metadata=execution_metadata,
         apify_social_results=apify_social_results,
         telegram_cti=telegram_cti_data,
+        consolidated_identity=consolidated_identity,
+        ai_personality=ai_personality,
         timestamp=datetime.now(UTC),
     )
     _store_investigation(response)

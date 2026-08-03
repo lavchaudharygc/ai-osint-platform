@@ -3303,4 +3303,147 @@ a.person-username-card:hover {
     text-decoration: underline;
 }
 
+/* ============================================================
+   Smart Input Type Badge
+   ============================================================ */
+.input-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border: 1px solid rgba(0,198,255,0.4);
+    background: rgba(0,198,255,0.1);
+    color: var(--accent-blue);
+    transition: all 0.2s ease;
+}
+.input-type-badge.kind-email    { border-color:rgba(0,255,150,0.4); background:rgba(0,255,150,0.1); color:#00ff96; }
+.input-type-badge.kind-phone    { border-color:rgba(255,215,0,0.4); background:rgba(255,215,0,0.1); color:var(--accent-gold); }
+.input-type-badge.kind-domain   { border-color:rgba(140,100,255,0.4); background:rgba(140,100,255,0.1); color:#8c64ff; }
+.input-type-badge.kind-name     { border-color:rgba(255,100,160,0.4); background:rgba(255,100,160,0.1); color:#ff64a0; }
+.input-type-badge.kind-username { border-color:rgba(0,198,255,0.4); background:rgba(0,198,255,0.1); color:var(--accent-blue); }
 
+/* ============================================================
+   Consolidated Identity Card
+   ============================================================ */
+.identity-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.identity-row:last-child { border-bottom: none; }
+.identity-row-label {
+    min-width: 100px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding-top: 2px;
+}
+.identity-row-value {
+    flex: 1;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    word-break: break-word;
+    line-height: 1.5;
+}
+.identity-confidence-bar {
+    height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+}
+.identity-confidence-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent-blue), #00ff96);
+    transition: width 0.6s ease;
+}
+.identity-link-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    background: rgba(0,198,255,0.08);
+    border: 1px solid rgba(0,198,255,0.2);
+    color: var(--accent-blue);
+    text-decoration: none;
+    margin: 2px 4px 2px 0;
+    transition: background 0.2s;
+    word-break: break-all;
+}
+.identity-link-chip:hover { background: rgba(0,198,255,0.18); }
+
+/* ============================================================
+   AI Personality – Chips & Risk Flags
+   ============================================================ */
+.personality-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+.personality-chip {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: rgba(0,198,255,0.1);
+    border: 1px solid rgba(0,198,255,0.25);
+    color: var(--accent-blue);
+}
+.personality-chip.interest {
+    background: rgba(140,100,255,0.1);
+    border-color: rgba(140,100,255,0.25);
+    color: #a882ff;
+}
+.risk-flag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    margin: 3px 4px 3px 0;
+}
+.risk-flag-chip.low    { background:rgba(0,220,130,0.1); border:1px solid rgba(0,220,130,0.3); color:#00dc82; }
+.risk-flag-chip.medium { background:rgba(255,165,0,0.1); border:1px solid rgba(255,165,0,0.3); color:#ffa500; }
+.risk-flag-chip.high   { background:rgba(255,51,102,0.1); border:1px solid rgba(255,51,102,0.3); color:#ff3366; }
+.personality-confidence-bar {
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+.personality-confidence-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.7s ease;
+}
+.personality-confidence-fill.very_high { background: linear-gradient(90deg,#00ff96,#00bcd4); }
+.personality-confidence-fill.high      { background: linear-gradient(90deg,#00bcd4,#4c9fff); }
+.personality-confidence-fill.moderate  { background: linear-gradient(90deg,#ffd700,#ffa500); }
+.personality-confidence-fill.low       { background: linear-gradient(90deg,#ff6464,#ff3366); }
+.personality-confidence-fill.insufficient { background: rgba(255,255,255,0.15); }
+.secondary-category-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-secondary);
+    margin: 2px 4px 2px 0;
+}

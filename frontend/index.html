@@ -142,9 +142,6 @@
                     <h2 id="view-title">OSINT Investigation Engine</h2>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px;">
-                    <button class="btn-action-sm" id="synth-sound-btn" onclick="toggleSynthSound()" title="Toggle Audio FX">
-                        🔊 Sound FX: ON
-                    </button>
                     <button class="btn-action-sm gold" onclick="triggerLeaPdfExport()" title="Export Official LEA PDF Report">
                         📜 Export LEA PDF
                     </button>
@@ -176,105 +173,32 @@
 
 
 
-                            <div class="form-row">
-                                <label>Target Profile / Page Identifier</label>
-                                <input type="text" id="target-username" class="form-control" placeholder="username, profile slug, or YouTube channel handle/URL" style="background:var(--bg-input);">
-                            </div>
-
-                            <div class="form-row">
-                                <label>Target Platform</label>
-                                <select id="target-platform" class="form-control" style="background:var(--bg-input); border-color:var(--border-glow);">
-                                    <option value="instagram">Instagram</option>
-                                    <option value="twitter">Twitter (X)</option>
-                                    <option value="telegram">Telegram</option>
-                                    <option value="linkedin">LinkedIn</option>
-                                    <option value="reddit">Reddit</option>
-                                    <option value="facebook">Facebook Page</option>
-                                    <option value="tiktok">TikTok</option>
-                                    <option value="github">GitHub</option>
-                                    <option value="youtube">YouTube</option>
-                                </select>
-                            </div>
-
-                            <div class="form-row">
-                                <label>Correlation Depth</label>
-                                <div class="slider-group">
-                                    <input type="range" id="correlation-depth" min="1" max="5" value="2" oninput="document.getElementById('depth-val').innerText = this.value">
-                                    <span class="slider-val" id="depth-val">2</span>
+                            <!-- GLOBAL SMART SEARCH INPUT -->
+                            <div class="form-row" style="position:relative;">
+                                <label style="display:flex; align-items:center; justify-content:space-between;">
+                                    <span>Target Identifier</span>
+                                    <span id="input-type-badge" class="input-type-badge" style="display:none;"></span>
+                                </label>
+                                <input type="text" id="target-username" class="form-control" 
+                                    placeholder="username, @handle, email, phone, full name, or domain"
+                                    oninput="detectInputType(this.value)"
+                                    style="background:var(--bg-input);">
+                                <div style="font-size:0.65rem; color:var(--text-secondary); margin-top:4px;">
+                                    Auto-detects type — no platform selection needed
                                 </div>
-                            </div>
-
-                            <details id="advanced-provider-inputs" style="margin: 0 0 18px; border:1px solid var(--border-glow); border-radius:6px; background:rgba(255,255,255,0.015);">
-                                <summary style="cursor:pointer; padding:9px 10px; color:var(--accent-blue); font-size:0.72rem; font-weight:600; text-transform:uppercase; letter-spacing:0.6px;">
-                                    Advanced Provider Inputs
-                                </summary>
-                                <div style="padding:2px 10px 10px;">
-                                    <p style="font-size:0.68rem; line-height:1.4; color:var(--text-secondary); margin:4px 0 10px;">
-                                        Optional fields call their mapped provider. Leave them blank to avoid that provider call.
-                                    </p>
-
-                                    <div class="form-row">
-                                        <label for="dork-query-limit">SerpAPI Query Limit (0–50)</label>
-                                        <input type="number" id="dork-query-limit" class="form-control" min="0" max="50" step="1" placeholder="Server default" style="background:var(--bg-input);">
-                                    </div>
-
-                                    <div class="form-row">
-                                        <label for="provider-call-limit">Total Provider Call Limit (1–50)</label>
-                                        <input type="number" id="provider-call-limit" class="form-control" min="1" max="50" step="1" placeholder="Server default" style="background:var(--bg-input);">
-                                    </div>
-
-                                    <div class="form-row">
-                                        <label for="provider-email">Email for Hunter Verification</label>
-                                        <input type="email" id="provider-email" class="form-control" maxlength="320" placeholder="person@example.com" autocomplete="off" style="background:var(--bg-input);">
-                                    </div>
-
-                                    <div class="form-row">
-                                        <label for="provider-phone">Phone for Twilio Lookup</label>
-                                        <input type="tel" id="provider-phone" class="form-control" maxlength="32" placeholder="+919876543210" autocomplete="off" style="background:var(--bg-input);">
-                                    </div>
-
-                                    <div class="form-row">
-                                        <label for="company-domain">Company Domain for Hunter</label>
-                                        <input type="text" id="company-domain" class="form-control" maxlength="253" placeholder="example.com" autocomplete="off" style="background:var(--bg-input);">
-                                    </div>
-
-                                    <div class="form-row">
-                                        <label for="web-urls">Web URLs for Bright Data (max 5)</label>
-                                        <textarea id="web-urls" class="form-control" rows="3" placeholder="https://example.com/public-page&#10;One public URL per line" style="background:var(--bg-input); resize:vertical;"></textarea>
-                                    </div>
-
-                                    <div class="form-row">
-                                        <label for="extract-urls">Extract URLs for Firecrawl (max 5)</label>
-                                        <textarea id="extract-urls" class="form-control" rows="3" placeholder="https://example.com/public-page&#10;One public URL per line" style="background:var(--bg-input); resize:vertical;"></textarea>
-                                    </div>
-
-                                    <div class="form-row">
-                                        <label for="extraction-prompt">Firecrawl Extraction Prompt</label>
-                                        <textarea id="extraction-prompt" class="form-control" rows="3" maxlength="2000" placeholder="Extract the public profile name, biography, and links." style="background:var(--bg-input); resize:vertical;"></textarea>
-                                    </div>
-
-                                    <div class="form-row" style="margin-bottom:4px;">
-                                        <label for="cache-mode">Cache Mode</label>
-                                        <select id="cache-mode" class="form-control" style="background:var(--bg-input); border-color:var(--border-glow);">
-                                            <option value="use">Use cached result when available</option>
-                                            <option value="refresh">Refresh and replace cache</option>
-                                            <option value="bypass">Bypass cache</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </details>
-
-                            <div class="form-row" style="display:flex; align-items:center; gap:8px; margin-bottom:18px;">
-                                <input type="checkbox" id="filter-hitek" style="width:16px; height:16px; margin:0; cursor:pointer;" checked>
-                                <label for="filter-hitek" style="display:inline; margin:0; font-size:0.75rem; color:var(--text-secondary); cursor:pointer; text-transform:uppercase; letter-spacing:0.5px;">Filter Hi-Tek by Name/Loc</label>
                             </div>
 
                             <div class="form-row" style="margin-bottom:25px;">
-                                <label>Investigation Ref / Case ID</label>
-                                <input type="text" id="case-reference" class="form-control" placeholder="Leave empty for auto-generate" style="background:var(--bg-input);">
+                                <label>Email <span style="color:var(--text-secondary); font-weight:400;">(optional, for Hunter verification)</span></label>
+                                <input type="email" id="provider-email" class="form-control" maxlength="320" placeholder="person@example.com" autocomplete="off" style="background:var(--bg-input);">
                             </div>
 
-                            <button class="btn-scan" onclick="triggerInvestigation()">Execute OSINT Scan</button>
+                            <div class="form-row" style="margin-bottom:25px;">
+                                <label>Phone <span style="color:var(--text-secondary); font-weight:400;">(optional, for Twilio lookup)</span></label>
+                                <input type="tel" id="provider-phone" class="form-control" maxlength="32" placeholder="+919876543210" autocomplete="off" style="background:var(--bg-input);">
+                            </div>
+
+                            <button class="btn-scan" onclick="triggerInvestigation()">⚡ Execute OSINT Scan</button>
                         </div>
 
                         <!-- RIGHT RESULTS SECTION -->
@@ -290,6 +214,28 @@
 
                             <!-- RESULTS WORKSPACE CARD GRID -->
                             <div class="workspace-grid" id="results-workspace-grid">
+                                <!-- 0. CONSOLIDATED IDENTITY CARD -->
+                                <div class="glass-card platform-intel-card" id="consolidated-identity-card" style="display:none; border-color: rgba(0,198,255,0.3); background: linear-gradient(135deg, rgba(0,198,255,0.05) 0%, rgba(0,0,0,0) 100%)">
+                                    <div class="platform-intel-card-header clickable-header" onclick="toggleStaticCardCollapse('consolidated-identity-card', this)" style="cursor:pointer;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:1.1rem;">👤</span>
+                                            <span class="platform-intel-card-name" style="text-transform:uppercase; font-size:0.85rem; letter-spacing:1.5px; font-weight:700; color:var(--accent-blue);">Consolidated Identity Profile</span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:12px;">
+                                            <span class="mono" id="consolidated-confidence-badge" style="font-size:0.75rem;"></span>
+                                            <button class="platform-intel-toggle-btn">
+                                                <span class="toggle-text">Show Details</span>
+                                                <svg class="toggle-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;transition:transform 0.2s;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="platform-intel-collapsible">
+                                        <div class="platform-intel-card-body" style="padding-top:20px;">
+                                            <div id="consolidated-identity-body" style="display:flex; flex-direction:column; gap:12px;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Top row containing Case details and Actions -->
                                 <div class="workspace-actions-row" style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                                     <div class="case-number-title">CASE ID: <span id="title-case-id" class="mono">UPP-xxx</span></div>
@@ -474,8 +420,8 @@
                                 <div class="glass-card platform-intel-card" id="personality-profile-card">
                                     <div class="platform-intel-card-header clickable-header" onclick="toggleStaticCardCollapse('personality-profile-card', this)" style="cursor: pointer;">
                                         <div style="display:flex; align-items:center; gap:10px;">
-                                            <span style="font-size: 1.1rem;">🧠</span>
-                                            <span class="platform-intel-card-name" style="text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1.5px; font-weight: 600; color: var(--text-secondary);">Personality Profile & Interests</span>
+                                            <span style="font-size: 1.1rem;">🧬</span>
+                                            <span class="platform-intel-card-name" style="text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1.5px; font-weight: 600; color: var(--text-secondary);">AI Behavioral Profile</span>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 12px;">
                                             <span class="mono blue-text" id="personality-profile-status" style="font-size: 0.75rem;">Not Analyzed</span>
@@ -487,8 +433,8 @@
                                     </div>
                                     <div class="platform-intel-collapsible">
                                         <div class="platform-intel-card-body" style="padding-top:20px;">
-                                            <div id="personality-profile-results" style="display:flex; flex-direction:column; gap:12px; max-height:400px; overflow-y:auto; padding-right:5px;">
-                                                <!-- Dynamic personality profile details -->
+                                            <div id="personality-profile-results" style="display:flex; flex-direction:column; gap:16px;">
+                                                <!-- Dynamic structured personality -->
                                             </div>
                                         </div>
                                     </div>

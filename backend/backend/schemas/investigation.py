@@ -150,6 +150,14 @@ class InvestigationResponse(BaseModel):
         default=None,
         description="Breach data and threat intelligence lookups from Telegram CTI.",
     )
+    consolidated_identity: dict[str, Any] | None = Field(
+        default=None,
+        description="Synthesized identity card across all collected platforms.",
+    )
+    ai_personality: dict[str, Any] | None = Field(
+        default=None,
+        description="Structured behavioral AI personality profile (traits, interests, riskFlags, category).",
+    )
     timestamp: datetime
 
 
