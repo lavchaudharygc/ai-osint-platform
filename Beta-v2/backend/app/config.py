@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_PATH = Path(__file__).resolve().parents[3] / "backend" / ".env"
@@ -11,40 +12,37 @@ if not ENV_PATH.exists():
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=ENV_PATH,
+        env_file=ENV_PATH if ENV_PATH.exists() else None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    app_name: str = "AI-OSINT Platform (Beta-v2 SOC)"
+    app_name: str = "UP Police Cyber Cell OSINT Platform (Beta-v2 SOC)"
     app_version: str = "2.0.0"
     host: str = "127.0.0.1"
     port: int = 8010
 
-    # AI Models
-    groq_api_key: str | None = None
+    # Credentials loaded safely from environment
+    groq_api_key: str | None = Field(default_factory=lambda: os.getenv("GROQ_API_KEY"))
     groq_api_url: str = "https://api.groq.com/openai/v1/chat/completions"
     groq_model: str = "llama-3.3-70b-versatile"
 
-    deepseek_api_key: str | None = None
+    deepseek_api_key: str | None = Field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY"))
     deepseek_api_url: str = "https://api.deepseek.com/v1/chat/completions"
     deepseek_model: str = "deepseek-chat"
 
-    # Social Scraping & Enrichment
-    apify_api_token: str | None = None
-    signalhire_api_key: str | None = None
-    serpapi_key: str | None = None
-    hunter_api_key: str | None = None
-    zerobounce_api_key: str | None = None
-    rapidapi_key: str | None = None
+    apify_api_token: str | None = Field(default_factory=lambda: os.getenv("APIFY_API_TOKEN"))
+    signalhire_api_key: str | None = Field(default_factory=lambda: os.getenv("SIGNALHIRE_API_KEY"))
+    serpapi_key: str | None = Field(default_factory=lambda: os.getenv("SERPAPI_KEY"))
+    hunter_api_key: str | None = Field(default_factory=lambda: os.getenv("HUNTER_API_KEY"))
+    zerobounce_api_key: str | None = Field(default_factory=lambda: os.getenv("ZEROBOUNCE_API_KEY"))
+    rapidapi_key: str | None = Field(default_factory=lambda: os.getenv("RAPIDAPI_KEY"))
 
-    # Telegram CTI & MTProto
-    telegram_api_id: int | None = 39811427
-    telegram_api_hash: str | None = "f60583743564da25a1a4e8545b75def5"
-    telegram_cti_api_key: str | None = "6738536142:2zT7hsIl"
+    telegram_api_id: int = 39811427
+    telegram_api_hash: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_API_HASH"))
+    telegram_cti_api_key: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_CTI_API_KEY"))
     telegram_cti_enabled: bool = True
 
-    # Database
     database_url: str = "sqlite:///./beta_v2_osint.db"
 
 

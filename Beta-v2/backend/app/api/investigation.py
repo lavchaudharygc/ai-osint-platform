@@ -1,15 +1,4 @@
 """Investigation API Endpoint for Beta-v2.
-
-Flow:
-1. Auto-classify query type (email, phone, domain, name, username).
-2. Run WhatsMyName (700+ sites) FIRST.
-3. Trigger scrapers ONLY for confirmed active profiles.
-4. SignalHire for LinkedIn enrichment.
-5. Email MX deliverability verification for guessed emails.
-6. Multi-signal cross-verification for Associated Accounts.
-7. Dynamic CTI lookups via Telegram CTI.
-8. AI Behavioral Profiling with IG hashtags & UP Cyber HQ focus.
-9. Synthesize Consolidated Identity Profile.
 """
 
 from datetime import UTC, datetime
@@ -54,10 +43,9 @@ async def run_investigation(request: InvestigationRequest):
 
     # 1. STEP 1: Run WhatsMyName 700+ probe FIRST
     wmn_service = WhatsMyNameService()
-    wmn_data = await wmn_service.probe_username(raw_query, limit=150)
+    wmn_data = await wmn_service.probe_username(raw_query)
     wmn_hits = wmn_data.get("hits") or []
 
-    # Identify discovered platforms from WMN
     discovered_sites = {h.get("site", "").lower() for h in wmn_hits}
 
     # 2. STEP 2: Targeted scraping ONLY for active/requested platforms
@@ -94,8 +82,8 @@ async def run_investigation(request: InvestigationRequest):
         raw_query, wmn_hits, scraped_data
     )
 
-    # 6. STEP 6: Dynamic Telegram CTI Leak Lookups
-    cti_queries = [raw_query]
+    # 6. STEP 6: Dynamic Telegram CTI Leak Lookups (queries up to 5 items including handle & @handle)
+    cti_queries = [raw_query, f"@{raw_query.lstrip('@')}"]
     if request.email: cti_queries.append(request.email)
     if request.phone_number: cti_queries.append(request.phone_number)
     for pe in pattern_emails:
@@ -115,19 +103,27 @@ async def run_investigation(request: InvestigationRequest):
         scraped_data, dorking_results, ig_res
     )
 
-    # 9. STEP 9: Synthesize Consolidated Identity Profile
+    # 9. STEP 9: Synthesize Consolidated Identity Profile & ALL Discovered Links
     names = [p.get("full_name") for p in scraped_data.values() if isinstance(p, dict) and p.get("full_name")]
     locations = [p.get("location") for p in scraped_data.values() if isinstance(p, dict) and p.get("location")]
     
-    links = [h.get("url") for h in wmn_hits if h.get("url")]
-    cp_pct = min(100, 45 + len(wmn_hits) * 10 + (15 if pattern_emails else 0))
+    # Collect ALL discovered links across WMN, Scrapers, Dorking
+    all_links: set[str] = set()
+    for h in wmn_hits:
+        if h.get("url"): all_links.add(h["url"])
+    for d in (dorking_results.get("results") or []):
+        if isinstance(d, dict) and d.get("url"): all_links.add(d["url"])
+    for p in scraped_data.values():
+        if isinstance(p, dict) and p.get("url"): all_links.add(p["url"])
+
+    cp_pct = min(100, 45 + len(wmn_hits) * 5 + len(all_links) * 2)
 
     consolidated_identity = ConsolidatedIdentity(
         likely_name=names[0] if names else raw_query,
         location=locations[0] if locations else None,
         profession=ai_personality_dict.get("primaryCategory"),
         emails=pattern_emails,
-        links=links[:10],
+        links=list(all_links)[:25],
         overall_confidence="high" if cp_pct >= 70 else ("moderate" if cp_pct >= 45 else "low"),
         confidence_percentage=cp_pct,
     )

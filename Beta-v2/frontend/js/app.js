@@ -5,6 +5,36 @@
 const API_BASE = "http://127.0.0.1:8010";
 let currentInvestigationData = null;
 
+// Auth credentials check
+window.addEventListener("DOMContentLoaded", () => {
+    const isAuth = sessionStorage.getItem("upp_soc_auth");
+    if (isAuth === "true") {
+        document.getElementById("login-screen").style.display = "none";
+        document.getElementById("main-dashboard").style.display = "block";
+    }
+});
+
+function handleLogin() {
+    const u = document.getElementById("login-user").value.trim();
+    const p = document.getElementById("login-pass").value.trim();
+    const err = document.getElementById("login-error");
+
+    if (u === "uppolice" && p === "testingaccount") {
+        sessionStorage.setItem("upp_soc_auth", "true");
+        err.style.display = "none";
+        document.getElementById("login-screen").style.display = "none";
+        document.getElementById("main-dashboard").style.display = "block";
+    } else {
+        err.style.display = "block";
+    }
+}
+
+function handleLogout() {
+    sessionStorage.removeItem("upp_soc_auth");
+    document.getElementById("main-dashboard").style.display = "none";
+    document.getElementById("login-screen").style.display = "flex";
+}
+
 /* ---------- Smart Input Classifier ---------- */
 function classifyInput(raw) {
     const s = raw.trim();
@@ -18,11 +48,11 @@ function classifyInput(raw) {
 }
 
 const KIND_LABELS = {
-    email: "📧 EMAIL",
-    phone: "📱 PHONE",
-    domain: "🌐 DOMAIN",
-    name: "🔍 FULL NAME",
-    username: "👤 USERNAME",
+    email: "EMAIL",
+    phone: "PHONE",
+    domain: "DOMAIN",
+    name: "FULL NAME",
+    username: "USERNAME",
 };
 
 function detectInputType(value) {
@@ -170,7 +200,7 @@ function renderConsolidatedIdentity(ci) {
             <div>${emailsHTML || "<span style='color:var(--text-muted);'>None</span>"}</div>
         </div>
         <div>
-            <div style="font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">DISCOVERED PROFILE LINKS</div>
+            <div style="font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">DISCOVERED PROFILE LINKS (${(ci.links || []).length} DISCOVERED)</div>
             <div>${linksHTML || "<span style='color:var(--text-muted);'>None</span>"}</div>
         </div>
     `;
@@ -260,7 +290,7 @@ function renderGoogleDorking(dorking) {
 
     const rows = results.map(r => `
         <tr>
-            <td><span class="tag-chip">${escapeHTML(r.category)}</span></td>
+            <td><span class="tag-chip interest">${escapeHTML(r.category || "Public Records")}</span></td>
             <td><a href="${escapeHTML(r.url)}" target="_blank" style="color:var(--text-primary); font-weight:600; text-decoration:none;">${escapeHTML(r.title)} ↗</a><br><span class="mono" style="font-size:10px; color:var(--text-muted);">${escapeHTML(r.domain)}</span></td>
             <td style="color:var(--text-secondary); font-size:11px;">${escapeHTML(r.snippet)}</td>
             <td class="mono" style="font-size:10px; color:var(--accent-cyan);">${escapeHTML(r.query)}</td>
@@ -284,7 +314,7 @@ function renderTelegramCTI(cti) {
     if (!body) return;
     const records = cti?.total_records || 0;
 
-    if (badge) badge.textContent = `${records} COMPROMISED RECORDS`;
+    if (badge) badge.textContent = `${records} COMPROMISED RECORDS (${(cti?.databases || []).length} DATABASES)`;
 
     if (!records) {
         body.innerHTML = "<div style='color:var(--status-success); font-size:12px;'>No breach records found in leak databases.</div>";
@@ -294,27 +324,23 @@ function renderTelegramCTI(cti) {
     const results = cti?.results || [];
     let rows = "";
     results.forEach(res => {
-        const raw = res.raw || {};
-        const dbs = raw.results || [];
-        dbs.forEach(db => {
-            const dbName = db.database || "Leak DB";
-            (db.data || []).forEach(item => {
-                rows += `
-                    <tr>
-                        <td style="font-weight:600; color:var(--risk-critical);">${escapeHTML(dbName)}</td>
-                        <td class="mono">${escapeHTML(item.email || item.username || item.phone || "-")}</td>
-                        <td class="mono" style="color:var(--risk-medium);">${escapeHTML(item.password || item.pass || "*****")}</td>
-                        <td class="mono" style="font-size:10px;">${escapeHTML(JSON.stringify(item).slice(0, 80))}</td>
-                    </tr>
-                `;
-            });
+        const dbName = res.database || "Leak DB";
+        (res.data || []).forEach(item => {
+            rows += `
+                <tr>
+                    <td style="font-weight:600; color:var(--risk-critical);">${escapeHTML(dbName)}</td>
+                    <td class="mono">${escapeHTML(item.email || item.username || item.phone || item.name || "-")}</td>
+                    <td class="mono" style="color:var(--risk-medium);">${escapeHTML(item.password || item.pass || "*****")}</td>
+                    <td class="mono" style="font-size:10px;">${escapeHTML(JSON.stringify(item).slice(0, 100))}</td>
+                </tr>
+            `;
         });
     });
 
     body.innerHTML = `
         <table class="soc-table">
             <thead>
-                <tr><th>Database</th><th>Compromised Subject</th><th>Leak Payload / Pass</th><th>Raw Details</th></tr>
+                <tr><th>Database Name</th><th>Compromised Subject</th><th>Leak Payload / Password</th><th>Record Details</th></tr>
             </thead>
             <tbody>${rows || "<tr><td colspan='4'>No records mapped.</td></tr>"}</tbody>
         </table>
@@ -339,13 +365,13 @@ function renderPlatformDossiers(scraped) {
         cardsHTML += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:12px; margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <span style="font-weight:600; color:var(--accent-cyan);">📸 INSTAGRAM DOSSIER</span>
+                    <span style="font-weight:600; color:var(--accent-cyan);">INSTAGRAM DOSSIER</span>
                     <span class="mono" style="font-size:11px;">@${escapeHTML(ig.username)}</span>
                 </div>
                 <div style="font-size:13px; margin-bottom:6px;"><strong>Name:</strong> ${escapeHTML(ig.full_name || "N/A")} | <strong>Followers:</strong> ${ig.follower_count || 0}</div>
                 <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px;">${escapeHTML(ig.bio || "No bio.")}</div>
                 <div>
-                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">POST HASHTAGS EXRACTED</div>
+                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">POST HASHTAGS EXTRACTED</div>
                     <div>${tagsHTML || "<span style='color:var(--text-muted); font-size:11px;'>No hashtags extracted.</span>"}</div>
                 </div>
             </div>
@@ -358,7 +384,7 @@ function renderPlatformDossiers(scraped) {
         cardsHTML += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:12px; margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <span style="font-weight:600; color:var(--accent-cyan);">💼 LINKEDIN (SIGNALHIRE ENRICHMENT)</span>
+                    <span style="font-weight:600; color:var(--accent-cyan);">LINKEDIN (SIGNALHIRE ENRICHMENT)</span>
                     <span class="mono" style="font-size:11px;">${escapeHTML(li.url || "")}</span>
                 </div>
                 <div style="font-size:13px; margin-bottom:6px;"><strong>Candidate Name:</strong> ${escapeHTML(li.full_name || "N/A")} | <strong>Company:</strong> ${escapeHTML(li.company || "N/A")}</div>
@@ -376,7 +402,7 @@ function renderPlatformDossiers(scraped) {
         cardsHTML += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:12px; margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <span style="font-weight:600; color:var(--accent-cyan);">📘 FACEBOOK PAGE DOSSIER</span>
+                    <span style="font-weight:600; color:var(--accent-cyan);">FACEBOOK PAGE DOSSIER</span>
                     <span class="mono" style="font-size:11px;">${escapeHTML(fb.page_name || fb.username)}</span>
                 </div>
                 <div style="font-size:13px; margin-bottom:6px;"><strong>Page Title:</strong> ${escapeHTML(fb.title || fb.page_name)}</div>

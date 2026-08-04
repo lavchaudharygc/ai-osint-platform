@@ -29,7 +29,7 @@
     --accent-cyan-hover: #1F8FB3;
     --police-gold: #C7A74B;
 
-    /* Risk & Status Colors (Calm, non-glowing) */
+    /* Risk & Status Colors */
     --risk-low: #5B7288;
     --risk-medium: #D6A43A;
     --risk-high: #E26D34;
@@ -65,7 +65,71 @@ body {
     font-family: 'JetBrains Mono', monospace;
 }
 
-/* Layout */
+/* Crisp Vector Icon SVGs */
+.icon-svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    vertical-align: middle;
+}
+.icon-svg.gold { stroke: var(--police-gold); }
+.icon-svg.cyan { stroke: var(--accent-cyan); }
+
+/* Login Screen Portal Overlay */
+.login-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--bg-base);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    padding: 24px;
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-divider);
+}
+
+.login-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+    margin-top: 8px;
+}
+
+.login-subtitle {
+    font-size: 10px;
+    color: var(--police-gold);
+    letter-spacing: 1px;
+    margin-top: 4px;
+}
+
+.login-error-msg {
+    background: rgba(212, 59, 68, 0.15);
+    border: 1px solid var(--risk-critical);
+    color: var(--risk-critical);
+    padding: 8px 12px;
+    border-radius: var(--radius-input);
+    font-size: 12px;
+    margin-bottom: 14px;
+    text-align: center;
+}
+
+/* App Layout */
 .app-container {
     max-width: 1600px;
     margin: 0 auto;

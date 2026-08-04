@@ -95,7 +95,7 @@ window.LeaPdfExporter = {
 </head>
 <body>
     <div class="no-print" style="margin-bottom:20px; text-align:right;">
-        <button onclick="window.print()" style="padding:8px 16px; background:#000; color:#fff; font-size:14px; font-weight:bold; cursor:pointer; border:none; border-radius:4px;">🖨️ Print / Save as PDF</button>
+        <button onclick="window.print()" style="padding:8px 16px; background:#000; color:#fff; font-size:14px; font-weight:bold; cursor:pointer; border:none; border-radius:4px;">Print / Save as PDF</button>
     </div>
 
     <div class="header">
@@ -104,7 +104,7 @@ window.LeaPdfExporter = {
     </div>
     
     <div class="confidential">
-        ⚠️ CONFIDENTIAL - RESTRICTED ACCESS - INVESTIGATIVE MATERIAL
+        RESTRICTED ACCESS - INVESTIGATIVE MATERIAL
     </div>
     
     <h2>MAIN HEADING</h2>

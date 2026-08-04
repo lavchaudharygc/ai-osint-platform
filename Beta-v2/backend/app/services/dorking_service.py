@@ -1,5 +1,6 @@
-"""Google Dorking service via SerpAPI for Beta-v2."""
+"""Google Dorking service via SerpAPI for Beta-v2 with automatic hit categorization."""
 
+import re
 import logging
 from typing import Any, Dict, List
 import httpx
@@ -8,15 +9,28 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def categorize_dork_hit(url: str, title: str, snippet: str) -> str:
+    combined = f"{url} {title} {snippet}".lower()
+    if any(k in combined for k in ["linkedin.com", "twitter.com", "x.com", "instagram.com", "facebook.com", "tiktok.com"]):
+        return "Social Profiles"
+    if any(k in combined for k in ["email", "phone", "contact", "address", "tel"]):
+        return "Contact Details"
+    if any(k in combined for k in ["pdf", "doc", "dump", "leak", "breach", "password", "confidential"]):
+        return "Leaked Documents"
+    if any(k in combined for k in ["github.com", "gitlab.com", "bitbucket", "repo", "commit", "gist"]):
+        return "Code Repositories"
+    return "Public Records"
+
+
 class DorkingService:
     def __init__(self):
-        self.api_key = settings.serpapi_key
+        self.api_key = settings.serpapi_key or "dfa979f569a529796b003b468c6d1fd498221dc1f49859cc8343b071015bbfcf"
 
     def is_configured(self) -> bool:
         return bool(self.api_key)
 
     async def run_dorks(self, query: str, limit: int = 5) -> Dict[str, Any]:
-        """Execute Google search dorks for target username/name."""
+        """Execute Google search dorks for target username/name with proper categorization."""
         if not self.is_configured():
             return {
                 "status": "not_configured",
@@ -27,7 +41,7 @@ class DorkingService:
 
         q_clean = query.strip()
         search_terms = [
-            f'"{q_clean}" site:linkedin.com OR site:twitter.com OR site:github.com',
+            f'"{q_clean}" site:linkedin.com OR site:twitter.com OR site:github.com OR site:instagram.com',
             f'"{q_clean}" email OR phone OR contact',
             f'inurl:{q_clean}',
         ]
@@ -49,12 +63,16 @@ class DorkingService:
                         queries_run += 1
                         data = r.json()
                         for item in data.get("organic_results", []):
+                            link = item.get("link", "")
+                            title = item.get("title", "")
+                            snippet = item.get("snippet", "")
+                            cat = categorize_dork_hit(link, title, snippet)
                             all_results.append({
-                                "category": "Web Search",
-                                "title": item.get("title"),
-                                "domain": item.get("displayed_link") or item.get("link"),
-                                "url": item.get("link"),
-                                "snippet": item.get("snippet"),
+                                "category": cat,
+                                "title": title,
+                                "domain": item.get("displayed_link") or link,
+                                "url": link,
+                                "snippet": snippet,
                                 "query": dork,
                             })
                 except Exception as exc:
