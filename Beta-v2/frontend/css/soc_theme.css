@@ -6,79 +6,88 @@
 
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
 
+/* ── Design Tokens ─────────────────────────────────────────────────── */
 :root {
-    /* Surfaces */
-    --bg-base: #06090D;
-    --bg-panel: #0C1218;
-    --bg-elevated: #131A22;
-    --bg-hover: #1A232D;
-    --bg-input: #0A0F14;
+    --bg-base:      #06090D;
+    --bg-panel:     #0C1218;
+    --bg-elevated:  #131A22;
+    --bg-hover:     #1A232D;
+    --bg-input:     #0A0F14;
 
-    /* Borders & Dividers */
-    --border-subtle: #243140;
+    --border-subtle:  #243140;
     --border-divider: #2B3949;
 
-    /* Typography */
-    --text-primary: #E7EDF4;
+    --text-primary:   #E7EDF4;
     --text-secondary: #B0BAC7;
-    --text-muted: #7E8B99;
-    --text-disabled: #5C6673;
+    --text-muted:     #7E8B99;
+    --text-disabled:  #5C6673;
 
-    /* Brand & Accent */
-    --accent-cyan: #14A3C7;
+    --accent-cyan:       #14A3C7;
     --accent-cyan-hover: #1F8FB3;
-    --police-gold: #C7A74B;
+    --police-gold:       #C7A74B;
 
-    /* Risk & Status Colors */
-    --risk-low: #5B7288;
-    --risk-medium: #D6A43A;
-    --risk-high: #E26D34;
+    --risk-low:      #5B7288;
+    --risk-medium:   #D6A43A;
+    --risk-high:     #E26D34;
     --risk-critical: #D43B44;
-    --status-success: #2E9E5B;
+    --status-success:#2E9E5B;
 
-    /* Radii */
-    --radius-card: 8px;
+    --radius-card:   8px;
     --radius-button: 6px;
-    --radius-input: 6px;
-    --radius-badge: 999px;
-    --radius-table: 4px;
+    --radius-input:  6px;
+    --radius-badge:  999px;
+
+    /* Layout */
+    --sidebar-w:    360px;
+    --header-h:     60px;
+    --gap:          20px;
+    --page-pad-x:   24px;
+    --page-pad-y:   16px;
 }
 
-* {
+/* ── Reset ─────────────────────────────────────────────────────────── */
+*, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+html {
+    height: 100%;
+    scroll-behavior: smooth;
 }
 
 body {
-    background-color: var(--bg-base);
+    height: 100%;
+    background: var(--bg-base);
     color: var(--text-primary);
-    min-height: 100vh;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 14px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
 }
 
+/* ── Typography Utilities ──────────────────────────────────────────── */
 .mono {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
 }
 
-/* Crisp Vector Icon SVGs */
+/* ── Icons ─────────────────────────────────────────────────────────── */
 .icon-svg {
     width: 18px;
     height: 18px;
+    flex-shrink: 0;
     stroke: currentColor;
     vertical-align: middle;
 }
 .icon-svg.gold { stroke: var(--police-gold); }
 .icon-svg.cyan { stroke: var(--accent-cyan); }
 
-/* Login Screen Portal Overlay */
+/* ── Login Overlay ─────────────────────────────────────────────────── */
 .login-overlay {
     position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
+    inset: 0;
     background: var(--bg-base);
     display: flex;
     align-items: center;
@@ -89,164 +98,198 @@ body {
 
 .login-card {
     width: 100%;
-    max-width: 400px;
+    max-width: 420px;
     background: var(--bg-panel);
     border: 1px solid var(--border-subtle);
+    border-top: 2px solid var(--police-gold);
     border-radius: var(--radius-card);
-    padding: 24px;
+    padding: 32px 28px;
 }
 
 .login-header {
     text-align: center;
-    margin-bottom: 20px;
-    padding-bottom: 16px;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
     border-bottom: 1px solid var(--border-divider);
 }
 
 .login-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--text-primary);
-    letter-spacing: 0.5px;
-    margin-top: 8px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    margin-top: 10px;
 }
 
 .login-subtitle {
     font-size: 10px;
     color: var(--police-gold);
-    letter-spacing: 1px;
-    margin-top: 4px;
+    letter-spacing: 1.5px;
+    margin-top: 5px;
 }
 
+.login-body {}
+
 .login-error-msg {
-    background: rgba(212, 59, 68, 0.15);
+    background: rgba(212, 59, 68, 0.12);
     border: 1px solid var(--risk-critical);
     color: var(--risk-critical);
     padding: 8px 12px;
     border-radius: var(--radius-input);
     font-size: 12px;
-    margin-bottom: 14px;
+    margin-bottom: 16px;
     text-align: center;
 }
 
-/* App Layout */
+/* ── Application Shell ─────────────────────────────────────────────── */
 .app-container {
-    max-width: 1600px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-width: 1800px;
     margin: 0 auto;
-    padding: 16px 24px;
+    padding: var(--page-pad-y) var(--page-pad-x);
+    gap: var(--gap);
+    overflow: hidden;           /* prevent body scroll; panels scroll internally */
 }
 
-/* Header Bar */
+/* ── Header Bar ────────────────────────────────────────────────────── */
 .soc-header {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 20px;
+    padding: 0 20px;
+    height: var(--header-h);
     background: var(--bg-panel);
     border: 1px solid var(--border-subtle);
+    border-left: 3px solid var(--police-gold);
     border-radius: var(--radius-card);
-    margin-bottom: 20px;
+    gap: 12px;
+    min-width: 0;
 }
 
 .soc-brand {
     display: flex;
     align-items: center;
     gap: 12px;
-}
-
-.soc-seal {
-    font-size: 18px;
-    color: var(--police-gold);
-    font-weight: 700;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .soc-title {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--text-primary);
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .soc-subtitle {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 1.2px;
+    white-space: nowrap;
 }
 
 .soc-actions {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    flex-shrink: 0;
 }
 
-.btn-lea {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--police-gold);
-    color: var(--police-gold);
-    font-size: 12px;
-    font-weight: 600;
-    border-radius: var(--radius-button);
-    cursor: pointer;
-}
-
-.btn-lea:hover {
-    background: var(--bg-hover);
-}
-
-/* Main Grid */
+/* ── Dashboard Grid ────────────────────────────────────────────────── */
 .dashboard-grid {
+    flex: 1;
     display: grid;
-    grid-template-columns: 360px 1fr;
-    gap: 20px;
+    grid-template-columns: var(--sidebar-w) 1fr;
+    gap: var(--gap);
+    min-height: 0;             /* allow children to shrink within flex parent */
+    overflow: hidden;
 }
 
-@media (max-width: 1100px) {
-    .dashboard-grid {
-        grid-template-columns: 1fr;
-    }
+/* ── Left Panel (Sticky Sidebar) ───────────────────────────────────── */
+.left-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-divider) transparent;
+    min-height: 0;
 }
 
-/* Panels & Cards */
+.left-panel::-webkit-scrollbar { width: 4px; }
+.left-panel::-webkit-scrollbar-track { background: transparent; }
+.left-panel::-webkit-scrollbar-thumb { background: var(--border-divider); border-radius: 2px; }
+
+/* ── Right Panel (Scrollable Results) ─────────────────────────────── */
+.right-panel {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-divider) transparent;
+    min-height: 0;
+    min-width: 0;
+}
+
+.right-panel::-webkit-scrollbar { width: 5px; }
+.right-panel::-webkit-scrollbar-track { background: transparent; }
+.right-panel::-webkit-scrollbar-thumb { background: var(--border-divider); border-radius: 3px; }
+
+/* ── SOC Cards ─────────────────────────────────────────────────────── */
 .soc-card {
     background: var(--bg-panel);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-card);
     padding: 16px;
     margin-bottom: 16px;
+    min-width: 0;
+}
+
+.soc-card:last-child {
+    margin-bottom: 0;
 }
 
 .soc-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
     padding-bottom: 10px;
     border-bottom: 1px solid var(--border-divider);
     margin-bottom: 14px;
+    min-width: 0;
 }
 
 .card-title-text {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 1px;
     color: var(--text-secondary);
+    white-space: nowrap;
 }
 
-/* Inputs & Buttons */
+/* ── Forms ─────────────────────────────────────────────────────────── */
 .form-label {
     display: flex;
     justify-content: space-between;
-    font-size: 11px;
+    align-items: center;
+    font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     color: var(--text-secondary);
     margin-bottom: 6px;
     letter-spacing: 0.5px;
+    gap: 8px;
 }
 
 .form-input {
@@ -256,34 +299,61 @@ body {
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-input);
     color: var(--text-primary);
+    font-family: inherit;
     font-size: 13px;
     outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.form-input::placeholder {
+    color: var(--text-disabled);
 }
 
 .form-input:focus {
     border-color: var(--accent-cyan);
 }
 
+/* ── Buttons ───────────────────────────────────────────────────────── */
 .btn-execute {
     width: 100%;
-    padding: 12px;
+    padding: 11px 16px;
     background: var(--accent-cyan);
     color: #000;
-    font-weight: 600;
-    font-size: 13px;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 12px;
     border: none;
     border-radius: var(--radius-button);
     cursor: pointer;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.8px;
     margin-top: 12px;
+    transition: background 0.15s ease, opacity 0.15s ease;
 }
 
-.btn-execute:hover {
-    background: var(--accent-cyan-hover);
+.btn-execute:hover   { background: var(--accent-cyan-hover); }
+.btn-execute:active  { opacity: 0.85; }
+
+.btn-lea {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--police-gold);
+    color: var(--police-gold);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: var(--radius-button);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease;
 }
 
-/* Smart Input Badge */
+.btn-lea:hover { background: var(--bg-hover); }
+
+/* ── Smart Input Badge ─────────────────────────────────────────────── */
 .input-kind-badge {
     padding: 2px 8px;
     border-radius: var(--radius-badge);
@@ -291,49 +361,71 @@ body {
     font-weight: 600;
     text-transform: uppercase;
     background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--accent-cyan);
     color: var(--accent-cyan);
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
 }
 
-/* Information Tables */
+/* ── Tables ────────────────────────────────────────────────────────── */
+/* Wrapper handles horizontal overflow so cards don't stretch */
+.table-scroll {
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-divider) transparent;
+}
+
+.table-scroll::-webkit-scrollbar { height: 4px; }
+.table-scroll::-webkit-scrollbar-track { background: transparent; }
+.table-scroll::-webkit-scrollbar-thumb { background: var(--border-divider); border-radius: 2px; }
+
 .soc-table {
     width: 100%;
+    min-width: 480px;          /* minimum before horizontal scroll triggers */
     border-collapse: collapse;
     font-size: 12px;
+    table-layout: auto;
 }
 
 .soc-table th {
     background: var(--bg-elevated);
     color: var(--text-secondary);
     font-weight: 600;
-    font-size: 11px;
+    font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     padding: 8px 12px;
     border: 1px solid var(--border-divider);
     text-align: left;
+    white-space: nowrap;
 }
 
 .soc-table td {
-    padding: 8px 12px;
+    padding: 7px 12px;
     border: 1px solid var(--border-divider);
     color: var(--text-primary);
+    vertical-align: top;
+    word-break: break-word;
+    max-width: 300px;
 }
 
-.soc-table tr:hover {
+.soc-table tr:hover td {
     background: var(--bg-hover);
 }
 
-/* Badges & Chips */
+/* ── Tag Chips ─────────────────────────────────────────────────────── */
 .tag-chip {
     display: inline-block;
-    padding: 2px 8px;
+    padding: 2px 7px;
     border-radius: var(--radius-badge);
-    font-size: 11px;
+    font-size: 10px;
     background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
     color: var(--text-secondary);
-    margin: 2px 4px 2px 0;
+    margin: 2px 3px 2px 0;
+    white-space: nowrap;
 }
 
 .tag-chip.interest {
@@ -341,6 +433,7 @@ body {
     color: var(--accent-cyan);
 }
 
+/* ── Risk Badges ───────────────────────────────────────────────────── */
 .risk-badge {
     display: inline-block;
     padding: 2px 8px;
@@ -348,26 +441,152 @@ body {
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
+    white-space: nowrap;
 }
 
-.risk-badge.low { background: rgba(91, 114, 136, 0.2); color: var(--risk-low); border: 1px solid var(--risk-low); }
-.risk-badge.medium { background: rgba(214, 164, 58, 0.2); color: var(--risk-medium); border: 1px solid var(--risk-medium); }
-.risk-badge.high { background: rgba(226, 109, 52, 0.2); color: var(--risk-high); border: 1px solid var(--risk-high); }
-.risk-badge.critical { background: rgba(212, 59, 68, 0.2); color: var(--risk-critical); border: 1px solid var(--risk-critical); }
+.risk-badge.low      { background: rgba(91,114,136,.15); color: var(--risk-low);      border: 1px solid var(--risk-low); }
+.risk-badge.medium   { background: rgba(214,164,58,.15); color: var(--risk-medium);   border: 1px solid var(--risk-medium); }
+.risk-badge.high     { background: rgba(226,109,52,.15); color: var(--risk-high);     border: 1px solid var(--risk-high); }
+.risk-badge.critical { background: rgba(212,59,68,.15);  color: var(--risk-critical); border: 1px solid var(--risk-critical); }
 
-/* Execution Terminal Log Stream */
+/* ── Terminal Stream ───────────────────────────────────────────────── */
 .terminal-stream {
     background: var(--bg-input);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-input);
-    padding: 12px;
-    max-height: 180px;
+    padding: 10px 12px;
+    height: 180px;
     overflow-y: auto;
     font-size: 11px;
-    line-height: 1.6;
-    color: var(--text-secondary);
+    line-height: 1.7;
+    color: var(--text-muted);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-divider) transparent;
 }
+
+.terminal-stream::-webkit-scrollbar { width: 3px; }
+.terminal-stream::-webkit-scrollbar-thumb { background: var(--border-divider); }
 
 .terminal-line {
     font-family: 'JetBrains Mono', monospace;
+    word-break: break-all;
+}
+
+/* ── Scrollable Section Bodies ─────────────────────────────────────── */
+/* Applied via inline style max-height in HTML — give them custom scrollbars */
+[id$="-body"],
+[id$="-stream"] {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-divider) transparent;
+}
+
+[id$="-body"]::-webkit-scrollbar,
+[id$="-stream"]::-webkit-scrollbar { width: 4px; }
+
+[id$="-body"]::-webkit-scrollbar-thumb,
+[id$="-stream"]::-webkit-scrollbar-thumb {
+    background: var(--border-divider);
+    border-radius: 2px;
+}
+
+/* ── Responsive Breakpoints ────────────────────────────────────────── */
+
+/* 1400px — tighten sidebar slightly */
+@media (max-width: 1400px) {
+    :root { --sidebar-w: 320px; --page-pad-x: 20px; }
+    .soc-title { font-size: 13px; }
+}
+
+/* 1100px — collapse to single column stacked layout */
+@media (max-width: 1100px) {
+    .app-container {
+        height: auto;
+        overflow: visible;
+        min-height: 100vh;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+        overflow: visible;
+    }
+
+    .left-panel,
+    .right-panel {
+        overflow: visible;
+        height: auto;
+    }
+
+    /* Left panel cards flow naturally */
+    .left-panel .soc-card:last-child { margin-bottom: 0; }
+
+    /* Results workspace gets natural height */
+    #results-workspace,
+    #results-empty-state { margin-bottom: 0; }
+
+    /* Terminal can be shorter on tablet */
+    .terminal-stream { height: 140px; }
+}
+
+/* 900px — tighten spacing */
+@media (max-width: 900px) {
+    :root {
+        --gap: 14px;
+        --page-pad-x: 14px;
+        --page-pad-y: 12px;
+    }
+
+    .soc-header {
+        flex-wrap: wrap;
+        gap: 10px;
+        height: auto;
+        padding: 12px 14px;
+    }
+
+    .soc-title  { font-size: 12px; }
+    .soc-subtitle { display: none; }
+
+    .btn-lea span { display: none; }  /* icon-only on small header */
+    .btn-lea { padding: 8px 10px; }
+
+    .soc-card { padding: 12px; }
+    .soc-card-header { margin-bottom: 10px; }
+
+    .soc-table { min-width: 360px; }
+}
+
+/* 640px — mobile single-column, full-width */
+@media (max-width: 640px) {
+    :root {
+        --page-pad-x: 10px;
+        --page-pad-y: 10px;
+        --gap: 10px;
+    }
+
+    .btn-lea { display: none; }   /* hide actions in very small screen to save space */
+    .soc-header { justify-content: flex-start; }
+    .soc-actions { display: none; }
+
+    /* Make bottom export accessible */
+    .soc-card .btn-execute { font-size: 11px; }
+
+    .terminal-stream { height: 120px; }
+
+    /* Tables horizontal scroll at 240px min */
+    .soc-table { min-width: 280px; }
+    .soc-table th, .soc-table td { padding: 6px 8px; font-size: 11px; }
+
+    /* Wrap tag chips */
+    .tag-chip { font-size: 9px; padding: 1px 6px; }
+}
+
+/* ── Utility — prevent tables from blowing layout ─────────────────── */
+/* Every card body that may contain a .soc-table gets overflow-x: auto */
+#wmn-matrix-body,
+#associated-accounts-body,
+#dorking-results-body,
+#telegram-cti-body,
+#consolidated-identity-body,
+#ai-personality-body,
+#platform-dossiers-body {
+    overflow-x: auto;
 }

@@ -258,21 +258,18 @@ function renderWmnMatrix(wmn) {
 
     const rows = hits.map(h => `
         <tr>
-            <td style="font-weight:600; color:var(--accent-cyan);">${escapeHTML(h.site)}</td>
+            <td style="font-weight:600; color:var(--accent-cyan); white-space:nowrap;">${escapeHTML(h.site)}</td>
             <td><span class="tag-chip">${escapeHTML(h.category)}</span></td>
-            <td class="mono" style="color:var(--status-success);">FOUND (${h.ms}ms)</td>
-            <td class="mono"><a href="${escapeHTML(h.url)}" target="_blank" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(h.url)} ↗</a></td>
+            <td class="mono" style="color:var(--status-success); white-space:nowrap;">FOUND &nbsp;${h.ms}ms</td>
+            <td class="mono"><a href="${escapeHTML(h.url)}" target="_blank" style="color:var(--accent-cyan); text-decoration:none; word-break:break-all;">${escapeHTML(h.url)} &#x2197;</a></td>
         </tr>
     `).join("");
 
-    body.innerHTML = `
+    body.innerHTML = `<div class="table-scroll">
         <table class="soc-table">
-            <thead>
-                <tr><th>Platform</th><th>Category</th><th>Probe Status</th><th>Profile URL</th></tr>
-            </thead>
+            <thead><tr><th>Platform</th><th>Category</th><th>Probe Status</th><th>Profile URL</th></tr></thead>
             <tbody>${rows}</tbody>
-        </table>
-    `;
+        </table></div>`;
 }
 
 // 4. Google Search Dorking
@@ -291,21 +288,18 @@ function renderGoogleDorking(dorking) {
 
     const rows = results.map(r => `
         <tr>
-            <td><span class="tag-chip interest">${escapeHTML(r.category || "Public Records")}</span></td>
-            <td><a href="${escapeHTML(r.url)}" target="_blank" style="color:var(--text-primary); font-weight:600; text-decoration:none;">${escapeHTML(r.title)} ↗</a><br><span class="mono" style="font-size:10px; color:var(--text-muted);">${escapeHTML(r.domain)}</span></td>
-            <td style="color:var(--text-secondary); font-size:11px;">${escapeHTML(r.snippet)}</td>
-            <td class="mono" style="font-size:10px; color:var(--accent-cyan);">${escapeHTML(r.query)}</td>
+            <td style="white-space:nowrap;"><span class="tag-chip interest">${escapeHTML(r.category || "Public Records")}</span></td>
+            <td><a href="${escapeHTML(r.url)}" target="_blank" style="color:var(--text-primary); font-weight:600; text-decoration:none;">${escapeHTML(r.title)} &#x2197;</a><br><span class="mono" style="font-size:10px; color:var(--text-muted);">${escapeHTML(r.domain)}</span></td>
+            <td style="color:var(--text-secondary); font-size:11px; max-width:260px;">${escapeHTML(r.snippet)}</td>
+            <td class="mono" style="font-size:10px; color:var(--accent-cyan); white-space:nowrap;">${escapeHTML(r.query)}</td>
         </tr>
     `).join("");
 
-    body.innerHTML = `
+    body.innerHTML = `<div class="table-scroll">
         <table class="soc-table">
-            <thead>
-                <tr><th>Category</th><th>Title / Domain</th><th>Snippet Preview</th><th>Query Used</th></tr>
-            </thead>
+            <thead><tr><th>Category</th><th>Title / Domain</th><th>Snippet Preview</th><th>Query Used</th></tr></thead>
             <tbody>${rows}</tbody>
-        </table>
-    `;
+        </table></div>`;
 }
 
 // 5. Associated Accounts
@@ -332,11 +326,11 @@ function renderAssociatedAccounts(accounts) {
                 <td>${reasonsHTML}</td>
             </tr>`;
     }).join('');
-    body.innerHTML = `
+    body.innerHTML = `<div class="table-scroll">
         <table class="soc-table">
             <thead><tr><th>Platform</th><th>Category</th><th>Handle</th><th>Profile URL</th><th>Confidence</th><th>Evidence</th></tr></thead>
             <tbody>${rows}</tbody>
-        </table>`;
+        </table></div>`;
 }
 
 // 6. Telegram CTI Breach Intelligence
