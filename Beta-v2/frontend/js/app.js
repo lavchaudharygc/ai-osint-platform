@@ -163,6 +163,7 @@ function renderResults(data) {
     renderConsolidatedIdentity(data.consolidated_identity);
     renderAiPersonality(data.ai_personality);
     renderWmnMatrix(data.wmn_results);
+    renderAssociatedAccounts(data.associated_accounts);
     renderGoogleDorking(data.dorking_results);
     renderTelegramCTI(data.telegram_cti);
     renderPlatformDossiers(data.scraped_data);
@@ -307,7 +308,38 @@ function renderGoogleDorking(dorking) {
     `;
 }
 
-// 5. Telegram CTI Breach Intelligence
+// 5. Associated Accounts
+function renderAssociatedAccounts(accounts) {
+    const body = document.getElementById("associated-accounts-body");
+    const badge = document.getElementById("associated-accounts-badge");
+    if (!body) return;
+    const list = accounts || [];
+    if (badge) badge.textContent = `${list.length} ACCOUNTS DISCOVERED`;
+    if (!list.length) {
+        body.innerHTML = "<div style='color:var(--text-muted); font-size:12px;'>No associated accounts discovered.</div>";
+        return;
+    }
+    const rows = list.map(a => {
+        const confColor = a.confidence >= 75 ? 'var(--status-success)' : (a.confidence >= 50 ? 'var(--risk-medium)' : 'var(--text-muted)');
+        const reasonsHTML = (a.reasons || []).map(r => `<div style="font-size:10px; color:var(--text-secondary); margin-top:2px;">&#x2022; ${escapeHTML(r)}</div>`).join('');
+        return `
+            <tr>
+                <td style="font-weight:600; color:var(--accent-cyan);">${escapeHTML(a.platform)}</td>
+                <td><span class="tag-chip">${escapeHTML(a.category || 'general')}</span></td>
+                <td class="mono">@${escapeHTML(a.username)}</td>
+                <td><a href="${escapeHTML(a.url)}" target="_blank" style="color:var(--accent-cyan); text-decoration:none; font-size:11px;">${escapeHTML((a.url||'').slice(0,45))} &#x2197;</a></td>
+                <td><span style="color:${confColor}; font-weight:700; font-size:13px;">${a.confidence}%</span><br><span style="font-size:9px; color:var(--text-muted);">${escapeHTML(a.match_status||'')}</span></td>
+                <td>${reasonsHTML}</td>
+            </tr>`;
+    }).join('');
+    body.innerHTML = `
+        <table class="soc-table">
+            <thead><tr><th>Platform</th><th>Category</th><th>Handle</th><th>Profile URL</th><th>Confidence</th><th>Evidence</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+}
+
+// 6. Telegram CTI Breach Intelligence
 function renderTelegramCTI(cti) {
     const body = document.getElementById("telegram-cti-body");
     const badge = document.getElementById("cti-records-badge");
@@ -321,30 +353,49 @@ function renderTelegramCTI(cti) {
         return;
     }
 
+    // Render each record as a structured card
+    const FIELD_LABELS = {
+        NickName: 'Nickname', Email: 'Email', Password: 'Password',
+        Url: 'URL / Source', Phone: 'Phone', Name: 'Name',
+        Username: 'Username', IP: 'IP Address', Country: 'Country',
+        Address: 'Address', DOB: 'Date of Birth', Login: 'Login',
+    };
+
     const results = cti?.results || [];
-    let rows = "";
+    let cardsHTML = '';
     results.forEach(res => {
-        const dbName = res.database || "Leak DB";
-        (res.data || []).forEach(item => {
-            rows += `
-                <tr>
-                    <td style="font-weight:600; color:var(--risk-critical);">${escapeHTML(dbName)}</td>
-                    <td class="mono">${escapeHTML(item.email || item.username || item.phone || item.name || "-")}</td>
-                    <td class="mono" style="color:var(--risk-medium);">${escapeHTML(item.password || item.pass || "*****")}</td>
-                    <td class="mono" style="font-size:10px;">${escapeHTML(JSON.stringify(item).slice(0, 100))}</td>
-                </tr>
-            `;
+        const dbName = res.database || 'Leak DB';
+        const infoLeak = res.info_leak || '';
+        const entries = res.data || [];
+        entries.forEach(item => {
+            const primaryId = item.Email || item.NickName || item.Username || item.Phone || item.Name || '-';
+            const passwd = item.Password || item.Pass || item.password || item.pass;
+
+            // Build field rows from all non-empty fields
+            const fieldRows = Object.entries(item).map(([k, v]) => {
+                if (!v || v === '-') return '';
+                const label = FIELD_LABELS[k] || k;
+                const isPass = k.toLowerCase().includes('pass');
+                const isUrl = k === 'Url' || k === 'url';
+                const valStr = String(v);
+                const display = isUrl
+                    ? `<a href="${escapeHTML(valStr)}" target="_blank" style="color:var(--accent-cyan); word-break:break-all;">${escapeHTML(valStr)}</a>`
+                    : `<span class="mono" style="color:${isPass ? 'var(--risk-critical)' : 'var(--text-primary)'}">${escapeHTML(valStr)}</span>`;
+                return `<tr><td style="color:var(--text-muted); font-size:10px; width:100px; white-space:nowrap;">${escapeHTML(label)}</td><td>${display}</td></tr>`;
+            }).filter(Boolean).join('');
+
+            cardsHTML += `
+                <div style="background:var(--bg-elevated); border:1px solid var(--risk-critical); border-left:3px solid var(--risk-critical); border-radius:4px; padding:12px; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-weight:700; font-size:11px; color:var(--risk-critical); letter-spacing:0.05em;">${escapeHTML(dbName)}</span>
+                        <span style="font-size:10px; color:var(--text-muted); font-family:monospace;">${escapeHTML(infoLeak)}</span>
+                    </div>
+                    <table style="width:100%; border-collapse:collapse;">${fieldRows}</table>
+                </div>`;
         });
     });
 
-    body.innerHTML = `
-        <table class="soc-table">
-            <thead>
-                <tr><th>Database Name</th><th>Compromised Subject</th><th>Leak Payload / Password</th><th>Record Details</th></tr>
-            </thead>
-            <tbody>${rows || "<tr><td colspan='4'>No records mapped.</td></tr>"}</tbody>
-        </table>
-    `;
+    body.innerHTML = cardsHTML || "<div style='color:var(--text-muted);'>No records could be parsed.</div>";
 }
 
 // 6. Platform Dossiers
@@ -359,19 +410,29 @@ function renderPlatformDossiers(scraped) {
     let cardsHTML = "";
 
     // Instagram Dossier
-    if (scraped.instagram) {
+    if (scraped.instagram && scraped.instagram.success !== false) {
         const ig = scraped.instagram;
-        const tagsHTML = (ig.post_hashtags || []).map(t => `<span class="tag-chip interest">#${escapeHTML(t)}</span>`).join("");
+        const tagsHTML = (ig.post_hashtags || []).slice(0, 40).map(t => `<span class="tag-chip interest">#${escapeHTML(t)}</span>`).join("");
+        const postsCount = (ig.posts || []).length;
+        const verifiedBadge = ig.is_verified ? '<span style="color:var(--status-success); font-size:10px; margin-left:6px;">&#x2714; VERIFIED</span>' : '';
+        const privateBadge = ig.is_private ? '<span style="color:var(--risk-medium); font-size:10px; margin-left:6px;">PRIVATE</span>' : '';
         cardsHTML += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:12px; margin-bottom:12px;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <span style="font-weight:600; color:var(--accent-cyan);">INSTAGRAM DOSSIER</span>
-                    <span class="mono" style="font-size:11px;">@${escapeHTML(ig.username)}</span>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-weight:600; color:var(--accent-cyan);">INSTAGRAM DOSSIER${verifiedBadge}${privateBadge}</span>
+                    <span class="mono" style="font-size:11px;">@${escapeHTML(ig.username || '')}</span>
                 </div>
-                <div style="font-size:13px; margin-bottom:6px;"><strong>Name:</strong> ${escapeHTML(ig.full_name || "N/A")} | <strong>Followers:</strong> ${ig.follower_count || 0}</div>
-                <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px;">${escapeHTML(ig.bio || "No bio.")}</div>
+                <table class="soc-table" style="margin-bottom:8px;">
+                    <tr><td style="color:var(--text-muted); width:120px;">Full Name</td><td><strong>${escapeHTML(ig.full_name || 'N/A')}</strong></td></tr>
+                    <tr><td style="color:var(--text-muted);">Followers</td><td>${(ig.follower_count || 0).toLocaleString()}</td></tr>
+                    <tr><td style="color:var(--text-muted);">Following</td><td>${(ig.following_count || 0).toLocaleString()}</td></tr>
+                    <tr><td style="color:var(--text-muted);">Posts</td><td>${ig.post_count || postsCount || 0} (${postsCount} scraped)</td></tr>
+                    ${ig.business_category ? `<tr><td style="color:var(--text-muted);">Category</td><td><span class="tag-chip">${escapeHTML(ig.business_category)}</span></td></tr>` : ''}
+                    ${ig.external_url ? `<tr><td style="color:var(--text-muted);">Website</td><td><a href="${escapeHTML(ig.external_url)}" target="_blank" style="color:var(--accent-cyan);">${escapeHTML(ig.external_url)}</a></td></tr>` : ''}
+                </table>
+                <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; padding:8px; background:var(--bg-panel); border-radius:4px;">${escapeHTML(ig.bio || 'No bio.')}</div>
                 <div>
-                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">POST HASHTAGS EXTRACTED</div>
+                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">POST HASHTAGS EXTRACTED (${(ig.post_hashtags||[]).length} UNIQUE)</div>
                     <div>${tagsHTML || "<span style='color:var(--text-muted); font-size:11px;'>No hashtags extracted.</span>"}</div>
                 </div>
             </div>
