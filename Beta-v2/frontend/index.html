@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UP Police Cyber Cell — OSINT SOC Engine (Beta-v2)</title>
+    <link rel="stylesheet" href="css/soc_theme.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- HEADER BAR -->
+        <header class="soc-header">
+            <div class="soc-brand">
+                <span class="soc-seal">🛡️ UPP-CYBER-CELL</span>
+                <div>
+                    <div class="soc-title">UTTAR PRADESH POLICE — CYBER CRIME OSINT PLATFORM</div>
+                    <div class="soc-subtitle mono">Government Security Operations Center · Beta-v2 Engine</div>
+                </div>
+            </div>
+            <div class="soc-actions">
+                <button class="btn-lea" onclick="triggerLeaPdfExport()">
+                    📜 Export Official LEA PDF
+                </button>
+            </div>
+        </header>
+
+        <!-- DASHBOARD GRID -->
+        <div class="dashboard-grid">
+            <!-- LEFT INPUT PANEL -->
+            <div class="left-panel">
+                <div class="soc-card">
+                    <div class="soc-card-header">
+                        <span class="card-title-text">TARGET IDENTIFIER</span>
+                        <span id="input-kind-badge" class="input-kind-badge" style="display:none;"></span>
+                    </div>
+
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label">
+                            <span>Query Target</span>
+                            <span style="color:var(--text-muted);">AUTO-DETECTS TYPE</span>
+                        </label>
+                        <input type="text" id="target-username" class="form-input" 
+                            placeholder="username, @handle, email, phone, or domain"
+                            oninput="detectInputType(this.value)">
+                    </div>
+
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label">Optional Email Verification</label>
+                        <input type="email" id="provider-email" class="form-input" placeholder="subject@example.com">
+                    </div>
+
+                    <div style="margin-bottom:20px;">
+                        <label class="form-label">Optional Phone Lookup</label>
+                        <input type="tel" id="provider-phone" class="form-input" placeholder="+919876543210">
+                    </div>
+
+                    <button class="btn-execute" onclick="executeScan()">⚡ EXECUTE OSINT SCAN</button>
+                </div>
+
+                <!-- TERMINAL LOG STREAM -->
+                <div class="soc-card">
+                    <div class="soc-card-header">
+                        <span class="card-title-text">EXECUTION CONSOLE LOG</span>
+                        <span class="mono" style="font-size:10px; color:var(--accent-cyan);">LIVE</span>
+                    </div>
+                    <div class="terminal-stream" id="console-stream">
+                        <div class="terminal-line">[SYS] System operational. Awaiting target identifier...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT RESULTS WORKSPACE -->
+            <div class="right-panel">
+                <!-- EMPTY STANDBY STATE -->
+                <div id="results-empty-state" class="soc-card" style="text-align:center; padding:60px 20px;">
+                    <div style="font-size:32px; margin-bottom:12px;">🛡️</div>
+                    <div style="font-size:15px; font-weight:600; color:var(--text-primary);">Awaiting Target Execution</div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">Enter a target handle, email, phone, or domain in the left panel to begin multi-vector probing.</div>
+                </div>
+
+                <!-- RESULTS WORKSPACE (HIDDEN UNTIL SCAN) -->
+                <div id="results-workspace" style="display:none;">
+                    
+                    <!-- 1. CONSOLIDATED IDENTITY CARD -->
+                    <div class="soc-card" id="card-consolidated-identity" style="border-color:var(--accent-cyan);">
+                        <div class="soc-card-header">
+                            <span class="card-title-text" style="color:var(--accent-cyan);">👤 CONSOLIDATED IDENTITY PROFILE</span>
+                            <span id="consolidated-confidence-badge" class="mono" style="font-size:11px; font-weight:700;"></span>
+                        </div>
+                        <div id="consolidated-identity-body"></div>
+                    </div>
+
+                    <!-- 2. AI BEHAVIORAL PROFILE PANEL -->
+                    <div class="soc-card" id="card-ai-personality">
+                        <div class="soc-card-header">
+                            <span class="card-title-text">🧬 AI BEHAVIORAL PROFILE</span>
+                            <span id="ai-category-badge" class="mono" style="font-size:11px; color:var(--accent-cyan); font-weight:700;"></span>
+                        </div>
+                        <div id="ai-personality-body"></div>
+                    </div>
+
+                    <!-- 3. WHATSMYNAME 700+ PROBE MATRIX -->
+                    <div class="soc-card" id="card-wmn-matrix">
+                        <div class="soc-card-header">
+                            <span class="card-title-text">⚡ WHATSMYNAME CROSS-PLATFORM PROBE (700+ SITES)</span>
+                            <span id="wmn-count-badge" class="mono" style="font-size:11px; color:var(--accent-cyan);"></span>
+                        </div>
+                        <div id="wmn-matrix-body" style="max-height:300px; overflow-y:auto;"></div>
+                    </div>
+
+                    <!-- 4. GOOGLE DORKING DISCOVERY TABLE -->
+                    <div class="soc-card" id="card-google-dorking">
+                        <div class="soc-card-header">
+                            <span class="card-title-text">🌐 GOOGLE SEARCH DORKING DISCOVERY</span>
+                            <span id="dorking-count-badge" class="mono" style="font-size:11px; color:var(--accent-cyan);"></span>
+                        </div>
+                        <div id="dorking-results-body" style="max-height:320px; overflow-y:auto;"></div>
+                    </div>
+
+                    <!-- 5. TELEGRAM CTI BREACH INTELLIGENCE -->
+                    <div class="soc-card" id="card-telegram-cti">
+                        <div class="soc-card-header">
+                            <span class="card-title-text">📡 TELEGRAM CTI BREACH INTELLIGENCE</span>
+                            <span id="cti-records-badge" class="mono" style="font-size:11px; color:var(--accent-cyan);"></span>
+                        </div>
+                        <div id="telegram-cti-body" style="max-height:300px; overflow-y:auto;"></div>
+                    </div>
+
+                    <!-- 6. PLATFORM DOSSIERS -->
+                    <div class="soc-card" id="card-platform-dossiers">
+                        <div class="soc-card-header">
+                            <span class="card-title-text">📂 PLATFORM DOSSIERS</span>
+                        </div>
+                        <div id="platform-dossiers-body"></div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- EXPORTER SCRIPT -->
+    <script src="js/lea_pdf_exporter.js"></script>
+    <!-- MAIN APP SCRIPT -->
+    <script src="js/app.js"></script>
+</body>
+</html>

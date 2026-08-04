@@ -1,0 +1,309 @@
+/* =====================================================================
+   UP POLICE CYBER CELL — GOVERNMENT SOC DESIGN SYSTEM (Beta-v2)
+   Theme: Government Security Operations Center / Enterprise Intelligence
+   Strictly NO purple, NO neon glows, NO glassmorphism, NO 24px+ radii.
+   ===================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+
+:root {
+    /* Surfaces */
+    --bg-base: #06090D;
+    --bg-panel: #0C1218;
+    --bg-elevated: #131A22;
+    --bg-hover: #1A232D;
+    --bg-input: #0A0F14;
+
+    /* Borders & Dividers */
+    --border-subtle: #243140;
+    --border-divider: #2B3949;
+
+    /* Typography */
+    --text-primary: #E7EDF4;
+    --text-secondary: #B0BAC7;
+    --text-muted: #7E8B99;
+    --text-disabled: #5C6673;
+
+    /* Brand & Accent */
+    --accent-cyan: #14A3C7;
+    --accent-cyan-hover: #1F8FB3;
+    --police-gold: #C7A74B;
+
+    /* Risk & Status Colors (Calm, non-glowing) */
+    --risk-low: #5B7288;
+    --risk-medium: #D6A43A;
+    --risk-high: #E26D34;
+    --risk-critical: #D43B44;
+    --status-success: #2E9E5B;
+
+    /* Radii */
+    --radius-card: 8px;
+    --radius-button: 6px;
+    --radius-input: 6px;
+    --radius-badge: 999px;
+    --radius-table: 4px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* Layout */
+.app-container {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 16px 24px;
+}
+
+/* Header Bar */
+.soc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    margin-bottom: 20px;
+}
+
+.soc-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.soc-seal {
+    font-size: 18px;
+    color: var(--police-gold);
+    font-weight: 700;
+}
+
+.soc-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+}
+
+.soc-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.soc-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-lea {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--police-gold);
+    color: var(--police-gold);
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: var(--radius-button);
+    cursor: pointer;
+}
+
+.btn-lea:hover {
+    background: var(--bg-hover);
+}
+
+/* Main Grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 1100px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Panels & Cards */
+.soc-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.soc-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-divider);
+    margin-bottom: 14px;
+}
+
+.card-title-text {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+}
+
+/* Inputs & Buttons */
+.form-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-input);
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+}
+
+.form-input:focus {
+    border-color: var(--accent-cyan);
+}
+
+.btn-execute {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent-cyan);
+    color: #000;
+    font-weight: 600;
+    font-size: 13px;
+    border: none;
+    border-radius: var(--radius-button);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 12px;
+}
+
+.btn-execute:hover {
+    background: var(--accent-cyan-hover);
+}
+
+/* Smart Input Badge */
+.input-kind-badge {
+    padding: 2px 8px;
+    border-radius: var(--radius-badge);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    color: var(--accent-cyan);
+}
+
+/* Information Tables */
+.soc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.soc-table th {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-divider);
+    text-align: left;
+}
+
+.soc-table td {
+    padding: 8px 12px;
+    border: 1px solid var(--border-divider);
+    color: var(--text-primary);
+}
+
+.soc-table tr:hover {
+    background: var(--bg-hover);
+}
+
+/* Badges & Chips */
+.tag-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--radius-badge);
+    font-size: 11px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    margin: 2px 4px 2px 0;
+}
+
+.tag-chip.interest {
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+}
+
+.risk-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.risk-badge.low { background: rgba(91, 114, 136, 0.2); color: var(--risk-low); border: 1px solid var(--risk-low); }
+.risk-badge.medium { background: rgba(214, 164, 58, 0.2); color: var(--risk-medium); border: 1px solid var(--risk-medium); }
+.risk-badge.high { background: rgba(226, 109, 52, 0.2); color: var(--risk-high); border: 1px solid var(--risk-high); }
+.risk-badge.critical { background: rgba(212, 59, 68, 0.2); color: var(--risk-critical); border: 1px solid var(--risk-critical); }
+
+/* Execution Terminal Log Stream */
+.terminal-stream {
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-input);
+    padding: 12px;
+    max-height: 180px;
+    overflow-y: auto;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.terminal-line {
+    font-family: 'JetBrains Mono', monospace;
+}
