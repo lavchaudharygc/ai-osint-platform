@@ -34,12 +34,36 @@
     </div>
 </div>
 
+<!-- ── ANIMATED FILLUP SCAN LOADER OVERLAY ───────────────────────── -->
+<div id="scan-loader-overlay" class="loader-overlay" style="display:none;">
+    <div class="loader-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <svg class="icon-svg cyan spin" style="width:24px;height:24px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+                <div>
+                    <div style="font-weight:700;font-size:13px;letter-spacing:0.5px;color:var(--text-primary);">OSINT INVESTIGATION SCAN IN PROGRESS</div>
+                    <div style="font-size:11px;color:var(--accent-cyan);" class="mono">Target: <span id="loader-target-label">@target</span></div>
+                </div>
+            </div>
+            <span id="loader-progress-pct" class="mono" style="font-size:20px;font-weight:700;color:var(--accent-cyan);">0%</span>
+        </div>
+
+        <div class="loader-progress-track">
+            <div id="loader-progress-bar" class="loader-progress-fill" style="width:0%;"></div>
+        </div>
+
+        <div id="loader-step-text" style="font-size:11px;color:var(--text-muted);margin-top:12px;" class="mono">
+            Initializing WhatsMyName 700+ cross-platform probe engine...
+        </div>
+    </div>
+</div>
+
 <!-- ── MAIN DASHBOARD ────────────────────────────────────────────── -->
 <div id="main-dashboard" class="app-container" style="display:none;">
 
     <!-- HEADER -->
     <header class="soc-header">
-        <div class="soc-brand">
+        <div class="soc-brand" onclick="resetToHeroView()" style="cursor:pointer;">
             <svg class="icon-svg gold" style="width:22px;height:22px;flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
             <div style="min-width:0;">
                 <div class="soc-title">UTTAR PRADESH POLICE — CYBER CRIME OSINT PLATFORM</div>
@@ -47,6 +71,10 @@
             </div>
         </div>
         <div class="soc-actions">
+            <button class="btn-lea" onclick="resetToHeroView()">
+                <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <span>New Target Search</span>
+            </button>
             <button class="btn-lea" onclick="triggerLeaPdfExport()">
                 <svg class="icon-svg gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
                 <span>Export LEA Report</span>
@@ -58,77 +86,94 @@
         </div>
     </header>
 
-    <!-- DASHBOARD GRID -->
-    <div class="dashboard-grid">
+    <!-- ── INITIAL HERO ENTRY VIEW ───────────────────────────────── -->
+    <div id="hero-search-view" class="hero-card">
+        <div style="text-align:center;margin-bottom:24px;">
+            <svg class="icon-svg gold" style="width:48px;height:48px;margin-bottom:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            <h1 style="font-size:20px;font-weight:700;color:var(--text-primary);letter-spacing:0.5px;">OSINT MULTI-VECTOR TARGET IDENTIFIER</h1>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:6px;max-width:540px;margin-left:auto;margin-right:auto;">
+                Enter a target username, @handle, email address, phone number, or domain to trigger parallel probing across 700+ sites, social profiles (Instagram, Facebook, TikTok, LinkedIn), Google dorks, and Telegram leak databases.
+            </p>
+        </div>
 
-        <!-- ── LEFT PANEL (INPUT + CONSOLE) ──────────────────────── -->
-        <div class="left-panel">
+        <div style="max-width:580px;margin:0 auto;">
+            <div style="margin-bottom:16px;position:relative;">
+                <label class="form-label" style="margin-bottom:8px;">
+                    <span>Target Identifier</span>
+                    <span id="hero-kind-badge" class="input-kind-badge" style="display:none;"></span>
+                </label>
+                <input type="text" id="hero-target-username" class="form-input" style="padding:14px 16px;font-size:15px;"
+                    placeholder="Enter username, @handle, email, phone, or domain..."
+                    oninput="detectInputType(this.value)"
+                    onkeydown="if(event.key==='Enter') executeScan(true)">
+            </div>
 
-            <!-- TARGET IDENTIFIER CARD -->
-            <div class="soc-card">
-                <div class="soc-card-header">
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                        <span class="card-title-text">Target Identifier</span>
-                    </div>
-                    <span id="input-kind-badge" class="input-kind-badge" style="display:none;"></span>
-                </div>
-
-                <div style="margin-bottom:14px;">
-                    <label class="form-label">
-                        <span>Query Target</span>
-                        <span style="color:var(--text-muted);font-size:9px;">AUTO-DETECTS TYPE</span>
-                    </label>
-                    <input type="text" id="target-username" class="form-input"
-                        placeholder="username, @handle, email, phone, domain"
-                        oninput="detectInputType(this.value)"
-                        onkeydown="if(event.key==='Enter') executeScan()">
-                </div>
-
-                <div style="margin-bottom:14px;">
-                    <label class="form-label">Optional Email Verification</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+                <div>
+                    <label class="form-label">Optional Email</label>
                     <input type="email" id="provider-email" class="form-input" placeholder="subject@example.com">
                 </div>
-
-                <div style="margin-bottom:4px;">
-                    <label class="form-label">Optional Phone Lookup</label>
+                <div>
+                    <label class="form-label">Optional Phone</label>
                     <input type="tel" id="provider-phone" class="form-input" placeholder="+919876543210">
                 </div>
-
-                <button class="btn-execute" onclick="executeScan()">
-                    <svg style="width:14px;height:14px;vertical-align:middle;margin-right:6px;stroke:#000;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                    EXECUTE OSINT SCAN
-                </button>
             </div>
 
-            <!-- EXECUTION CONSOLE LOG -->
-            <div class="soc-card">
-                <div class="soc-card-header">
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-                        <span class="card-title-text">Execution Console Log</span>
+            <button class="btn-execute" style="padding:15px;font-size:14px;letter-spacing:1px;" onclick="executeScan(true)">
+                <svg style="width:16px;height:16px;vertical-align:middle;margin-right:8px;stroke:#000;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                EXECUTE FULL OSINT INVESTIGATION SCAN
+            </button>
+        </div>
+    </div>
+
+    <!-- ── RESULTS WORKSPACE (HIDDEN UNTIL SCAN) ───────────────────── -->
+    <div id="results-workspace" style="display:none;">
+        <div class="dashboard-grid">
+
+            <!-- ── LEFT PANEL (CONSOLE & CONTROLS) ────────────────────── -->
+            <div class="left-panel">
+
+                <!-- SEARCH OVERVIEW CARD -->
+                <div class="soc-card">
+                    <div class="soc-card-header">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            <span class="card-title-text">Active Target</span>
+                        </div>
+                        <span id="input-kind-badge" class="input-kind-badge" style="display:none;"></span>
                     </div>
-                    <span class="mono" style="font-size:10px;color:var(--accent-cyan);letter-spacing:1px;">● LIVE</span>
+
+                    <div style="margin-bottom:12px;">
+                        <label class="form-label">Query Handle</label>
+                        <input type="text" id="target-username" class="form-input"
+                            placeholder="username, email, phone"
+                            oninput="detectInputType(this.value)"
+                            onkeydown="if(event.key==='Enter') executeScan(false)">
+                    </div>
+
+                    <button class="btn-execute" onclick="executeScan(false)" style="padding:10px;font-size:11px;">
+                        RE-RUN OSINT SCAN
+                    </button>
                 </div>
-                <div class="terminal-stream" id="console-stream">
-                    <div class="terminal-line">[SYS] System operational. Awaiting target identifier...</div>
+
+                <!-- EXECUTION CONSOLE LOG -->
+                <div class="soc-card">
+                    <div class="soc-card-header">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                            <span class="card-title-text">Console Stream</span>
+                        </div>
+                        <span class="mono" style="font-size:10px;color:var(--accent-cyan);letter-spacing:1px;">● LIVE</span>
+                    </div>
+                    <div class="terminal-stream" id="console-stream">
+                        <div class="terminal-line">[SYS] System operational. Awaiting target identifier...</div>
+                    </div>
                 </div>
-            </div>
 
-        </div><!-- /left-panel -->
+            </div><!-- /left-panel -->
 
-        <!-- ── RIGHT PANEL (RESULTS) ──────────────────────────────── -->
-        <div class="right-panel">
-
-            <!-- EMPTY STANDBY STATE -->
-            <div id="results-empty-state" class="soc-card" style="text-align:center;padding:64px 24px;">
-                <svg class="icon-svg cyan" style="width:44px;height:44px;margin-bottom:14px;opacity:.5;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <div style="font-size:15px;font-weight:600;color:var(--text-primary);margin-bottom:6px;">Awaiting Target Execution</div>
-                <div style="font-size:12px;color:var(--text-muted);max-width:380px;margin:0 auto;line-height:1.6;">Enter a target handle, email, phone, or domain in the left panel and press <strong style="color:var(--accent-cyan);">EXECUTE OSINT SCAN</strong> to begin multi-vector probing.</div>
-            </div>
-
-            <!-- RESULTS WORKSPACE -->
-            <div id="results-workspace" style="display:none;">
+            <!-- ── RIGHT PANEL (RESULTS WORKSPACE) ───────────────────── -->
+            <div class="right-panel">
 
                 <!-- 1. CONSOLIDATED IDENTITY PROFILE -->
                 <div class="soc-card" id="card-consolidated-identity" style="border-color:var(--accent-cyan);">
@@ -163,7 +208,7 @@
                         </div>
                         <span id="wmn-count-badge" class="mono" style="font-size:11px;color:var(--accent-cyan);"></span>
                     </div>
-                    <div id="wmn-matrix-body" style="max-height:320px;overflow-y:auto;overflow-x:auto;"></div>
+                    <div id="wmn-matrix-body"></div>
                 </div>
 
                 <!-- 4. ASSOCIATED ACCOUNT DISCOVERY -->
@@ -175,7 +220,7 @@
                         </div>
                         <span id="associated-accounts-badge" class="mono" style="font-size:11px;color:var(--accent-cyan);"></span>
                     </div>
-                    <div id="associated-accounts-body" style="max-height:340px;overflow-y:auto;overflow-x:auto;"></div>
+                    <div id="associated-accounts-body"></div>
                 </div>
 
                 <!-- 5. GOOGLE SEARCH DORKING -->
@@ -187,7 +232,7 @@
                         </div>
                         <span id="dorking-count-badge" class="mono" style="font-size:11px;color:var(--accent-cyan);"></span>
                     </div>
-                    <div id="dorking-results-body" style="max-height:340px;overflow-y:auto;overflow-x:auto;"></div>
+                    <div id="dorking-results-body"></div>
                 </div>
 
                 <!-- 6. TELEGRAM CTI BREACH INTELLIGENCE -->
@@ -199,7 +244,7 @@
                         </div>
                         <span id="cti-records-badge" class="mono" style="font-size:11px;color:var(--risk-critical);"></span>
                     </div>
-                    <div id="telegram-cti-body" style="max-height:400px;overflow-y:auto;"></div>
+                    <div id="telegram-cti-body"></div>
                 </div>
 
                 <!-- 7. PLATFORM DOSSIERS -->
@@ -213,10 +258,11 @@
                     <div id="platform-dossiers-body"></div>
                 </div>
 
-            </div><!-- /results-workspace -->
-        </div><!-- /right-panel -->
+            </div><!-- /right-panel -->
 
-    </div><!-- /dashboard-grid -->
+        </div><!-- /dashboard-grid -->
+    </div><!-- /results-workspace -->
+
 </div><!-- /main-dashboard -->
 
 <script src="js/lea_pdf_exporter.js"></script>

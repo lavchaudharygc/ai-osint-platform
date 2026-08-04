@@ -39,7 +39,6 @@
 
     /* Layout */
     --sidebar-w:    360px;
-    --header-h:     60px;
     --gap:          20px;
     --page-pad-x:   24px;
     --page-pad-y:   16px;
@@ -53,12 +52,12 @@
 }
 
 html {
-    height: 100%;
+    min-height: 100%;
     scroll-behavior: smooth;
 }
 
 body {
-    height: 100%;
+    min-height: 100vh;
     background: var(--bg-base);
     color: var(--text-primary);
     font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -83,6 +82,14 @@ body {
 }
 .icon-svg.gold { stroke: var(--police-gold); }
 .icon-svg.cyan { stroke: var(--accent-cyan); }
+
+@keyframes spinAnim {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.icon-svg.spin {
+    animation: spinAnim 1.5s linear infinite;
+}
 
 /* ── Login Overlay ─────────────────────────────────────────────────── */
 .login-overlay {
@@ -129,8 +136,6 @@ body {
     margin-top: 5px;
 }
 
-.login-body {}
-
 .login-error-msg {
     background: rgba(212, 59, 68, 0.12);
     border: 1px solid var(--risk-critical);
@@ -142,40 +147,72 @@ body {
     text-align: center;
 }
 
-/* ── Application Shell ─────────────────────────────────────────────── */
+/* ── Loader Overlay & Progress Fillup Animation ─────────────────────── */
+.loader-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 9, 13, 0.92);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 8888;
+    padding: 20px;
+}
+
+.loader-card {
+    width: 100%;
+    max-width: 520px;
+    background: var(--bg-panel);
+    border: 1px solid var(--accent-cyan);
+    border-radius: var(--radius-card);
+    padding: 28px 24px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.loader-progress-track {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.loader-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-cyan), var(--police-gold));
+    transition: width 0.2s ease-out;
+}
+
+/* ── Application Shell (DOCUMENT SCROLLABLE) ───────────────────────── */
 .app-container {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    min-height: 100vh;
     max-width: 1800px;
     margin: 0 auto;
     padding: var(--page-pad-y) var(--page-pad-x);
     gap: var(--gap);
-    overflow: hidden;           /* prevent body scroll; panels scroll internally */
 }
 
 /* ── Header Bar ────────────────────────────────────────────────────── */
 .soc-header {
-    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 20px;
-    height: var(--header-h);
+    padding: 12px 20px;
     background: var(--bg-panel);
     border: 1px solid var(--border-subtle);
     border-left: 3px solid var(--police-gold);
     border-radius: var(--radius-card);
     gap: 12px;
-    min-width: 0;
 }
 
 .soc-brand {
     display: flex;
     align-items: center;
     gap: 12px;
-    min-width: 0;
-    overflow: hidden;
 }
 
 .soc-title {
@@ -183,9 +220,6 @@ body {
     font-weight: 600;
     color: var(--text-primary);
     letter-spacing: 0.3px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .soc-subtitle {
@@ -193,55 +227,46 @@ body {
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 1.2px;
-    white-space: nowrap;
 }
 
 .soc-actions {
     display: flex;
     align-items: center;
     gap: 10px;
-    flex-shrink: 0;
+}
+
+/* ── Hero Search Entry View ────────────────────────────────────────── */
+.hero-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    border-top: 2px solid var(--accent-cyan);
+    border-radius: var(--radius-card);
+    padding: 48px 32px;
+    margin: 20px auto 40px auto;
+    max-width: 780px;
+    width: 100%;
 }
 
 /* ── Dashboard Grid ────────────────────────────────────────────────── */
 .dashboard-grid {
-    flex: 1;
     display: grid;
     grid-template-columns: var(--sidebar-w) 1fr;
     gap: var(--gap);
-    min-height: 0;             /* allow children to shrink within flex parent */
-    overflow: hidden;
+    align-items: start;
 }
 
-/* ── Left Panel (Sticky Sidebar) ───────────────────────────────────── */
+/* ── Left & Right Panels (Document Scrollable) ─────────────────────── */
 .left-panel {
     display: flex;
     flex-direction: column;
     gap: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-divider) transparent;
-    min-height: 0;
+    position: sticky;
+    top: 16px;
 }
 
-.left-panel::-webkit-scrollbar { width: 4px; }
-.left-panel::-webkit-scrollbar-track { background: transparent; }
-.left-panel::-webkit-scrollbar-thumb { background: var(--border-divider); border-radius: 2px; }
-
-/* ── Right Panel (Scrollable Results) ─────────────────────────────── */
 .right-panel {
-    overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-divider) transparent;
-    min-height: 0;
     min-width: 0;
 }
-
-.right-panel::-webkit-scrollbar { width: 5px; }
-.right-panel::-webkit-scrollbar-track { background: transparent; }
-.right-panel::-webkit-scrollbar-thumb { background: var(--border-divider); border-radius: 3px; }
 
 /* ── SOC Cards ─────────────────────────────────────────────────────── */
 .soc-card {
@@ -368,7 +393,6 @@ body {
 }
 
 /* ── Tables ────────────────────────────────────────────────────────── */
-/* Wrapper handles horizontal overflow so cards don't stretch */
 .table-scroll {
     overflow-x: auto;
     overflow-y: visible;
@@ -383,7 +407,7 @@ body {
 
 .soc-table {
     width: 100%;
-    min-width: 480px;          /* minimum before horizontal scroll triggers */
+    min-width: 480px;
     border-collapse: collapse;
     font-size: 12px;
     table-layout: auto;
@@ -472,121 +496,28 @@ body {
     word-break: break-all;
 }
 
-/* ── Scrollable Section Bodies ─────────────────────────────────────── */
-/* Applied via inline style max-height in HTML — give them custom scrollbars */
-[id$="-body"],
-[id$="-stream"] {
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-divider) transparent;
-}
-
-[id$="-body"]::-webkit-scrollbar,
-[id$="-stream"]::-webkit-scrollbar { width: 4px; }
-
-[id$="-body"]::-webkit-scrollbar-thumb,
-[id$="-stream"]::-webkit-scrollbar-thumb {
-    background: var(--border-divider);
-    border-radius: 2px;
-}
-
 /* ── Responsive Breakpoints ────────────────────────────────────────── */
-
-/* 1400px — tighten sidebar slightly */
-@media (max-width: 1400px) {
-    :root { --sidebar-w: 320px; --page-pad-x: 20px; }
-    .soc-title { font-size: 13px; }
-}
-
-/* 1100px — collapse to single column stacked layout */
 @media (max-width: 1100px) {
-    .app-container {
-        height: auto;
-        overflow: visible;
-        min-height: 100vh;
-    }
-
     .dashboard-grid {
         grid-template-columns: 1fr;
-        overflow: visible;
     }
-
-    .left-panel,
-    .right-panel {
-        overflow: visible;
-        height: auto;
+    .left-panel {
+        position: static;
     }
-
-    /* Left panel cards flow naturally */
-    .left-panel .soc-card:last-child { margin-bottom: 0; }
-
-    /* Results workspace gets natural height */
-    #results-workspace,
-    #results-empty-state { margin-bottom: 0; }
-
-    /* Terminal can be shorter on tablet */
-    .terminal-stream { height: 140px; }
 }
 
-/* 900px — tighten spacing */
-@media (max-width: 900px) {
-    :root {
-        --gap: 14px;
-        --page-pad-x: 14px;
-        --page-pad-y: 12px;
-    }
-
-    .soc-header {
-        flex-wrap: wrap;
-        gap: 10px;
-        height: auto;
-        padding: 12px 14px;
-    }
-
-    .soc-title  { font-size: 12px; }
-    .soc-subtitle { display: none; }
-
-    .btn-lea span { display: none; }  /* icon-only on small header */
-    .btn-lea { padding: 8px 10px; }
-
-    .soc-card { padding: 12px; }
-    .soc-card-header { margin-bottom: 10px; }
-
-    .soc-table { min-width: 360px; }
-}
-
-/* 640px — mobile single-column, full-width */
 @media (max-width: 640px) {
     :root {
-        --page-pad-x: 10px;
-        --page-pad-y: 10px;
-        --gap: 10px;
+        --page-pad-x: 12px;
+        --page-pad-y: 12px;
     }
-
-    .btn-lea { display: none; }   /* hide actions in very small screen to save space */
-    .soc-header { justify-content: flex-start; }
-    .soc-actions { display: none; }
-
-    /* Make bottom export accessible */
-    .soc-card .btn-execute { font-size: 11px; }
-
-    .terminal-stream { height: 120px; }
-
-    /* Tables horizontal scroll at 240px min */
-    .soc-table { min-width: 280px; }
-    .soc-table th, .soc-table td { padding: 6px 8px; font-size: 11px; }
-
-    /* Wrap tag chips */
-    .tag-chip { font-size: 9px; padding: 1px 6px; }
-}
-
-/* ── Utility — prevent tables from blowing layout ─────────────────── */
-/* Every card body that may contain a .soc-table gets overflow-x: auto */
-#wmn-matrix-body,
-#associated-accounts-body,
-#dorking-results-body,
-#telegram-cti-body,
-#consolidated-identity-body,
-#ai-personality-body,
-#platform-dossiers-body {
-    overflow-x: auto;
+    .hero-card {
+        padding: 24px 16px;
+    }
+    .soc-header {
+        flex-wrap: wrap;
+    }
+    .soc-subtitle {
+        display: none;
+    }
 }

@@ -18,6 +18,7 @@ from app.services.wmn_service import WhatsMyNameService
 from app.services.instagram_service import InstagramService
 from app.services.signalhire_service import SignalHireService
 from app.services.facebook_service import FacebookService
+from app.services.tiktok_service import TikTokService
 from app.services.email_verifier_service import EmailVerifierService
 from app.services.associated_accounts_service import AssociatedAccountsService
 from app.services.telegram_service import TelegramService
@@ -58,47 +59,41 @@ async def run_investigation(request: InvestigationRequest):
     kind = classify_input(raw_query)
     clean_handle = raw_query.lstrip("@").split("/")[-1].split("?")[0]
 
-    # ── STEP 1: WMN probe + Instagram + Dorking — all start simultaneously ──
+    # ── STEP 1: WMN probe + Instagram + TikTok + Dorking — all start simultaneously ──
     wmn_service = WhatsMyNameService()
     ig_service = InstagramService()
+    tiktok_service = TikTokService()
     dork_service = DorkingService()
 
-    wmn_data, ig_res, dorking_results = await asyncio.gather(
+    wmn_data, ig_res, tiktok_res, dorking_results = await asyncio.gather(
         _safe(wmn_service.probe_username(raw_query)),
         _safe(ig_service.fetch_profile_and_posts(clean_handle)),
+        _safe(tiktok_service.fetch_profile_and_videos(clean_handle)),
         _safe(dork_service.run_dorks(raw_query)),
     )
 
     wmn_data = wmn_data or {"status": "error", "scanned": 0, "hits_count": 0, "hits": []}
     ig_res = ig_res or {"success": False, "platform": "instagram", "username": clean_handle, "posts": [], "post_hashtags": []}
+    tiktok_res = tiktok_res or {"success": False, "platform": "tiktok", "username": clean_handle}
     dorking_results = dorking_results or {"status": "error", "results": [], "queries_run": 0, "results_count": 0}
 
     wmn_hits = wmn_data.get("hits") or []
     discovered_sites = {h.get("site", "").lower() for h in wmn_hits}
 
-    # ── STEP 2: LinkedIn + Facebook — WMN-gated, run in parallel ──
-    scraped_data: dict = {"instagram": ig_res}
+    # ── STEP 2: LinkedIn (SignalHire) + Facebook — run in parallel ──
+    scraped_data: dict = {
+        "instagram": ig_res,
+        "tiktok": tiktok_res,
+    }
 
-    sh_task = None
-    fb_task = None
+    sh_task = _safe(SignalHireService().search_candidate(raw_query))
+    fb_task = _safe(FacebookService().fetch_page_or_profile(clean_handle))
 
-    if any(s in discovered_sites for s in ("linkedin",)) or kind in ("domain", "name"):
-        sh_task = _safe(SignalHireService().search_candidate(raw_query))
-
-    if any(s in discovered_sites for s in ("facebook",)):
-        fb_task = _safe(FacebookService().fetch_page_or_profile(clean_handle))
-
-    if sh_task or fb_task:
-        tasks = [t for t in [sh_task, fb_task] if t is not None]
-        results = await asyncio.gather(*tasks)
-        idx = 0
-        if sh_task:
-            if results[idx]:
-                scraped_data["linkedin"] = results[idx]
-            idx += 1
-        if fb_task:
-            if results[idx]:
-                scraped_data["facebook"] = results[idx]
+    sh_res, fb_res = await asyncio.gather(sh_task, fb_task)
+    if sh_res:
+        scraped_data["linkedin"] = sh_res
+    if fb_res:
+        scraped_data["facebook"] = fb_res
 
     # ── STEP 3: Resolve full_name for email patterns ──
     full_name_hint = next(

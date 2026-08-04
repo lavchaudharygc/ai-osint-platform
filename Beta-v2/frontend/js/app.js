@@ -4,6 +4,7 @@
 
 const API_BASE = "http://127.0.0.1:8010";
 let currentInvestigationData = null;
+let progressInterval = null;
 
 // Auth credentials check
 window.addEventListener("DOMContentLoaded", () => {
@@ -57,11 +58,18 @@ const KIND_LABELS = {
 
 function detectInputType(value) {
     const badge = document.getElementById("input-kind-badge");
-    if (!badge) return;
-    if (!value.trim()) { badge.style.display = "none"; return; }
+    const heroBadge = document.getElementById("hero-kind-badge");
     const { kind } = classifyInput(value);
-    badge.textContent = KIND_LABELS[kind] || kind.toUpperCase();
-    badge.style.display = "inline-block";
+    const label = value.trim() ? (KIND_LABELS[kind] || kind.toUpperCase()) : "";
+
+    if (badge) {
+        badge.textContent = label;
+        badge.style.display = label ? "inline-block" : "none";
+    }
+    if (heroBadge) {
+        heroBadge.textContent = label;
+        heroBadge.style.display = label ? "inline-block" : "none";
+    }
 }
 
 function escapeHTML(val) {
@@ -91,45 +99,102 @@ function triggerLeaPdfExport() {
     window.LeaPdfExporter.exportReport(currentInvestigationData);
 }
 
+/* ---------- Loader & Progress Fillup Animation ---------- */
+function startScanLoader(target) {
+    const overlay = document.getElementById("scan-loader-overlay");
+    const bar = document.getElementById("loader-progress-bar");
+    const pct = document.getElementById("loader-progress-pct");
+    const text = document.getElementById("loader-step-text");
+    const targetLabel = document.getElementById("loader-target-label");
+
+    if (targetLabel) targetLabel.textContent = target;
+    if (overlay) overlay.style.display = "flex";
+
+    const steps = [
+        { p: 12, msg: "Initializing WhatsMyName 700+ cross-platform probe engine..." },
+        { p: 28, msg: "Scraping public profiles (Instagram, Facebook, TikTok)..." },
+        { p: 45, msg: "Querying SignalHire candidate enrichment API for LinkedIn..." },
+        { p: 62, msg: "Executing Google Search Dorking queries via SerpAPI..." },
+        { p: 78, msg: "Searching Telegram CTI darkweb & leak databases..." },
+        { p: 90, msg: "Running AI multi-source behavioral classifier..." },
+        { p: 98, msg: "Synthesizing Consolidated Identity & associated accounts matrix..." },
+    ];
+
+    let stepIdx = 0;
+    let currentPct = 0;
+
+    clearInterval(progressInterval);
+    progressInterval = setInterval(() => {
+        if (stepIdx < steps.length) {
+            const targetPct = steps[stepIdx].p;
+            if (currentPct < targetPct) {
+                currentPct += 1;
+                if (bar) bar.style.width = currentPct + "%";
+                if (pct) pct.textContent = currentPct + "%";
+            } else {
+                if (text) text.textContent = steps[stepIdx].msg;
+                logConsole(`[PROBE] ${steps[stepIdx].msg}`);
+                stepIdx++;
+            }
+        }
+    }, 180);
+}
+
+function stopScanLoader() {
+    clearInterval(progressInterval);
+    const bar = document.getElementById("loader-progress-bar");
+    const pct = document.getElementById("loader-progress-pct");
+    const overlay = document.getElementById("scan-loader-overlay");
+
+    if (bar) bar.style.width = "100%";
+    if (pct) pct.textContent = "100%";
+
+    setTimeout(() => {
+        if (overlay) overlay.style.display = "none";
+    }, 400);
+}
+
+function resetToHeroView() {
+    document.getElementById("hero-search-view").style.display = "block";
+    document.getElementById("results-workspace").style.display = "none";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 /* ---------- Main Investigation Execution ---------- */
-async function executeScan() {
-    const usernameInput = document.getElementById("target-username").value.trim();
-    if (!usernameInput) {
+async function executeScan(fromHero = false) {
+    const heroInput = document.getElementById("hero-target-username");
+    const sidebarInput = document.getElementById("target-username");
+
+    let queryVal = "";
+    if (fromHero && heroInput && heroInput.value.trim()) {
+        queryVal = heroInput.value.trim();
+        if (sidebarInput) sidebarInput.value = queryVal;
+    } else if (sidebarInput && sidebarInput.value.trim()) {
+        queryVal = sidebarInput.value.trim();
+    } else if (heroInput && heroInput.value.trim()) {
+        queryVal = heroInput.value.trim();
+    }
+
+    if (!queryVal) {
         alert("PLEASE ENTER A TARGET USERNAME / IDENTIFIER.");
         return;
     }
 
-    const { kind } = classifyInput(usernameInput);
-    const emailVal = document.getElementById("provider-email").value.trim();
-    const phoneVal = document.getElementById("provider-phone").value.trim();
+    const { kind } = classifyInput(queryVal);
+    const emailVal = document.getElementById("provider-email")?.value.trim() || null;
+    const phoneVal = document.getElementById("provider-phone")?.value.trim() || null;
 
     const payload = {
-        username: usernameInput,
-        email: emailVal || null,
-        phone_number: phoneVal || null,
+        username: queryVal,
+        email: emailVal,
+        phone_number: phoneVal,
         cache_mode: "use",
     };
 
-    // UI Loading state
-    document.getElementById("results-empty-state").style.display = "none";
-    document.getElementById("results-workspace").style.display = "block";
+    // Show loader fillup animation
+    startScanLoader(queryVal);
 
-    logConsole(`[SYS] OSINT DISPATCH — TARGET: ${usernameInput} (${kind.toUpperCase()})`);
-    logConsole("[NET] PROBING WHATSMYNAME 700+ SITE TEMPLATES...");
-
-    const heartbeatMsgs = [
-        "[SYS] Probing active platform presences...",
-        "[NET] Querying SignalHire candidate API for LinkedIn...",
-        "[SYS] Verifying email MX deliverability records...",
-        "[NET] Executing Google search dork queries via SerpAPI...",
-        "[SYS] Querying Telegram CTI leak databases...",
-        "[NET] Running AI behavioral classification engine...",
-        "[SYS] Synthesizing Consolidated Identity Profile..."
-    ];
-    let msgIdx = 0;
-    const heartbeat = setInterval(() => {
-        if (msgIdx < heartbeatMsgs.length) logConsole(heartbeatMsgs[msgIdx++]);
-    }, 2500);
+    logConsole(`[SYS] OSINT DISPATCH — TARGET: ${queryVal} (${kind.toUpperCase()})`);
 
     try {
         const res = await fetch(`${API_BASE}/api/v1/investigation/username`, {
@@ -138,8 +203,6 @@ async function executeScan() {
             body: JSON.stringify(payload)
         });
 
-        clearInterval(heartbeat);
-
         if (!res.ok) {
             throw new Error(`API Error HTTP ${res.status}`);
         }
@@ -147,12 +210,20 @@ async function executeScan() {
         const data = await res.json();
         currentInvestigationData = data;
 
+        stopScanLoader();
+
+        // Transition from Hero to Results Workspace
+        document.getElementById("hero-search-view").style.display = "none";
+        document.getElementById("results-workspace").style.display = "block";
+
         logConsole(`[SYS] ENVELOPE RECEIVED — CASE ID: ${data.investigation_id}`);
-        logConsole("[SYS] RENDERING HIGH-DENSITY SOC WORKSPACE...");
+        logConsole("[SYS] RENDERING DETAILED OSINT INTELLIGENCE WORKSPACE...");
 
         renderResults(data);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+
     } catch (err) {
-        clearInterval(heartbeat);
+        stopScanLoader();
         logConsole(`[ERR] SCAN INTERRUPTED: ${err.message}`);
         alert(`OSINT Scan Interrupted: ${err.message}`);
     }
@@ -220,7 +291,7 @@ function renderAiPersonality(ap) {
 
     const traitsHTML = (ap.traits || []).map(t => `<span class="tag-chip">${escapeHTML(t)}</span>`).join("");
     const interestsHTML = (ap.interests || []).map(i => `<span class="tag-chip interest">${escapeHTML(i)}</span>`).join("");
-    
+
     const riskFlagsHTML = (ap.riskFlags || []).map(f => `
         <span class="risk-badge ${f.severity || 'low'}">${f.severity ? f.severity.toUpperCase() : 'LOW'}: ${escapeHTML(f.label)}</span>
     `).join("");
@@ -347,7 +418,6 @@ function renderTelegramCTI(cti) {
         return;
     }
 
-    // Render each record as a structured card
     const FIELD_LABELS = {
         NickName: 'Nickname', Email: 'Email', Password: 'Password',
         Url: 'URL / Source', Phone: 'Phone', Name: 'Name',
@@ -362,10 +432,6 @@ function renderTelegramCTI(cti) {
         const infoLeak = res.info_leak || '';
         const entries = res.data || [];
         entries.forEach(item => {
-            const primaryId = item.Email || item.NickName || item.Username || item.Phone || item.Name || '-';
-            const passwd = item.Password || item.Pass || item.password || item.pass;
-
-            // Build field rows from all non-empty fields
             const fieldRows = Object.entries(item).map(([k, v]) => {
                 if (!v || v === '-') return '';
                 const label = FIELD_LABELS[k] || k;
@@ -392,7 +458,7 @@ function renderTelegramCTI(cti) {
     body.innerHTML = cardsHTML || "<div style='color:var(--text-muted);'>No records could be parsed.</div>";
 }
 
-// 6. Platform Dossiers
+// 7. Platform Dossiers
 function renderPlatformDossiers(scraped) {
     const body = document.getElementById("platform-dossiers-body");
     if (!body) return;
@@ -411,7 +477,7 @@ function renderPlatformDossiers(scraped) {
         const verifiedBadge = ig.is_verified ? '<span style="color:var(--status-success); font-size:10px; margin-left:6px;">&#x2714; VERIFIED</span>' : '';
         const privateBadge = ig.is_private ? '<span style="color:var(--risk-medium); font-size:10px; margin-left:6px;">PRIVATE</span>' : '';
         cardsHTML += `
-            <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:12px; margin-bottom:12px;">
+            <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <span style="font-weight:600; color:var(--accent-cyan);">INSTAGRAM DOSSIER${verifiedBadge}${privateBadge}</span>
                     <span class="mono" style="font-size:11px;">@${escapeHTML(ig.username || '')}</span>
@@ -433,11 +499,37 @@ function renderPlatformDossiers(scraped) {
         `;
     }
 
+    // TikTok Dossier
+    if (scraped.tiktok && scraped.tiktok.success !== false) {
+        const tt = scraped.tiktok;
+        const tagsHTML = (tt.hashtags || []).slice(0, 40).map(t => `<span class="tag-chip interest">#${escapeHTML(t)}</span>`).join("");
+        cardsHTML += `
+            <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-weight:600; color:var(--accent-cyan);">TIKTOK PUBLIC DOSSIER</span>
+                    <span class="mono" style="font-size:11px;">@${escapeHTML(tt.username || '')}</span>
+                </div>
+                <table class="soc-table" style="margin-bottom:8px;">
+                    <tr><td style="color:var(--text-muted); width:120px;">Full Name</td><td><strong>${escapeHTML(tt.full_name || 'N/A')}</strong></td></tr>
+                    <tr><td style="color:var(--text-muted);">Followers / Fans</td><td>${(tt.follower_count || 0).toLocaleString()}</td></tr>
+                    <tr><td style="color:var(--text-muted);">Total Hearts / Likes</td><td>${(tt.heart_count || 0).toLocaleString()}</td></tr>
+                    <tr><td style="color:var(--text-muted);">Videos Count</td><td>${tt.video_count || (tt.videos || []).length}</td></tr>
+                    ${tt.url ? `<tr><td style="color:var(--text-muted);">Profile URL</td><td><a href="${escapeHTML(tt.url)}" target="_blank" style="color:var(--accent-cyan);">${escapeHTML(tt.url)}</a></td></tr>` : ''}
+                </table>
+                <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; padding:8px; background:var(--bg-panel); border-radius:4px;">${escapeHTML(tt.bio || 'No TikTok bio.')}</div>
+                <div>
+                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">VIDEO HASHTAGS (${(tt.hashtags||[]).length} EXTRACTED)</div>
+                    <div>${tagsHTML || "<span style='color:var(--text-muted); font-size:11px;'>No video hashtags found.</span>"}</div>
+                </div>
+            </div>
+        `;
+    }
+
     // LinkedIn SignalHire Dossier
     if (scraped.linkedin) {
         const li = scraped.linkedin;
         cardsHTML += `
-            <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:12px; margin-bottom:12px;">
+            <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
                     <span style="font-weight:600; color:var(--accent-cyan);">LINKEDIN (SIGNALHIRE ENRICHMENT)</span>
                     <span class="mono" style="font-size:11px;">${escapeHTML(li.url || "")}</span>
@@ -455,7 +547,7 @@ function renderPlatformDossiers(scraped) {
     if (scraped.facebook) {
         const fb = scraped.facebook;
         cardsHTML += `
-            <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:12px; margin-bottom:12px;">
+            <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
                     <span style="font-weight:600; color:var(--accent-cyan);">FACEBOOK PAGE DOSSIER</span>
                     <span class="mono" style="font-size:11px;">${escapeHTML(fb.page_name || fb.username)}</span>
