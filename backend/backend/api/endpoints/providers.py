@@ -185,6 +185,13 @@ async def provider_status() -> dict[str, Any]:
     }
 
 
+@router.get("/telegram-cti/health")
+async def telegram_cti_health() -> dict[str, Any]:
+    """Run a safe live Telegram CTI provider probe."""
+    service = TelegramCTIService()
+    return await service.health_check()
+
+
 @router.post("/search/username")
 async def search_username(request: SearchUsernameRequest) -> dict[str, Any]:
     limit = min(

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSINT SOC — Demo Results (No API)</title>
+    <link rel="stylesheet" href="css/soc_theme.css">
+    <style>
+        .minimal-ai-selector {
+            display: inline-flex; align-items: center; gap: 2px; padding: 3px;
+            background: rgba(255,255,255,0.025); border: 1px solid var(--border-divider); border-radius: 8px;
+            user-select: none;
+        }
+        .minimal-ai-option {
+            position: relative; border: 0; outline: none; min-width: 78px; height: 30px; padding: 0 13px;
+            border-radius: 6px; background: transparent; color: var(--text-muted);
+            font-family: inherit; font-size: 10px; font-weight: 700; letter-spacing: .35px; cursor: pointer;
+            transition: background .18s ease, color .18s ease, box-shadow .18s ease;
+        }
+        .minimal-ai-option:hover { color: var(--text-primary); background: rgba(255,255,255,.035); }
+        .minimal-ai-option[data-model="groq"].active {
+            color: var(--accent-cyan); background: rgba(0,220,255,.085);
+            box-shadow: inset 0 0 0 1px rgba(0,220,255,.22);
+        }
+        .minimal-ai-option[data-model="gemini"].active {
+            color: #b49cff; background: rgba(139,92,246,.10);
+            box-shadow: inset 0 0 0 1px rgba(139,92,246,.25);
+        }
+        .minimal-ai-option.active::before {
+            content: ""; position: absolute; left: 8px; bottom: 4px; width: 3px; height: 3px;
+            border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor;
+        }
+        .demo-banner {
+            background: linear-gradient(135deg, rgba(20,163,199,0.12), rgba(199,167,75,0.08));
+            border: 1px solid var(--accent-cyan); border-radius: 8px;
+            padding: 14px 20px; margin-bottom: 20px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .demo-banner span { font-size: 12px; color: var(--accent-cyan); font-weight: 700; letter-spacing: 1px; }
+        .demo-banner small { font-size: 10px; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+
+<div class="app-container" style="display:block;">
+
+    <header class="soc-header">
+        <div class="soc-brand">
+            <svg class="icon-svg gold" style="width:22px;height:22px;flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <div style="min-width:0;">
+                <div class="soc-title">UTTAR PRADESH POLICE — CYBER CRIME OSINT PLATFORM</div>
+                <div class="soc-subtitle mono">Government Security Operations Center · Beta-v2 Engine</div>
+            </div>
+        </div>
+        <div class="soc-actions">
+            <button class="btn-lea" onclick="location.href='index.html'">
+                <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <span>Live Scanner</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="demo-banner">
+        <span>⚡ DEMO MODE — Rendering from cached JSON (no API credits used)</span>
+        <small>demo_data.json loaded</small>
+    </div>
+
+    <div class="dashboard-grid">
+
+        <!-- LEFT PANEL -->
+        <div class="left-panel">
+
+            <!-- ACTIVE TARGET -->
+            <div class="soc-card">
+                <div class="soc-card-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <span class="card-title-text">Active Target</span>
+                    </div>
+                    <span id="input-kind-badge" class="input-kind-badge" style="display:inline; background:var(--accent-cyan); color:#000; padding:2px 8px; border-radius:999px; font-size:9px; font-weight:700;">DEMO</span>
+                </div>
+                <div style="margin-top:10px;">
+                    <label class="form-label">Query Handle</label>
+                    <input type="text" id="target-username" class="form-input" value="narendramodi" readonly>
+                </div>
+                <div style="margin-top:10px;">
+                    <label class="form-label" style="margin-bottom:6px;">AI Model</label>
+                    <div class="minimal-ai-selector" style="display:flex; width:100%;" data-model="groq" role="radiogroup">
+                        <button type="button" class="minimal-ai-option active" data-model="groq" onclick="selectAiModel('groq')" role="radio" aria-checked="true" style="flex:1;">Groq</button>
+                        <button type="button" class="minimal-ai-option" data-model="gemini" onclick="selectAiModel('gemini')" role="radio" aria-checked="false" style="flex:1;">Gemini</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CONSOLE -->
+            <div class="soc-card">
+                <div class="soc-card-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line>
+                        </svg>
+                        <span class="card-title-text">Console Stream</span>
+                    </div>
+                    <span class="mono" style="font-size:10px; color:var(--accent-cyan); letter-spacing:1px;">● DEMO</span>
+                </div>
+                <div class="terminal-stream" id="console-stream">
+                    <div class="terminal-line">[SYS] Demo mode: rendering from demo_data.json</div>
+                    <div class="terminal-line">[DEMO] All pipeline modules loaded from cache.</div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT PANEL -->
+        <div class="right-panel">
+
+            <!-- 1. IDENTITY -->
+            <div class="soc-card" id="card-consolidated-identity" style="border-color:var(--accent-cyan);">
+                <div class="soc-card-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        <span class="card-title-text" style="color:var(--accent-cyan);">Consolidated Identity Profile</span>
+                    </div>
+                    <span id="consolidated-confidence-badge" class="mono" style="font-size:11px; font-weight:700;"></span>
+                </div>
+                <div id="consolidated-identity-body"></div>
+            </div>
+
+            <!-- DIAGNOSTICS -->
+            <div class="soc-card" id="card-diagnostics" style="border-color:var(--border-divider);">
+                <div class="soc-card-header" style="cursor:pointer;" onclick="toggleDiagnosticsPanel()">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg" style="stroke:var(--risk-medium); width:16px; height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <span class="card-title-text" style="color:var(--text-primary);">System Diagnostics &amp; Recovery</span>
+                    </div>
+                    <span id="diagnostics-summary-badge" class="mono" style="font-size:10px; color:var(--text-muted);">DEMO</span>
+                </div>
+                <div id="diagnostics-body" style="padding:10px 0 0 0; display:none;"></div>
+            </div>
+
+            <!-- 2. AI PROFILE -->
+            <div class="soc-card" id="card-ai-personality">
+                <div class="soc-card-header" style="flex-wrap:wrap; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                        </svg>
+                        <span class="card-title-text">AI Behavioral Profiling</span>
+                    </div>
+                    <span id="ai-category-badge" class="mono" style="font-size:11px; color:var(--accent-cyan); font-weight:700;"></span>
+                </div>
+                <div id="ai-personality-body"></div>
+            </div>
+
+            <!-- 3. PLATFORM MATCHES -->
+            <div class="soc-card" id="card-associated-accounts">
+                <div class="soc-card-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                        <span class="card-title-text">Platform Matches &amp; Verification Matrix</span>
+                    </div>
+                    <span id="associated-accounts-badge" class="mono" style="font-size:11px; color:var(--accent-cyan);"></span>
+                </div>
+                <div id="associated-accounts-body"></div>
+            </div>
+
+            <!-- 4. MEDIA GALLERY -->
+            <div class="soc-card" id="card-media-gallery" style="border-color:var(--accent-cyan); display:none;">
+                <div class="soc-card-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>
+                        </svg>
+                        <span class="card-title-text">OSINT Target Media Gallery</span>
+                    </div>
+                    <span id="media-gallery-badge" class="mono" style="font-size:11px; color:var(--accent-cyan);">0 FILES</span>
+                </div>
+                <div id="media-gallery-body" style="padding:10px 0 0 0;"></div>
+            </div>
+
+            <!-- 5. GOOGLE DORKING -->
+            <div class="soc-card" id="card-google-dorking">
+                <div class="soc-card-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                        <span class="card-title-text">Google Search Dorking Discovery</span>
+                    </div>
+                    <span id="dorking-count-badge" class="mono" style="font-size:11px; color:var(--accent-cyan);"></span>
+                </div>
+                <div id="dorking-results-body"></div>
+            </div>
+
+            <!-- 6. TELEGRAM CTI -->
+            <div class="soc-card" id="card-telegram-cti">
+                <div class="soc-card-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        <span class="card-title-text">Telegram CTI Breach Intelligence</span>
+                    </div>
+                    <span id="cti-records-badge" class="mono" style="font-size:11px; color:var(--risk-critical);"></span>
+                </div>
+                <div id="telegram-cti-body"></div>
+            </div>
+
+            <!-- 7. PLATFORM DOSSIERS -->
+            <div class="soc-card" id="card-platform-dossiers">
+                <div class="soc-card-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        <span class="card-title-text">Platform Dossiers</span>
+                    </div>
+                </div>
+                <div id="platform-dossiers-body"></div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+/* AI Model Controller - minimal inline version for demo */
+let selectedAiModel = "groq";
+function selectAiModel(model) {
+    if (model !== "groq" && model !== "gemini") model = "groq";
+    selectedAiModel = model;
+    if (typeof window.currentAiMode !== "undefined") window.currentAiMode = model;
+    if (typeof window.renderAiPersonalityBody === "function") window.renderAiPersonalityBody();
+    document.querySelectorAll(".minimal-ai-selector").forEach(sel => {
+        sel.dataset.model = model;
+        sel.querySelectorAll(".minimal-ai-option").forEach(opt => {
+            const active = opt.dataset.model === model;
+            opt.classList.toggle("active", active);
+            opt.setAttribute("aria-checked", active ? "true" : "false");
+        });
+    });
+}
+window.selectedAiModel = selectedAiModel;
+</script>
+
+<script src="js/app.js"></script>
+
+<script>
+/* Load demo data and render */
+fetch("demo_data.json")
+    .then(r => r.json())
+    .then(data => {
+        console.log("Demo data loaded:", Object.keys(data));
+        if (typeof renderResults === "function") {
+            renderResults(data);
+        } else if (typeof window.renderResults === "function") {
+            window.renderResults(data);
+        } else {
+            document.getElementById("consolidated-identity-body").innerHTML =
+                "<div style='color:var(--risk-high);'>renderResults not found — check app.js loaded correctly.</div>";
+        }
+    })
+    .catch(err => {
+        document.getElementById("consolidated-identity-body").innerHTML =
+            `<div style='color:var(--risk-high);'>Failed to load demo_data.json: ${err.message}</div>`;
+    });
+</script>
+
+</body>
+</html>

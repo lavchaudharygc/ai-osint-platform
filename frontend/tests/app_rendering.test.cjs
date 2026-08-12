@@ -958,3 +958,39 @@ test("AI platform capsules distinguish candidates from stronger evidence", () =>
     assert.match(capsuleHTML, /COLLECTOR CONFIRMED/);
     assert.match(capsuleHTML, /IDENTITY CORROBORATED/);
 });
+
+test("platform dossier renders LinkedIn scraped data even without scraper_confirmed flag", () => {
+    const dossier = fakeElement();
+    const targetInput = { value: "target" };
+    const app = loadApp({
+        "platform-dossier-container": dossier,
+        "target-username": targetInput
+    });
+
+    app.renderPlatformDossier({
+        cross_platform_matches: [
+            {
+                platform: "linkedin",
+                exists: null,
+                status_code: 999,
+                url: "https://linkedin.com/in/target"
+            }
+        ],
+        scraped_data: {
+            linkedin: {
+                platform: "linkedin",
+                success: true,
+                full_name: "Target Person",
+                headline: "Security Researcher",
+                location: "Lucknow",
+                posts: [{ id: "li-1", text: "LinkedIn public post" }]
+            }
+        }
+    });
+
+    assert.equal(dossier.children.length, 1);
+    const html = dossier.children[0].innerHTML;
+    assert.match(html, /Target Person/);
+    assert.match(html, /Security Researcher/);
+    assert.match(html, /LinkedIn public post/);
+});

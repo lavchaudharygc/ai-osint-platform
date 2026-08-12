@@ -17,6 +17,7 @@ class ConsolidatedIdentity(BaseModel):
     likely_name: str | None = None
     location: str | None = None
     profession: str | None = None
+    profile_pic: str | None = None
     emails: list[dict[str, Any]] = Field(default_factory=list, description="List of emails with deliverability status")
     links: list[str] = Field(default_factory=list)
     overall_confidence: str = "low"
@@ -51,4 +52,5 @@ class InvestigationResponse(BaseModel):
     associated_accounts: list[dict[str, Any]] = Field(default_factory=list)
     consolidated_identity: ConsolidatedIdentity | None = None
     ai_personality: AiPersonality | None = None
+    gemini_reasoning: dict[str, Any] | None = None
     timestamp: datetime

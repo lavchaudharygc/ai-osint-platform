@@ -600,6 +600,13 @@ function setupEventListeners() {
             }
         });
     }
+
+    const btnRunCtiHealth = document.getElementById("btn-run-cti-health");
+    if (btnRunCtiHealth) {
+        btnRunCtiHealth.addEventListener("click", async () => {
+            await runTelegramCtiHealthCheck();
+        });
+    }
 }
 
 // Generate dynamic Case ID
@@ -746,6 +753,63 @@ function switchTab(tabId) {
         window.PersonSearchUI.activate();
     } else if (tabId === "diagnostics") {
         updateHiTekDiagnostics();
+        runTelegramCtiHealthCheck({ silent: true });
+    }
+}
+
+async function runTelegramCtiHealthCheck(options = {}) {
+    const silent = Boolean(options.silent);
+    const statusEl = document.getElementById("diag-cti-health-status");
+    const outcomeEl = document.getElementById("diag-cti-health-outcome");
+    const httpEl = document.getElementById("diag-cti-health-http");
+    const messageEl = document.getElementById("diag-cti-health-message");
+    const responseEl = document.getElementById("diag-cti-health-response");
+    const buttonEl = document.getElementById("btn-run-cti-health");
+
+    if (!statusEl || !outcomeEl || !httpEl || !messageEl || !responseEl) return;
+
+    statusEl.innerText = "RUNNING...";
+    statusEl.style.color = "var(--accent-gold)";
+    outcomeEl.innerText = "PROBING";
+    httpEl.innerText = "-";
+    messageEl.innerText = "Contacting LeakOSINT with a safe health-check probe...";
+    responseEl.textContent = "Loading provider response...";
+    if (buttonEl) {
+        buttonEl.disabled = true;
+        buttonEl.innerText = "RUNNING HEALTH CHECK...";
+    }
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/v1/providers/telegram-cti/health`);
+        const data = await resp.json();
+        const outcome = String(data.outcome || "unknown").toUpperCase();
+        const status = String(data.status || "unknown").toUpperCase();
+        const providerMessage = String(data.provider_message || "No provider message returned.");
+        const statusColor = data.status === "healthy"
+            ? "#00ff66"
+            : (data.status === "degraded" ? "var(--accent-gold)" : "var(--accent-crimson)");
+
+        statusEl.innerText = status;
+        statusEl.style.color = statusColor;
+        outcomeEl.innerText = outcome;
+        httpEl.innerText = data.http_status_code !== undefined ? String(data.http_status_code) : "-";
+        messageEl.innerText = providerMessage;
+        responseEl.textContent = JSON.stringify(data, null, 2);
+    } catch (error) {
+        statusEl.innerText = "ERROR";
+        statusEl.style.color = "var(--accent-crimson)";
+        outcomeEl.innerText = "FETCH_FAILED";
+        httpEl.innerText = "-";
+        messageEl.innerText = `Health check failed: ${error.message}`;
+        responseEl.textContent = JSON.stringify({ error: error.message }, null, 2);
+        if (!silent) {
+            console.error("Telegram CTI health check failed:", error);
+        }
+    } finally {
+        if (buttonEl) {
+            buttonEl.disabled = false;
+            buttonEl.innerText = "RUN CTI HEALTH CHECK";
+        }
     }
 }
 
@@ -3001,6 +3065,9 @@ function renderPlatformDossier(data) {
         const matchUrl = safeExternalUrl(match.url);
         const isPrimary = matchPlatform === primaryPlatform;
         const preScraped = DataMappers.getRenderablePlatformData(data, matchPlatform);
+        const hasRenderableProfileData = Boolean(
+            preScraped && DataMappers.hasPositivePlatformEvidence(preScraped)
+        );
         const exists = match.exists;
         const collectorConfirmed = match.scraper_confirmed === true;
         const unverifiedCandidate = exists === true && !collectorConfirmed;
@@ -3029,7 +3096,7 @@ function renderPlatformDossier(data) {
         const isInstagramWithPosts = matchPlatform === "instagram" && data.instagram_posts && data.instagram_posts.posts && data.instagram_posts.posts.length > 0;
         const isScrapable = ["twitter", "reddit", "linkedin", "facebook", "telegram", "tiktok", "github", "youtube"].includes(matchPlatform);
         
-        if (collectorConfirmed && (isPrimary || platformDorks.length > 0 || isInstagramWithPosts || isScrapable)) {
+        if ((collectorConfirmed || hasRenderableProfileData) && (isPrimary || platformDorks.length > 0 || isInstagramWithPosts || isScrapable || hasRenderableProfileData)) {
             hasExtraContent = true;
         }
 
@@ -3058,7 +3125,7 @@ function renderPlatformDossier(data) {
             </div>
         `;
 
-        if (collectorConfirmed) {
+        if (collectorConfirmed || hasRenderableProfileData) {
             let profileHTML = "";
             
             // Build the card body matching the screenshot layout
@@ -3066,6 +3133,8 @@ function renderPlatformDossier(data) {
                 const name = activeProfileData.full_name || activeProfileData.name || searchedUsername;
                 const handle = activeProfileData.username || activeProfileData.screen_name || searchedUsername;
                 const bio = activeProfileData.bio || activeProfileData.description || "";
+                const profileSubtitle = activeProfileData.headline || activeProfileData.current_role || activeProfileData.company || "";
+                const profileLocation = activeProfileData.location || "";
                 const followers = activeProfileData.follower_count !== undefined ? activeProfileData.follower_count : (activeProfileData.followers || 0);
                 const following = activeProfileData.following_count !== undefined ? activeProfileData.following_count : (activeProfileData.following || 0);
                 const postCount = activeProfileData.post_count !== undefined ? activeProfileData.post_count : (activeProfileData.posts_count || activeProfileData.statuses_count || 0);
@@ -3099,6 +3168,8 @@ function renderPlatformDossier(data) {
                                 <span class="display-name">${safeName}</span>
                                 <span class="handle" style="color: var(--text-secondary); font-weight: normal; font-size: 0.85rem;">- @${safeHandle}</span>
                             </div>
+                            ${profileSubtitle ? `<div class="scraped-profile-subtitle" style="font-size: 0.8rem; color: var(--accent-blue); line-height: 1.35;">${escapeHTML(profileSubtitle)}</div>` : ""}
+                            ${profileLocation ? `<div class="scraped-profile-location" style="font-size: 0.76rem; color: var(--text-secondary); line-height: 1.35;">${escapeHTML(profileLocation)}</div>` : ""}
                             ${bio ? `<div class="scraped-profile-bio" style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; white-space: pre-line;">${safeBio}</div>` : ""}
                             ${website ? `<div class="scraped-profile-website" style="font-size: 0.78rem; display: flex; align-items: center; gap: 4px;"><span style="opacity: 0.6;">🔗</span> <a href="${website}" target="_blank" style="color: var(--accent-blue); text-decoration: none; word-break: break-all;">${website}</a></div>` : ""}
                             ${followersText ? `<div class="scraped-profile-followers" style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 600; margin-top: 2px;">${followersText}</div>` : ""}

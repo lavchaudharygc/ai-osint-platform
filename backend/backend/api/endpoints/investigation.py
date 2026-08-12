@@ -1122,6 +1122,9 @@ def _correlation_evidence(
     score = 0
     direct_identifier = False
 
+    primary_urls = _profile_urls(primary)
+    candidate_urls = _profile_urls(candidate)
+
     primary_username = _normalized_identity_text(primary.get("username"))
     candidate_username = _normalized_identity_text(candidate.get("username"))
     if primary_username and primary_username == candidate_username:
@@ -1145,7 +1148,7 @@ def _correlation_evidence(
             positive.append("partially_matching_name")
             score += 15
         elif len(primary_name) >= 4 and len(candidate_name) >= 4:
-            if primary_username != candidate_username and not (primary_urls & candidate_urls):
+            if primary_username != candidate_username:
                 contradictions.append("conflicting_full_name")
                 score -= 20
 
@@ -1160,9 +1163,6 @@ def _correlation_evidence(
     elif contact_overlap:
         positive.append("matching_generic_public_contact_weak_signal")
         score += 5
-
-    primary_urls = _profile_urls(primary)
-    candidate_urls = _profile_urls(candidate)
     external_url_overlap = {
         value
         for value in primary_urls & candidate_urls
@@ -1281,14 +1281,7 @@ def _reconcile_ai_correlation(
 ) -> dict[str, Any]:
     """Keep model prose non-authoritative and expose one evidence-based verdict."""
     reconciled = dict(ai_analysis) if isinstance(ai_analysis, dict) else {}
-    model_used = reconciled.get("model_used", "deterministic_rules")
     parsed = reconciled.get("parsed") if isinstance(reconciled.get("parsed"), dict) else None
-
-    # If an external AI model (Groq / DeepSeek) produced a valid analysis, honor its decision & confidence!
-    if reconciled.get("success") and parsed and model_used not in {"rules_fallback", "deterministic_rules"}:
-        reconciled["model_output_used_for_scoring"] = True
-        reconciled["provider_narrative_omitted"] = False
-        return reconciled
 
     if confirmed_count:
         decision = "VERY LIKELY SAME"
@@ -2908,9 +2901,18 @@ async def _investigate_username_impl(
     # --- Consolidated Identity synthesis ---
     consolidated_identity: dict[str, Any] | None = None
     try:
-        all_profiles = [v for v in (scraped_data or {}).values() if isinstance(v, dict) and v.get("success") is not False]
-        names = [p.get("full_name") or p.get("name") for p in all_profiles if p.get("full_name") or p.get("name")]
-        locations = [p.get("location") for p in all_profiles if p.get("location")]
+        names = [str(p.get("full_name") or p.get("name")).strip() for p in all_profiles if p.get("full_name") or p.get("name")]
+        raw_locs = [p.get("location") for p in all_profiles if p.get("location")]
+        locations = []
+        for loc in raw_locs:
+            if isinstance(loc, str) and loc.strip():
+                locations.append(loc.strip())
+            elif isinstance(loc, dict):
+                parts = [str(v).strip() for v in loc.values() if v and isinstance(v, (str, int, float)) and str(v).strip()]
+                if parts:
+                    locations.append(", ".join(parts))
+            elif loc:
+                locations.append(str(loc).strip())
         bios = [p.get("bio") or p.get("description") for p in all_profiles if p.get("bio") or p.get("description")]
         discovered_emails: list[str] = []
         _hc = (provider_results or {}).get("contact") or {}

@@ -514,6 +514,60 @@ class RedditApifyServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LinkedInApifyServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fetch_linkedin_apimaestro_profile_and_normalization(self) -> None:
+        profile_item = {
+            "basic_info": {
+                "fullName": "John Doe",
+                "firstName": "John",
+                "lastName": "Doe",
+                "headline": "Lead OSINT Investigator",
+                "avatar": "https://cdn.test/avatar.jpg",
+                "location": "New York, USA",
+                "summary": "Cyber security researcher",
+                "public_identifier": "john-doe",
+            },
+            "stats": {
+                "followers": 1250,
+                "connections": 500,
+            },
+            "contact_info": {
+                "email": "john@example.com",
+                "phone": "+1-555-0199",
+                "websites": ["https://johndoe.test"],
+            },
+            "experience": [{"title": "Senior Analyst", "companyName": "Cyber Cell"}],
+        }
+        client = RecordingActorClient([[profile_item]])
+
+        from backend.services.linkedin_apify_service import fetchLinkedIn, fetch_linkedin, normalizeLinkedInItem
+
+        result = await fetch_linkedin("https://www.linkedin.com/in/john-doe?src=test", client=client)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["username"], "john-doe")
+        self.assertEqual(result["full_name"], "John Doe")
+        self.assertEqual(result["headline"], "Lead OSINT Investigator")
+        self.assertEqual(result["avatar"], "https://cdn.test/avatar.jpg")
+        self.assertEqual(result["followers"], 1250)
+        self.assertEqual(result["location"], "New York, USA")
+        self.assertEqual(result["current_role"], "Senior Analyst")
+        self.assertEqual(client.calls[0]["run_input"], {"username": "john-doe"})
+
+        # Test alias fetchLinkedIn
+        client_alias = RecordingActorClient([[profile_item]])
+        result_alias = await fetchLinkedIn("john-doe", client=client_alias)
+        self.assertTrue(result_alias["success"])
+        self.assertEqual(result_alias["full_name"], "John Doe")
+
+    async def test_fetch_linkedin_unconfigured_token_error(self) -> None:
+        from backend.services.linkedin_apify_service import fetch_linkedin
+        unconfigured_client = RecordingActorClient([], configured=False)
+
+        result = await fetch_linkedin("john-doe", client=unconfigured_client)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+        self.assertIn("APIFY_TOKEN missing", result["reason"])
+
     async def test_bebity_profile_and_company_bulk_inputs_and_normalization(self) -> None:
         profile = {
             "status": "OK",

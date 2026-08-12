@@ -116,11 +116,47 @@ class EmailVerifierService:
         return [cls.verify_email(e) for e in unique]
 
     @classmethod
-    async def verify_with_hunter(cls, email: str) -> Dict[str, Any]:
-        """Verify a specific email via Hunter.io API if configured."""
-        api_key = settings.hunter_api_key
+    async def verify_with_zerobounce(cls, email: str) -> Dict[str, Any]:
+        """Verify an email using ZeroBounce API."""
+        api_key = settings.zerobounce_api_key
         if not api_key:
             return cls.verify_email(email)
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    "https://api.zerobounce.net/v2/validate",
+                    params={"email": email, "api_key": api_key, "ip_address": ""},
+                )
+            if r.status_code == 200:
+                data = r.json()
+                zb_status = data.get("status")
+                deliverable = zb_status == "valid"
+                zb_status_map = {
+                    "valid": "verified",
+                    "invalid": "invalid",
+                    "catch-all": "likely",
+                    "unknown": "unknown",
+                    "spamtrap": "invalid",
+                    "abuse": "invalid",
+                    "do_not_mail": "invalid"
+                }
+                return {
+                    "email": email,
+                    "domain": email.split("@", 1)[1] if "@" in email else None,
+                    "status": zb_status_map.get(zb_status, "unknown"),
+                    "deliverable": deliverable,
+                    "reason": f"ZeroBounce: {zb_status} ({data.get('sub_status') or 'no substatus'})",
+                }
+        except Exception as exc:
+            logger.warning("ZeroBounce verification failed for %s: %s", email, exc)
+        return cls.verify_email(email)
+
+    @classmethod
+    async def verify_with_hunter(cls, email: str) -> Dict[str, Any]:
+        """Verify a specific email via Hunter.io API if configured, falling back to ZeroBounce."""
+        api_key = settings.hunter_api_key
+        if not api_key:
+            return await cls.verify_with_zerobounce(email)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 r = await client.get(
@@ -147,4 +183,4 @@ class EmailVerifierService:
                 }
         except Exception as exc:
             logger.warning("Hunter.io verification failed for %s: %s", email, exc)
-        return cls.verify_email(email)
+        return await cls.verify_with_zerobounce(email)

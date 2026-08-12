@@ -31,19 +31,7 @@ class AssociatedAccountsService:
         dorking_results: Dict[str, Any] | None = None,
         telegram_cti: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
-        """Cross-verify handles across platforms using multi-factor signal correlation.
-
-        Signals scored:
-        1. WMN direct HTTP probe match (+40 base)
-        2. Full name alignment across confirmed scraped profiles (+30)
-        3. Exact username handle match in bio/description (+20)
-        4. Shared external domain or URL in bio (+20)
-        5. Shared email across profiles (+25)
-        6. Explicit cross-platform link in bio (e.g., @handle, t.me/, linkedin.com/) (+20)
-        7. Telegram CTI database mention (+15)
-        8. Google dorking hit for same URL (+10)
-        9. Collector-confirmed scraped profile match (+25 bonus)
-        """
+        """Cross-verify handles across platforms using multi-factor signal correlation."""
 
         # Build reference signals from primary profile
         primary_name: str = ""
@@ -86,19 +74,94 @@ class AssociatedAccountsService:
                                 cti_subjects.add(val)
 
         results: List[Dict[str, Any]] = []
+        processed_platforms = set()
 
+        # 1. Inject successful scraped profiles first (highly trusted)
+        for platform_key, p in scraped_profiles.items():
+            if not isinstance(p, dict) or not p.get("success"):
+                continue
+            
+            site_name = platform_key.title()
+            norm_key = site_name.lower().replace(" ", "")
+            processed_platforms.add(norm_key)
+
+            confidence = 65  # Base 40 + 25 collector bonus
+            reasons = ["Collector-confirmed: platform scraper returned data"]
+            match_status = "COLLECTOR_CONFIRMED"
+
+            # Name alignment
+            scraped_name = _normalize_name(p.get("full_name") or p.get("name") or "")
+            if primary_name and scraped_name and (
+                primary_name in scraped_name or scraped_name in primary_name
+            ):
+                confidence += 30
+                reasons.append(f"Full name match: '{scraped_name}'")
+                match_status = "IDENTITY_CONFIRMED"
+
+            # Shared domains
+            scraped_bio = p.get("bio") or p.get("description") or ""
+            if primary_domains:
+                scraped_domains = _extract_domains(scraped_bio)
+                shared = primary_domains & scraped_domains
+                if shared:
+                    confidence += 20
+                    reasons.append(f"Shared domain in bio: {', '.join(list(shared)[:3])}")
+
+            # Shared emails
+            scraped_emails = _extract_emails(scraped_bio)
+            if p.get("email"):
+                scraped_emails.add(str(p["email"]).lower())
+            shared_emails = primary_emails & scraped_emails
+            if shared_emails:
+                confidence += 25
+                reasons.append(f"Shared email: {', '.join(list(shared_emails)[:2])}")
+
+            # Cross-platform mention
+            handle_lower = primary_username.lstrip("@").lower()
+            for bio_text in primary_bios:
+                if handle_lower in bio_text or f"@{handle_lower}" in bio_text:
+                    confidence += 20
+                    reasons.append("Handle mentioned in primary profile bio")
+                    break
+
+            # Dorking confirmation
+            url = p.get("url") or p.get("profile_url") or f"https://www.{platform_key}.com/{handle_lower}"
+            if any(url.lower() in dork_url or dork_url in url.lower() for dork_url in dork_urls):
+                confidence += 10
+                reasons.append("Google dorking result references this URL/handle")
+
+            # CTI database match
+            if handle_lower in cti_subjects or f"@{handle_lower}" in cti_subjects:
+                confidence += 15
+                reasons.append("Handle found in Telegram CTI breach database")
+
+            results.append({
+                "platform": site_name,
+                "category": "social",
+                "username": handle_lower,
+                "url": url,
+                "confidence": min(100, confidence),
+                "match_status": match_status,
+                "reasons": reasons,
+            })
+
+        # 2. Process WMN hits (only if not already processed by scrapers)
         for hit in wmn_hits:
             site = hit.get("site") or "Unknown"
+            norm_site = site.lower().replace(" ", "")
+            if norm_site in processed_platforms:
+                continue
+
             url = hit.get("url") or ""
             handle = hit.get("handle") or primary_username.lstrip("@")
             category = hit.get("category") or "general"
 
             confidence = 40  # Base: WMN HTTP probe confirmed
-            reasons: List[str] = ["WMN template HTTP probe: account found"]
+            reasons = ["WMN template HTTP probe: account found"]
             match_status = "PROBE_CONFIRMED"
 
             # Check for collector-confirmed scrape on this platform
-            scraped = scraped_profiles.get(site.lower()) or scraped_profiles.get(site.replace(" ", "").lower())
+            scraped = scraped_profiles.get(site.lower()) or scraped_profiles.get(norm_site)
             if isinstance(scraped, dict) and scraped.get("success"):
                 confidence += 25
                 reasons.append("Collector-confirmed: platform scraper returned data")
@@ -113,7 +176,7 @@ class AssociatedAccountsService:
                     reasons.append(f"Full name match: '{scraped_name}'")
                     match_status = "IDENTITY_CONFIRMED"
 
-                # Shared domain in bio
+                # Shared domains
                 scraped_bio = scraped.get("bio") or scraped.get("description") or ""
                 if primary_domains:
                     scraped_domains = _extract_domains(scraped_bio)
@@ -122,7 +185,7 @@ class AssociatedAccountsService:
                         confidence += 20
                         reasons.append(f"Shared domain in bio: {', '.join(list(shared)[:3])}")
 
-                # Shared email
+                # Shared emails
                 scraped_emails = _extract_emails(scraped_bio)
                 if scraped.get("email"):
                     scraped_emails.add(str(scraped["email"]).lower())
@@ -145,8 +208,8 @@ class AssociatedAccountsService:
                     reasons.append(f"Platform '{site}' + handle mentioned in bio")
                     break
 
-            # Dorking confirmation
-            if any(url.lower() in dork_url or handle_lower in dork_url for dork_url in dork_urls):
+            # Dorking confirmation (fixed url-specific match bug)
+            if any(url.lower() in dork_url or dork_url in url.lower() for dork_url in dork_urls):
                 confidence += 10
                 reasons.append("Google dorking result references this URL/handle")
 
@@ -155,12 +218,18 @@ class AssociatedAccountsService:
                 confidence += 15
                 reasons.append("Handle found in Telegram CTI breach database")
 
+            # False positive penalty for unverified NSFW, gaming, or dating profiles
+            if match_status == "PROBE_CONFIRMED" and category.lower() in {"xx nsfw xx", "gaming", "dating", "gambling"}:
+                confidence -= 25
+                reasons.append("Impersonation risk: platform category does not match target profile type")
+                match_status = "UNVERIFIED"
+
             results.append({
                 "platform": site,
                 "category": category,
                 "username": handle,
                 "url": url,
-                "confidence": min(100, confidence),
+                "confidence": max(5, min(100, confidence)),
                 "match_status": match_status,
                 "reasons": reasons,
             })

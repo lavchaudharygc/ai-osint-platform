@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,7 +44,10 @@ class Settings(BaseSettings):
     groq_api_url: str = Field(default="https://api.groq.com/openai/v1/chat/completions", validation_alias="GROQ_API_URL")
     groq_model: str = Field(default="llama-3.3-70b-versatile", validation_alias="GROQ_MODEL")
     rapidapi_key: str | None = Field(default=None, validation_alias="RAPIDAPI_KEY")
-    apify_api_token: str | None = Field(default=None, validation_alias="APIFY_API_TOKEN")
+    apify_api_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("APIFY_TOKEN", "APIFY_API_TOKEN"),
+    )
     apify_base_url: str = Field(default="https://api.apify.com/v2", validation_alias="APIFY_BASE_URL")
     apify_http_timeout_seconds: float = Field(default=60.0, ge=5.0, le=180.0, validation_alias="APIFY_HTTP_TIMEOUT_SECONDS")
     apify_run_timeout_seconds: float = Field(default=300.0, ge=10.0, le=900.0, validation_alias="APIFY_RUN_TIMEOUT_SECONDS")
@@ -65,9 +68,13 @@ class Settings(BaseSettings):
         default="automation-lab/reddit-scraper",
         validation_alias="APIFY_REDDIT_ACTOR_ID",
     )
+    apify_linkedin_actor: str = Field(
+        default="apimaestro/linkedin-profile-detail",
+        validation_alias=AliasChoices("APIFY_LINKEDIN_ACTOR", "APIFY_LINKEDIN_PROFILE_ACTOR_ID"),
+    )
     apify_linkedin_profile_actor_id: str = Field(
-        default="bebity/linkedin-premium-actor",
-        validation_alias="APIFY_LINKEDIN_PROFILE_ACTOR_ID",
+        default="apimaestro/linkedin-profile-detail",
+        validation_alias=AliasChoices("APIFY_LINKEDIN_PROFILE_ACTOR_ID", "APIFY_LINKEDIN_ACTOR"),
     )
     apify_linkedin_posts_actor_id: str = Field(
         default="apimaestro/linkedin-posts-search-scraper-no-cookies",

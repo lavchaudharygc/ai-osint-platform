@@ -3,269 +3,1463 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>UP Police Cyber Cell — OSINT SOC Engine (Beta-v2)</title>
-    <meta name="description" content="Uttar Pradesh Police Cyber Crime OSINT Investigation Platform — Government Security Operations Center">
+
+    <meta name="description"
+          content="Uttar Pradesh Police Cyber Crime OSINT Investigation Platform — Government Security Operations Center">
+
     <link rel="stylesheet" href="css/soc_theme.css">
+
+    <!-- =========================================================
+         INLINE AI MODEL TOGGLE
+         No changes required in soc_theme.css
+    ========================================================== -->
+    <style>
+        /* =====================================================
+           MINIMAL AI MODEL SELECTOR
+        ===================================================== */
+
+        .minimal-ai-selector {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            padding: 3px;
+
+            background: rgba(255, 255, 255, 0.025);
+            border: 1px solid var(--border-divider);
+            border-radius: 8px;
+
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        .minimal-ai-option {
+            position: relative;
+
+            border: 0;
+            outline: none;
+
+            min-width: 78px;
+            height: 30px;
+
+            padding: 0 13px;
+
+            border-radius: 6px;
+
+            background: transparent;
+            color: var(--text-muted);
+
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .35px;
+
+            cursor: pointer;
+
+            transition:
+                background .18s ease,
+                color .18s ease,
+                box-shadow .18s ease,
+                transform .10s ease;
+        }
+
+        .minimal-ai-option:hover {
+            color: var(--text-primary);
+            background: rgba(255,255,255,.035);
+        }
+
+        .minimal-ai-option:active {
+            transform: scale(.96);
+        }
+
+        /* GROQ ACTIVE */
+        .minimal-ai-option[data-model="groq"].active {
+            color: var(--accent-cyan);
+
+            background: rgba(0, 220, 255, .085);
+
+            box-shadow:
+                inset 0 0 0 1px rgba(0, 220, 255, .22),
+                0 0 12px rgba(0, 220, 255, .04);
+        }
+
+        /* GEMINI ACTIVE */
+        .minimal-ai-option[data-model="gemini"].active {
+            color: #b49cff;
+
+            background: rgba(139, 92, 246, .10);
+
+            box-shadow:
+                inset 0 0 0 1px rgba(139, 92, 246, .25),
+                0 0 12px rgba(139, 92, 246, .05);
+        }
+
+        /* Tiny active indicator */
+        .minimal-ai-option.active::before {
+            content: "";
+
+            position: absolute;
+
+            left: 8px;
+            bottom: 4px;
+
+            width: 3px;
+            height: 3px;
+
+            border-radius: 50%;
+
+            background: currentColor;
+
+            box-shadow: 0 0 6px currentColor;
+        }
+
+        /* Keyboard accessibility */
+        .minimal-ai-option:focus-visible {
+            box-shadow:
+                0 0 0 2px var(--bg-primary),
+                0 0 0 3px var(--accent-cyan);
+        }
+
+        /* Full-width selector when required */
+        .minimal-ai-selector.full-width {
+            display: flex;
+            width: 100%;
+        }
+
+        .minimal-ai-selector.full-width .minimal-ai-option {
+            flex: 1;
+        }
+
+        /* Mobile */
+        @media (max-width: 600px) {
+            .minimal-ai-selector.full-width {
+                width: 100%;
+            }
+
+            .minimal-ai-option {
+                min-width: 0;
+            }
+        }
+    </style>
 </head>
+
 <body>
 
-<!-- ── LOGIN SCREEN ──────────────────────────────────────────────── -->
+<!-- ============================================================
+     LOGIN SCREEN
+============================================================= -->
+
 <div id="login-screen" class="login-overlay">
+
     <div class="login-card">
+
         <div class="login-header">
-            <svg class="icon-svg gold" style="width:28px;height:28px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-            <div class="login-title">UP POLICE CYBER CELL OSINT PORTAL</div>
-            <div class="login-subtitle mono">AUTHORIZED LAW ENFORCEMENT ACCESS ONLY</div>
-        </div>
-        <div class="login-body">
-            <div id="login-error" class="login-error-msg" style="display:none;">Invalid credentials. Access denied.</div>
-            <div style="margin-bottom:14px;">
-                <label class="form-label">Username</label>
-                <input type="text" id="login-user" class="form-input" placeholder="uppolice" value="uppolice" autocomplete="username">
+
+            <svg class="icon-svg gold"
+                 style="width:28px;height:28px;"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="1.5">
+
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+
+            </svg>
+
+            <div class="login-title">
+                UP POLICE CYBER CELL OSINT PORTAL
             </div>
+
+            <div class="login-subtitle mono">
+                AUTHORIZED LAW ENFORCEMENT ACCESS ONLY
+            </div>
+
+        </div>
+
+        <div class="login-body">
+
+            <div id="login-error"
+                 class="login-error-msg"
+                 style="display:none;">
+                Invalid credentials. Access denied.
+            </div>
+
+            <div style="margin-bottom:14px;">
+
+                <label class="form-label">
+                    Username
+                </label>
+
+                <input
+                    type="text"
+                    id="login-user"
+                    class="form-input"
+                    placeholder="uppolice"
+                    value="uppolice"
+                    autocomplete="username">
+
+            </div>
+
             <div style="margin-bottom:8px;">
-                <label class="form-label">Password</label>
-                <input type="password" id="login-pass" class="form-input" placeholder="••••••••••••••" value="testingaccount"
+
+                <label class="form-label">
+                    Password
+                </label>
+
+                <input
+                    type="password"
+                    id="login-pass"
+                    class="form-input"
+                    placeholder="••••••••••••••"
+                    value="testingaccount"
                     autocomplete="current-password"
                     onkeydown="if(event.key==='Enter') handleLogin()">
+
             </div>
-            <button class="btn-execute" onclick="handleLogin()">AUTHENTICATE &amp; ENTER SOC</button>
+
+            <button
+                class="btn-execute"
+                onclick="handleLogin()">
+
+                AUTHENTICATE &amp; ENTER SOC
+
+            </button>
+
         </div>
     </div>
 </div>
 
-<!-- ── ANIMATED FILLUP SCAN LOADER OVERLAY ───────────────────────── -->
-<div id="scan-loader-overlay" class="loader-overlay" style="display:none;">
+
+<!-- ============================================================
+     SCAN LOADER
+============================================================= -->
+
+<div id="scan-loader-overlay"
+     class="loader-overlay"
+     style="display:none;">
+
     <div class="loader-card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-                <svg class="icon-svg cyan spin" style="width:24px;height:24px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+
+        <div style="
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            margin-bottom:12px;
+        ">
+
+            <div style="
+                display:flex;
+                align-items:center;
+                gap:10px;
+            ">
+
+                <svg
+                    class="icon-svg cyan spin"
+                    style="width:24px;height:24px;"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2">
+
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M12 6v6l4 2"></path>
+
+                </svg>
+
                 <div>
-                    <div style="font-weight:700;font-size:13px;letter-spacing:0.5px;color:var(--text-primary);">OSINT INVESTIGATION SCAN IN PROGRESS</div>
-                    <div style="font-size:11px;color:var(--accent-cyan);" class="mono">Target: <span id="loader-target-label">@target</span></div>
+
+                    <div style="
+                        font-weight:700;
+                        font-size:13px;
+                        letter-spacing:0.5px;
+                        color:var(--text-primary);
+                    ">
+                        OSINT INVESTIGATION SCAN IN PROGRESS
+                    </div>
+
+                    <div
+                        style="font-size:11px;color:var(--accent-cyan);"
+                        class="mono">
+
+                        Target:
+                        <span id="loader-target-label">
+                            @target
+                        </span>
+
+                    </div>
+
                 </div>
             </div>
-            <span id="loader-progress-pct" class="mono" style="font-size:20px;font-weight:700;color:var(--accent-cyan);">0%</span>
+
+            <span
+                id="loader-progress-pct"
+                class="mono"
+                style="
+                    font-size:20px;
+                    font-weight:700;
+                    color:var(--accent-cyan);
+                ">
+                0%
+            </span>
+
         </div>
 
         <div class="loader-progress-track">
-            <div id="loader-progress-bar" class="loader-progress-fill" style="width:0%;"></div>
+
+            <div
+                id="loader-progress-bar"
+                class="loader-progress-fill"
+                style="width:0%;">
+            </div>
+
         </div>
 
-        <div id="loader-step-text" style="font-size:11px;color:var(--text-muted);margin-top:12px;" class="mono">
+        <div
+            id="loader-step-text"
+            style="
+                font-size:11px;
+                color:var(--text-muted);
+                margin-top:12px;
+            "
+            class="mono">
+
             Initializing WhatsMyName 700+ cross-platform probe engine...
+
         </div>
+
     </div>
 </div>
 
-<!-- ── MAIN DASHBOARD ────────────────────────────────────────────── -->
-<div id="main-dashboard" class="app-container" style="display:none;">
 
-    <!-- HEADER -->
+<!-- ============================================================
+     MAIN DASHBOARD
+============================================================= -->
+
+<div
+    id="main-dashboard"
+    class="app-container"
+    style="display:none;">
+
+    <!-- ========================================================
+         HEADER
+    ========================================================= -->
+
     <header class="soc-header">
-        <div class="soc-brand" onclick="resetToHeroView()" style="cursor:pointer;">
-            <svg class="icon-svg gold" style="width:22px;height:22px;flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+
+        <div
+            class="soc-brand"
+            onclick="resetToHeroView()"
+            style="cursor:pointer;">
+
+            <svg
+                class="icon-svg gold"
+                style="width:22px;height:22px;flex-shrink:0;"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5">
+
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+
+            </svg>
+
             <div style="min-width:0;">
-                <div class="soc-title">UTTAR PRADESH POLICE — CYBER CRIME OSINT PLATFORM</div>
-                <div class="soc-subtitle mono">Government Security Operations Center &middot; Beta-v2 Engine</div>
+
+                <div class="soc-title">
+                    UTTAR PRADESH POLICE — CYBER CRIME OSINT PLATFORM
+                </div>
+
+                <div class="soc-subtitle mono">
+                    Government Security Operations Center · Beta-v2 Engine
+                </div>
+
             </div>
+
         </div>
+
+
         <div class="soc-actions">
-            <button class="btn-lea" onclick="resetToHeroView()">
-                <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <span>New Target Search</span>
+
+            <button
+                class="btn-lea"
+                onclick="resetToHeroView()">
+
+                <svg
+                    class="icon-svg cyan"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2">
+
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line
+                        x1="21"
+                        y1="21"
+                        x2="16.65"
+                        y2="16.65">
+                    </line>
+
+                </svg>
+
+                <span>
+                    New Target Search
+                </span>
+
             </button>
-            <button class="btn-lea" onclick="triggerLeaPdfExport()">
-                <svg class="icon-svg gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                <span>Export LEA Report</span>
+
+
+            <button
+                class="btn-lea"
+                onclick="triggerLeaPdfExport()">
+
+                <svg
+                    class="icon-svg gold"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2">
+
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+
+                    <polyline points="14 2 14 8 20 8"></polyline>
+
+                    <line
+                        x1="16"
+                        y1="13"
+                        x2="8"
+                        y2="13">
+                    </line>
+
+                    <line
+                        x1="16"
+                        y1="17"
+                        x2="8"
+                        y2="17">
+                    </line>
+
+                </svg>
+
+                <span>
+                    Export LEA Report
+                </span>
+
             </button>
-            <button class="btn-lea" onclick="handleLogout()" style="border-color:var(--border-divider);color:var(--text-secondary);">
-                <svg class="icon-svg" style="stroke:var(--text-secondary);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                <span>Logout</span>
+
+
+            <button
+                class="btn-lea"
+                onclick="handleLogout()"
+                style="
+                    border-color:var(--border-divider);
+                    color:var(--text-secondary);
+                ">
+
+                <svg
+                    class="icon-svg"
+                    style="stroke:var(--text-secondary);"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2">
+
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+
+                    <polyline points="16 17 21 12 16 7"></polyline>
+
+                    <line
+                        x1="21"
+                        y1="12"
+                        x2="9"
+                        y2="12">
+                    </line>
+
+                </svg>
+
+                <span>
+                    Logout
+                </span>
+
             </button>
+
         </div>
+
     </header>
 
-    <!-- ── INITIAL HERO ENTRY VIEW ───────────────────────────────── -->
-    <div id="hero-search-view" class="hero-card">
-        <div style="text-align:center;margin-bottom:24px;">
-            <svg class="icon-svg gold" style="width:48px;height:48px;margin-bottom:12px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-            <h1 style="font-size:20px;font-weight:700;color:var(--text-primary);letter-spacing:0.5px;">OSINT MULTI-VECTOR TARGET IDENTIFIER</h1>
-            <p style="font-size:12px;color:var(--text-muted);margin-top:6px;max-width:540px;margin-left:auto;margin-right:auto;">
-                Enter a target username, @handle, email address, phone number, or domain to trigger parallel probing across 700+ sites, social profiles (Instagram, Facebook, TikTok, LinkedIn), Google dorks, and Telegram leak databases.
+
+    <!-- ========================================================
+         HERO SEARCH
+    ========================================================= -->
+
+    <div
+        id="hero-search-view"
+        class="hero-card">
+
+        <div style="
+            text-align:center;
+            margin-bottom:24px;
+        ">
+
+            <svg
+                class="icon-svg gold"
+                style="
+                    width:48px;
+                    height:48px;
+                    margin-bottom:12px;
+                "
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5">
+
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+
+            </svg>
+
+            <h1 style="
+                font-size:20px;
+                font-weight:700;
+                color:var(--text-primary);
+                letter-spacing:0.5px;
+            ">
+                OSINT MULTI-VECTOR TARGET IDENTIFIER
+            </h1>
+
+            <p style="
+                font-size:12px;
+                color:var(--text-muted);
+                margin-top:6px;
+                max-width:540px;
+                margin-left:auto;
+                margin-right:auto;
+            ">
+                Enter a target username, @handle, email address,
+                phone number, or domain to trigger parallel probing
+                across configured sources and analysis engines.
             </p>
+
         </div>
 
-        <div style="max-width:580px;margin:0 auto;">
-            <div style="margin-bottom:16px;position:relative;">
-                <label class="form-label" style="margin-bottom:8px;">
-                    <span>Target Identifier</span>
-                    <span id="hero-kind-badge" class="input-kind-badge" style="display:none;"></span>
+
+        <div style="
+            max-width:580px;
+            margin:0 auto;
+        ">
+
+            <!-- TARGET -->
+
+            <div style="
+                margin-bottom:16px;
+                position:relative;
+            ">
+
+                <label
+                    class="form-label"
+                    style="margin-bottom:8px;">
+
+                    <span>
+                        Target Identifier
+                    </span>
+
+                    <span
+                        id="hero-kind-badge"
+                        class="input-kind-badge"
+                        style="display:none;">
+                    </span>
+
                 </label>
-                <input type="text" id="hero-target-username" class="form-input" style="padding:14px 16px;font-size:15px;"
+
+
+                <input
+                    type="text"
+                    id="hero-target-username"
+                    class="form-input"
+                    style="
+                        padding:14px 16px;
+                        font-size:15px;
+                    "
                     placeholder="Enter username, @handle, email, phone, or domain..."
                     oninput="detectInputType(this.value)"
                     onkeydown="if(event.key==='Enter') executeScan(true)">
+
             </div>
 
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+
+            <!-- EMAIL / PHONE -->
+
+            <div style="
+                display:grid;
+                grid-template-columns:1fr 1fr;
+                gap:12px;
+                margin-bottom:16px;
+            ">
+
                 <div>
-                    <label class="form-label">Optional Email</label>
-                    <input type="email" id="provider-email" class="form-input" placeholder="subject@example.com">
+
+                    <label class="form-label">
+                        Optional Email
+                    </label>
+
+                    <input
+                        type="email"
+                        id="provider-email"
+                        class="form-input"
+                        placeholder="subject@example.com">
+
                 </div>
+
+
                 <div>
-                    <label class="form-label">Optional Phone</label>
-                    <input type="tel" id="provider-phone" class="form-input" placeholder="+919876543210">
+
+                    <label class="form-label">
+                        Optional Phone
+                    </label>
+
+                    <input
+                        type="tel"
+                        id="provider-phone"
+                        class="form-input"
+                        placeholder="+919876543210">
+
                 </div>
+
             </div>
 
-            <button class="btn-execute" style="padding:15px;font-size:14px;letter-spacing:1px;" onclick="executeScan(true)">
-                <svg style="width:16px;height:16px;vertical-align:middle;margin-right:8px;stroke:#000;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+
+            <!-- AI Engine Label -->
+            <div style="margin-bottom:20px;">
+                <label class="form-label" style="margin-bottom:0; display:flex; justify-content:space-between; align-items:center;">
+                    <span>AI Analysis Engine</span>
+                    <span class="mono" style="font-size:10px; color:var(--accent-cyan);" id="hero-ai-mode-label">Groq Llama-3.3-70B</span>
+                </label>
+            </div>
+
+
+            <button
+                class="btn-execute"
+                style="
+                    padding:15px;
+                    font-size:14px;
+                    letter-spacing:1px;
+                "
+                onclick="executeScan(true)">
+
+                <svg
+                    style="
+                        width:16px;
+                        height:16px;
+                        vertical-align:middle;
+                        margin-right:8px;
+                        stroke:#000;
+                    "
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5">
+
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+
+                </svg>
+
                 EXECUTE FULL OSINT INVESTIGATION SCAN
+
             </button>
+
+            <!-- API KEYS STATUS WIDGET -->
+            <div id="hero-api-diagnostics" style="margin-top:20px; padding:12px; background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:8px;">
+                <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; font-family:'JetBrains Mono', monospace;">
+                    <span>SOC INTEGRATIONS CREDENTIALS</span>
+                    <span id="hero-api-status-dot" style="color:var(--status-success);">● CHECKING...</span>
+                </div>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap:6px; font-family:'JetBrains Mono', monospace; font-size:9px;" id="hero-api-keys-list">
+                    <div style="color:var(--text-muted);">Initializing diagnostics...</div>
+                </div>
+            </div>
+
         </div>
+
     </div>
 
-    <!-- ── RESULTS WORKSPACE (HIDDEN UNTIL SCAN) ───────────────────── -->
-    <div id="results-workspace" style="display:none;">
+
+    <!-- ========================================================
+         RESULTS WORKSPACE
+    ========================================================= -->
+
+    <div
+        id="results-workspace"
+        style="display:none;">
+
         <div class="dashboard-grid">
 
-            <!-- ── LEFT PANEL (CONSOLE & CONTROLS) ────────────────────── -->
+
+            <!-- ==================================================
+                 LEFT PANEL
+            =================================================== -->
+
             <div class="left-panel">
 
-                <!-- SEARCH OVERVIEW CARD -->
+
+                <!-- ACTIVE TARGET -->
+
                 <div class="soc-card">
+
                     <div class="soc-card-header">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                            <span class="card-title-text">Active Target</span>
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        ">
+
+                            <svg
+                                class="icon-svg cyan"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2">
+
+                                <circle
+                                    cx="11"
+                                    cy="11"
+                                    r="8">
+                                </circle>
+
+                                <line
+                                    x1="21"
+                                    y1="21"
+                                    x2="16.65"
+                                    y2="16.65">
+                                </line>
+
+                            </svg>
+
+                            <span class="card-title-text">
+                                Active Target
+                            </span>
+
                         </div>
-                        <span id="input-kind-badge" class="input-kind-badge" style="display:none;"></span>
+
+
+                        <span
+                            id="input-kind-badge"
+                            class="input-kind-badge"
+                            style="display:none;">
+                        </span>
+
                     </div>
 
+
                     <div style="margin-bottom:12px;">
-                        <label class="form-label">Query Handle</label>
-                        <input type="text" id="target-username" class="form-input"
+
+                        <label class="form-label">
+                            Query Handle
+                        </label>
+
+                        <input
+                            type="text"
+                            id="target-username"
+                            class="form-input"
                             placeholder="username, email, phone"
                             oninput="detectInputType(this.value)"
                             onkeydown="if(event.key==='Enter') executeScan(false)">
+
                     </div>
 
-                    <button class="btn-execute" onclick="executeScan(false)" style="padding:10px;font-size:11px;">
+
+                    <!-- AI Model Label -->
+                    <div style="margin-bottom:12px;">
+                        <label class="form-label" style="margin-bottom:0;">AI Engine: <span class="mono" style="color:var(--accent-cyan);">Groq Llama-3.3</span></label>
+                    </div>
+
+
+                    <button
+                        class="btn-execute"
+                        onclick="executeScan(false)"
+                        style="
+                            padding:10px;
+                            font-size:11px;
+                        ">
+
                         RE-RUN OSINT SCAN
+
                     </button>
+
                 </div>
 
-                <!-- EXECUTION CONSOLE LOG -->
+
+                <!-- ==================================================
+                     CONSOLE
+                =================================================== -->
+
                 <div class="soc-card">
+
                     <div class="soc-card-header">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-                            <span class="card-title-text">Console Stream</span>
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        ">
+
+                            <svg
+                                class="icon-svg cyan"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2">
+
+                                <polyline
+                                    points="4 17 10 11 4 5">
+                                </polyline>
+
+                                <line
+                                    x1="12"
+                                    y1="19"
+                                    x2="20"
+                                    y2="19">
+                                </line>
+
+                            </svg>
+
+                            <span class="card-title-text">
+                                Console Stream
+                            </span>
+
                         </div>
-                        <span class="mono" style="font-size:10px;color:var(--accent-cyan);letter-spacing:1px;">● LIVE</span>
+
+
+                        <span
+                            class="mono"
+                            style="
+                                font-size:10px;
+                                color:var(--accent-cyan);
+                                letter-spacing:1px;
+                            ">
+
+                            ● LIVE
+
+                        </span>
+
                     </div>
-                    <div class="terminal-stream" id="console-stream">
-                        <div class="terminal-line">[SYS] System operational. Awaiting target identifier...</div>
+
+
+                    <div
+                        class="terminal-stream"
+                        id="console-stream">
+
+                        <div class="terminal-line">
+                            [SYS] System operational.
+                            Awaiting target identifier...
+                        </div>
+
                     </div>
+
                 </div>
 
-            </div><!-- /left-panel -->
+            </div>
 
-            <!-- ── RIGHT PANEL (RESULTS WORKSPACE) ───────────────────── -->
+
+            <!-- ==================================================
+                 RIGHT PANEL
+            =================================================== -->
+
             <div class="right-panel">
 
-                <!-- 1. CONSOLIDATED IDENTITY PROFILE -->
-                <div class="soc-card" id="card-consolidated-identity" style="border-color:var(--accent-cyan);">
+
+                <!-- ==================================================
+                     1. IDENTITY
+                =================================================== -->
+
+                <div
+                    class="soc-card"
+                    id="card-consolidated-identity"
+                    style="border-color:var(--accent-cyan);">
+
                     <div class="soc-card-header">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                            <span class="card-title-text" style="color:var(--accent-cyan);">Consolidated Identity Profile</span>
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        ">
+
+                            <svg
+                                class="icon-svg cyan"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2">
+
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+
+                                <circle
+                                    cx="12"
+                                    cy="7"
+                                    r="4">
+                                </circle>
+
+                            </svg>
+
+                            <span
+                                class="card-title-text"
+                                style="color:var(--accent-cyan);">
+
+                                Consolidated Identity Profile
+
+                            </span>
+
                         </div>
-                        <span id="consolidated-confidence-badge" class="mono" style="font-size:11px;font-weight:700;"></span>
+
+
+                        <span
+                            id="consolidated-confidence-badge"
+                            class="mono"
+                            style="
+                                font-size:11px;
+                                font-weight:700;
+                            ">
+                        </span>
+
                     </div>
+
+
                     <div id="consolidated-identity-body"></div>
+
                 </div>
 
-                <!-- 2. AI BEHAVIORAL PROFILE -->
-                <div class="soc-card" id="card-ai-personality">
-                    <div class="soc-card-header">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
-                            <span class="card-title-text">AI Behavioral Profile</span>
+
+                <!-- ==================================================
+                     DIAGNOSTICS & PIPELINE RECOVERY
+                =================================================== -->
+                <div class="soc-card" id="card-diagnostics" style="border-color:var(--border-divider);">
+                    <div class="soc-card-header" style="cursor:pointer;" onclick="toggleDiagnosticsPanel()">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <svg class="icon-svg" style="stroke:var(--risk-medium); width:16px; height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="8" x2="12" y2="12"></line>
+                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                            </svg>
+                            <span class="card-title-text" style="color:var(--text-primary);">System Diagnostics &amp; Recovery</span>
                         </div>
-                        <span id="ai-category-badge" class="mono" style="font-size:11px;color:var(--accent-cyan);font-weight:700;"></span>
+                        <span id="diagnostics-summary-badge" class="mono" style="font-size:10px; color:var(--text-muted);">READY</span>
                     </div>
+                    <div id="diagnostics-body" style="padding:10px 0 0 0; display:none;">
+                        <!-- Diagnostic steps dynamically populated here -->
+                    </div>
+                </div>
+
+
+                <!-- ==================================================
+                     2. AI PROFILE
+                =================================================== -->
+
+                <div
+                    class="soc-card"
+                    id="card-ai-personality">
+
+                    <div
+                        class="soc-card-header"
+                        style="
+                            flex-wrap:wrap;
+                            gap:8px;
+                        ">
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        ">
+
+                            <svg
+                                class="icon-svg cyan"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2">
+
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+
+                            </svg>
+
+
+                            <span class="card-title-text">
+                                AI Behavioral Profiling
+                            </span>
+
+                        </div>
+
+                        <span
+                            id="ai-category-badge"
+                            class="mono"
+                            style="
+                                font-size:11px;
+                                color:var(--accent-cyan);
+                                font-weight:700;
+                            ">
+                        </span>
+
+                    </div>
+
+
                     <div id="ai-personality-body"></div>
+
                 </div>
 
-                <!-- 3. WHATSMYNAME 700+ PROBE -->
-                <div class="soc-card" id="card-wmn-matrix">
-                    <div class="soc-card-header">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                            <span class="card-title-text">WhatsMyName Cross-Platform Probe (700+ Sites)</span>
-                        </div>
-                        <span id="wmn-count-badge" class="mono" style="font-size:11px;color:var(--accent-cyan);"></span>
-                    </div>
-                    <div id="wmn-matrix-body"></div>
-                </div>
 
-                <!-- 4. ASSOCIATED ACCOUNT DISCOVERY -->
+                <!-- ==================================================
+                     3. PLATFORM MATCHES & VERIFICATION MATRIX
+                =================================================== -->
                 <div class="soc-card" id="card-associated-accounts">
                     <div class="soc-card-header">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                            <span class="card-title-text">Associated Account Discovery</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="9" cy="7" r="4"></circle>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                            <span class="card-title-text">Platform Matches &amp; Verification Matrix</span>
                         </div>
-                        <span id="associated-accounts-badge" class="mono" style="font-size:11px;color:var(--accent-cyan);"></span>
+                        <span id="associated-accounts-badge" class="mono" style="font-size:11px; color:var(--accent-cyan);"></span>
                     </div>
                     <div id="associated-accounts-body"></div>
                 </div>
 
-                <!-- 5. GOOGLE SEARCH DORKING -->
-                <div class="soc-card" id="card-google-dorking">
+
+                <!-- ==================================================
+                     4. MEDIA GALLERY & TARGET PHOTOS
+                =================================================== -->
+                <div class="soc-card" id="card-media-gallery" style="border-color:var(--accent-cyan); display:none;">
                     <div class="soc-card-header">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-                            <span class="card-title-text">Google Search Dorking Discovery</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                            <span class="card-title-text">OSINT Target Media Gallery</span>
                         </div>
-                        <span id="dorking-count-badge" class="mono" style="font-size:11px;color:var(--accent-cyan);"></span>
+                        <span id="media-gallery-badge" class="mono" style="font-size:11px; color:var(--accent-cyan);">0 FILES</span>
                     </div>
+                    <div id="media-gallery-body" style="padding:10px 0 0 0;">
+                        <!-- Dynamic Media Grid -->
+                    </div>
+                </div>
+
+
+                <!-- ==================================================
+                     5. GOOGLE DORKING
+                =================================================== -->
+
+                <div
+                    class="soc-card"
+                    id="card-google-dorking">
+
+                    <div class="soc-card-header">
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        ">
+
+                            <svg
+                                class="icon-svg cyan"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2">
+
+                                <circle
+                                    cx="12"
+                                    cy="12"
+                                    r="10">
+                                </circle>
+
+                                <line
+                                    x1="2"
+                                    y1="12"
+                                    x2="22"
+                                    y2="12">
+                                </line>
+
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+
+                            </svg>
+
+                            <span class="card-title-text">
+                                Google Search Dorking Discovery
+                            </span>
+
+                        </div>
+
+
+                        <span
+                            id="dorking-count-badge"
+                            class="mono"
+                            style="
+                                font-size:11px;
+                                color:var(--accent-cyan);
+                            ">
+                        </span>
+
+                    </div>
+
+
                     <div id="dorking-results-body"></div>
+
                 </div>
 
-                <!-- 6. TELEGRAM CTI BREACH INTELLIGENCE -->
-                <div class="soc-card" id="card-telegram-cti">
+
+                <!-- ==================================================
+                     6. TELEGRAM CTI
+                =================================================== -->
+
+                <div
+                    class="soc-card"
+                    id="card-telegram-cti">
+
                     <div class="soc-card-header">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                            <span class="card-title-text">Telegram CTI Breach Intelligence</span>
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        ">
+
+                            <svg
+                                class="icon-svg cyan"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2">
+
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+
+                            </svg>
+
+                            <span class="card-title-text">
+                                Telegram CTI Breach Intelligence
+                            </span>
+
                         </div>
-                        <span id="cti-records-badge" class="mono" style="font-size:11px;color:var(--risk-critical);"></span>
+
+
+                        <span
+                            id="cti-records-badge"
+                            class="mono"
+                            style="
+                                font-size:11px;
+                                color:var(--risk-critical);
+                            ">
+                        </span>
+
                     </div>
+
+
                     <div id="telegram-cti-body"></div>
+
                 </div>
 
-                <!-- 7. PLATFORM DOSSIERS -->
-                <div class="soc-card" id="card-platform-dossiers">
+
+                <!-- ==================================================
+                     7. PLATFORM DOSSIERS
+                =================================================== -->
+
+                <div
+                    class="soc-card"
+                    id="card-platform-dossiers">
+
                     <div class="soc-card-header">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <svg class="icon-svg cyan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                            <span class="card-title-text">Platform Dossiers</span>
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        ">
+
+                            <svg
+                                class="icon-svg cyan"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2">
+
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+
+                            </svg>
+
+                            <span class="card-title-text">
+                                Platform Dossiers
+                            </span>
+
                         </div>
+
                     </div>
+
+
                     <div id="platform-dossiers-body"></div>
+
                 </div>
 
-            </div><!-- /right-panel -->
+            </div>
 
-        </div><!-- /dashboard-grid -->
-    </div><!-- /results-workspace -->
+        </div>
 
-</div><!-- /main-dashboard -->
+    </div>
+
+</div>
+
+
+<!-- ============================================================
+     AI MODEL CONTROLLER
+     
+     This is inline so no change to app.js is required for
+     the selector itself.
+============================================================= -->
+
+<script>
+
+    /*
+     * Current AI model.
+     *
+     * Values:
+     *   "groq"
+     *   "gemini"
+     */
+    let selectedAiModel = "groq";
+
+
+    /*
+     * Select AI model.
+     *
+     * Every AI selector on the page is synchronized.
+     */
+    function selectAiModel(model) {
+
+        if (model !== "groq" && model !== "gemini") {
+            model = "groq";
+        }
+
+        selectedAiModel = model;
+
+        if (typeof window.currentAiMode !== "undefined") {
+            window.currentAiMode = model;
+        }
+        if (typeof window.renderAiPersonalityBody === "function") {
+            window.renderAiPersonalityBody();
+        }
+
+        document.querySelectorAll(".ai-toggle-checkbox").forEach(cb => {
+            cb.checked = (model === "gemini");
+        });
+        document.querySelectorAll(".ai-toggle-row").forEach(row => {
+            row.classList.toggle("ai-active", model === "gemini");
+        });
+
+
+        /*
+         * Update every selector.
+         */
+        document
+            .querySelectorAll(".minimal-ai-selector")
+            .forEach(function(selector) {
+
+                selector.dataset.model = model;
+
+
+                selector
+                    .querySelectorAll(".minimal-ai-option")
+                    .forEach(function(option) {
+
+                        const active =
+                            option.dataset.model === model;
+
+                        option.classList.toggle(
+                            "active",
+                            active
+                        );
+
+                        option.setAttribute(
+                            "aria-checked",
+                            active ? "true" : "false"
+                        );
+
+                    });
+
+            });
+
+
+        /*
+         * Human-readable model name.
+         */
+        const modelName =
+            model === "gemini"
+                ? "Gemini"
+                : "Groq";
+
+
+        /*
+         * Update hero model label.
+         */
+        const heroLabel =
+            document.getElementById(
+                "hero-ai-mode-label"
+            );
+
+        if (heroLabel) {
+
+            heroLabel.textContent =
+                modelName;
+
+            if (model === "gemini") {
+
+                heroLabel.style.color =
+                    "#b49cff";
+
+            } else {
+
+                heroLabel.style.color =
+                    "var(--accent-cyan)";
+
+            }
+
+        }
+
+
+        /*
+         * Update AI card badge.
+         */
+        const categoryBadge =
+            document.getElementById(
+                "ai-category-badge"
+            );
+
+        if (categoryBadge) {
+
+            categoryBadge.textContent =
+                modelName.toUpperCase();
+
+            categoryBadge.style.color =
+                model === "gemini"
+                    ? "#b49cff"
+                    : "var(--accent-cyan)";
+
+        }
+
+
+        /*
+         * Expose globally.
+         *
+         * Useful if app.js needs to read:
+         *
+         * window.selectedAiModel
+         */
+        window.selectedAiModel =
+            selectedAiModel;
+
+
+        /*
+         * Optional console logging.
+         *
+         * Does not interfere with the existing app.
+         */
+        if (
+            typeof appendConsole === "function"
+        ) {
+
+            try {
+
+                appendConsole(
+                    "[AI] Analysis engine → " +
+                    modelName
+                );
+
+            } catch (error) {
+                // Existing console implementation
+                // is allowed to fail silently.
+            }
+
+        }
+
+    }
+
+
+    /*
+     * Compatibility function.
+     *
+     * Your old HTML used:
+     *
+     * handleAiToggleChange(this.checked)
+     *
+     * If an old piece of app.js still calls this function,
+     * it will continue working.
+     */
+    function handleAiToggleChange(value) {
+
+        /*
+         * Boolean true previously represented
+         * the second option, Gemini.
+         */
+        if (typeof value === "boolean") {
+
+            selectAiModel(
+                value
+                    ? "gemini"
+                    : "groq"
+            );
+
+            return;
+        }
+
+
+        /*
+         * Also support direct model strings.
+         */
+        if (
+            value === "gemini" ||
+            value === "groq"
+        ) {
+
+            selectAiModel(value);
+
+        }
+
+    }
+
+
+    /*
+     * Make the current model easy for app.js to access.
+     */
+    window.getSelectedAiModel =
+        function() {
+
+            return selectedAiModel;
+
+        };
+
+
+    /*
+     * Initialize all selectors on page load.
+     */
+    document.addEventListener(
+        "DOMContentLoaded",
+        function() {
+
+            selectAiModel("groq");
+
+        }
+    );
+
+</script>
+
+
+<!-- ============================================================
+     EXISTING APPLICATION SCRIPTS
+============================================================= -->
 
 <script src="js/lea_pdf_exporter.js"></script>
 <script src="js/app.js"></script>
+
 </body>
 </html>

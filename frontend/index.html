@@ -616,6 +616,36 @@
 
                         <div class="glass-card">
                             <div class="card-header-bar">
+                                <span class="card-title">Telegram CTI Health Check</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:10px;">
+                                <div style="font-size:0.78rem; color:var(--text-secondary); line-height:1.5;">
+                                    Runs a safe live provider probe with a harmless test string and returns the CTI provider response.
+                                </div>
+                                <div class="detail-item">
+                                    <span>Live Status</span>
+                                    <span class="mono" id="diag-cti-health-status" style="font-size:0.75rem; color:var(--accent-gold);">NOT RUN</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span>Provider Outcome</span>
+                                    <span class="mono" id="diag-cti-health-outcome" style="font-size:0.75rem;">UNKNOWN</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span>HTTP Status</span>
+                                    <span class="mono" id="diag-cti-health-http" style="font-size:0.75rem;">-</span>
+                                </div>
+                                <button id="btn-run-cti-health" class="btn-action" style="margin-top: 4px; width: 100%; justify-content: center;">
+                                    RUN CTI HEALTH CHECK
+                                </button>
+                                <div id="diag-cti-health-message" style="font-size:0.72rem; color:var(--text-secondary); line-height:1.45;">
+                                    No live CTI provider response yet.
+                                </div>
+                                <pre id="diag-cti-health-response" style="margin:0; max-height:240px; overflow:auto; padding:10px; border-radius:6px; background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.08); color:var(--text-primary); font-size:0.68rem; white-space:pre-wrap; word-break:break-word;">Awaiting live probe…</pre>
+                            </div>
+                        </div>
+
+                        <div class="glass-card">
+                            <div class="card-header-bar">
                                 <span class="card-title">Version Specifications</span>
                             </div>
                             <div style="display:flex; flex-direction:column; gap:8px;">

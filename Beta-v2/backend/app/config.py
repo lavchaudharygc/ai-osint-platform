@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     groq_api_url: str = "https://api.groq.com/openai/v1/chat/completions"
     groq_model: str = "llama-3.3-70b-versatile"
 
+    gemini_api_key: str | None = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY"))
+    gemini_model: str = "gemini-3.6-flash"
+
     deepseek_api_key: str | None = Field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY"))
     deepseek_api_url: str = "https://api.deepseek.com/v1/chat/completions"
     deepseek_model: str = "deepseek-chat"
@@ -41,7 +44,7 @@ class Settings(BaseSettings):
     telegram_api_id: int = 39811427
     telegram_api_hash: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_API_HASH"))
     telegram_cti_api_key: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_CTI_API_KEY"))
-    telegram_cti_enabled: bool = True
+    telegram_cti_enabled: bool = Field(default_factory=lambda: os.getenv("TELEGRAM_CTI_ENABLED", "true").lower() == "true")
 
     database_url: str = "sqlite:///./beta_v2_osint.db"
 

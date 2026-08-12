@@ -11,6 +11,8 @@ from typing import Any
 
 import httpx
 
+import os
+
 from backend.core.config import settings
 
 
@@ -89,6 +91,8 @@ class ApifyActorClient:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         configured_token = settings.apify_api_token if token is None else token
+        if not configured_token:
+            configured_token = os.getenv("APIFY_TOKEN") or os.getenv("APIFY_API_TOKEN")
         self.token = configured_token.strip() if configured_token else None
         self.base_url = (base_url or settings.apify_base_url).rstrip("/")
         self.http_timeout_seconds = http_timeout_seconds or settings.apify_http_timeout_seconds

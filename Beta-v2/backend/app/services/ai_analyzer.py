@@ -4,7 +4,9 @@ Instagram post hashtags & captions, all platform bios, dorking snippets.
 Cybersecurity/OSINT-specialist taxonomy. Never defaults to generic labels.
 """
 
+import asyncio
 import json
+import os
 import re
 import logging
 from typing import Any, Dict, List, Tuple
@@ -214,58 +216,8 @@ class AIAnalyzer:
             pct = min(pct, 70)
             cross_note = "Single Platform Analysis — Limited Data"
 
-        ai_extras: Dict[str, Any] = {}
-        if self.is_configured():
-            try:
-                async with httpx.AsyncClient(timeout=20.0) as client:
-                    resp = await client.post(
-                        self.api_url,
-                        headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                        json={
-                            "model": self.model,
-                            "messages": [
-                                {
-                                    "role": "system",
-                                    "content": (
-                                        "You are a senior behavioral analyst for a Law Enforcement Cyber Crime Operations Center. "
-                                        "Given OSINT profile text and Instagram hashtags, return ONLY raw JSON with keys: "
-                                        "summary (1-2 sentences, evidence-based — cybersecurity specialists must NOT be labeled privacy advocates), "
-                                        "traits (up to 5 short strings describing professional/technical traits), "
-                                        "interests (up to 5 short strings — focus on technical and professional interests), "
-                                        "tone (one word: analytical|technical|formal|casual|professional), "
-                                        "riskFlags (array of {label, severity: 'low'|'medium'|'high'}). "
-                                        "Base every field strictly on supplied evidence. Never invent. "
-                                        "If evidence shows cybersecurity/OSINT/police keywords, classify accordingly. "
-                                        "Return raw JSON only, no markdown."
-                                    ),
-                                },
-                                {"role": "user", "content": corpus[:3000]},
-                            ],
-                            "temperature": 0.2,
-                            "max_tokens": 500,
-                            "response_format": {"type": "json_object"},
-                        },
-                    )
-                if resp.status_code == 200:
-                    raw = resp.json()["choices"][0]["message"]["content"]
-                    parsed = json.loads(raw) if isinstance(raw, str) else raw
-                    if isinstance(parsed, dict):
-                        ai_extras = {
-                            "summary": self._sanitize(str(parsed.get("summary") or ""))[:400],
-                            "traits": [str(x) for x in (parsed.get("traits") or [])[:6]],
-                            "interests": [str(x) for x in (parsed.get("interests") or [])[:6]],
-                            "tone": str(parsed.get("tone") or "neutral"),
-                            "riskFlags": [
-                                {
-                                    "label": str(f.get("label") or f)[:60],
-                                    "severity": f.get("severity") if f.get("severity") in {"low", "medium", "high"} else "low",
-                                }
-                                for f in (parsed.get("riskFlags") or [])[:6]
-                                if isinstance(f, dict)
-                            ],
-                        }
-            except Exception as exc:
-                logger.warning("AI personality API call failed: %s", exc)
+        # Run Groq profiling
+        ai_extras = await self._run_groq_analysis(corpus[:3000]) if self.is_configured() else {}
 
         return {
             "summary": ai_extras.get("summary") or f"Public profile signals align with {top['category']}.",
@@ -287,6 +239,154 @@ class AIAnalyzer:
             ],
             "crossPlatformNote": cross_note,
             "platformCount": platform_count,
+        }
+
+    async def _run_groq_analysis(self, corpus_text: str) -> Dict[str, Any]:
+        """Run Groq Llama-3.3-70b behavioral extraction."""
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(
+                    self.api_url,
+                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a senior behavioral analyst for a Law Enforcement Cyber Crime Operations Center. "
+                                    "Given OSINT profile text and Instagram hashtags, return ONLY raw JSON with keys: "
+                                    "summary (2-3 detailed sentences, evidence-based — cybersecurity specialists must NOT be labeled privacy advocates), "
+                                    "traits (up to 5 short strings describing professional/technical traits), "
+                                    "interests (up to 5 short strings — focus on technical and professional interests), "
+                                    "tone (one word: analytical|technical|formal|casual|professional), "
+                                    "riskFlags (array of {label, severity: 'low'|'medium'|'high'}). "
+                                    "Base every field strictly on supplied evidence. Never invent. "
+                                    "If evidence shows cybersecurity/OSINT/police keywords, classify accordingly. "
+                                    "Return raw JSON only, no markdown."
+                                ),
+                            },
+                            {"role": "user", "content": corpus_text},
+                        ],
+                        "temperature": 0.2,
+                        "max_tokens": 500,
+                        "response_format": {"type": "json_object"},
+                    },
+                )
+            if resp.status_code == 200:
+                raw = resp.json()["choices"][0]["message"]["content"]
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return {
+                        "summary": self._sanitize(str(parsed.get("summary") or ""))[:400],
+                        "traits": [str(x) for x in (parsed.get("traits") or [])[:6]],
+                        "interests": [str(x) for x in (parsed.get("interests") or [])[:6]],
+                        "tone": str(parsed.get("tone") or "neutral"),
+                        "riskFlags": [
+                            {
+                                "label": str(f.get("label") or f)[:60],
+                                "severity": f.get("severity") if isinstance(f, dict) and f.get("severity") in {"low", "medium", "high"} else "low",
+                            }
+                            for f in (parsed.get("riskFlags") or [])[:6]
+                        ],
+                    }
+        except Exception as exc:
+            logger.warning("AI personality API call failed: %s", exc)
+        return {}
+
+    async def analyze_with_gemini_reasoning(
+        self,
+        corpus_text: str,
+        top_category: str = "Cybersecurity & Incident Response",
+    ) -> Dict[str, Any]:
+        """Generate AI behavioral profiling and step-by-step reasoning trace using Gemini 3.6 Flash."""
+        gemini_key = settings.gemini_api_key or os.getenv("GEMINI_API_KEY")
+        if not gemini_key:
+            return {
+                "available": False,
+                "engine": "Google Gemini 3.6-Flash (Reasoning Model)",
+                "summary": "Gemini API key not configured.",
+                "reasoningTrace": ["Step 1: Gemini API key missing."],
+                "primaryCategory": top_category,
+                "confidence": 0,
+                "traits": [], "interests": [], "riskFlags": [],
+            }
+
+        model_name = settings.gemini_model or "gemini-3.6-flash"
+        clean_model = model_name.replace("models/", "")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={gemini_key}"
+
+        prompt = (
+            "You are Google Gemini 3.6-Flash, an advanced AI Reasoning and Cyber Intelligence Model. "
+            "Given the OSINT evidence corpus below, perform deep multi-source behavioral analysis and step-by-step reasoning. "
+            "Return ONLY raw JSON matching this schema:\n"
+            "{\n"
+            '  "summary": "2-3 detailed sentences evidence-based summary",\n'
+            '  "primaryCategory": "Category Name",\n'
+            '  "confidence": 90,\n'
+            '  "confidenceLabel": "very_high|high|moderate|low",\n'
+            '  "traits": ["trait1", "trait2", "trait3"],\n'
+            '  "interests": ["interest1", "interest2", "interest3"],\n'
+            '  "tone": "analytical",\n'
+            '  "reasoningTrace": [\n'
+            '    "Step 1: Evaluated public profile signals and verified platform evidence...",\n'
+            '    "Step 2: Correlated cross-platform usernames, LEA advisory credentials, and dorking snippets...",\n'
+            '    "Step 3: Applied threat matrix classification to establish primary category..."\n'
+            '  ],\n'
+            '  "riskFlags": [\n'
+            '    {"label": "Flag description", "severity": "low|medium|high"}\n'
+            '  ]\n'
+            "}\n\n"
+            f"OSINT EVIDENCE CORPUS:\n{corpus_text}"
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(
+                    url,
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {"temperature": 0.2},
+                    },
+                )
+            if resp.status_code == 200:
+                text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                clean_text = text.strip()
+                if clean_text.startswith("```"):
+                    clean_text = re.sub(r"^```(?:json)?\n?", "", clean_text)
+                    clean_text = re.sub(r"\n?```$", "", clean_text).strip()
+                parsed = json.loads(clean_text)
+                if isinstance(parsed, dict):
+                    return {
+                        "available": True,
+                        "engine": "Google Gemini 3.6-Flash (Reasoning Model)",
+                        "summary": self._sanitize(str(parsed.get("summary") or ""))[:500],
+                        "primaryCategory": str(parsed.get("primaryCategory") or top_category),
+                        "confidence": int(parsed.get("confidence") or 85),
+                        "confidenceLabel": str(parsed.get("confidenceLabel") or "high"),
+                        "traits": [str(x) for x in (parsed.get("traits") or [])[:6]],
+                        "interests": [str(x) for x in (parsed.get("interests") or [])[:6]],
+                        "tone": str(parsed.get("tone") or "analytical"),
+                        "reasoningTrace": [str(r) for r in (parsed.get("reasoningTrace") or [])[:6]],
+                        "riskFlags": [
+                            {
+                                "label": str(f.get("label") or f)[:60],
+                                "severity": f.get("severity") if isinstance(f, dict) and f.get("severity") in {"low", "medium", "high"} else "low",
+                            }
+                            for f in (parsed.get("riskFlags") or [])[:6]
+                        ],
+                    }
+        except Exception as exc:
+            logger.warning("Gemini AI reasoning call failed: %s", exc)
+
+        return {
+            "available": False,
+            "engine": "Google Gemini 3.6-Flash (Reasoning Model)",
+            "summary": "Gemini reasoning model analysis unavailable.",
+            "reasoningTrace": ["Step 1: Failed to complete Gemini reasoning call."],
+            "primaryCategory": top_category,
+            "confidence": 0,
+            "traits": [], "interests": [], "riskFlags": [],
         }
 
     async def assess_risk(self, profile_data: Dict[str, Any]) -> Dict[str, Any]:

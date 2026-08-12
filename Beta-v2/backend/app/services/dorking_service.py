@@ -40,11 +40,20 @@ class DorkingService:
             }
 
         q_clean = query.strip()
-        search_terms = [
-            f'"{q_clean}" site:linkedin.com OR site:twitter.com OR site:github.com OR site:instagram.com',
-            f'"{q_clean}" email OR phone OR contact',
-            f'inurl:{q_clean}',
-        ]
+        digits_only = re.sub(r"\D", "", q_clean)
+        if digits_only and len(digits_only) >= 7:
+            national = digits_only[-10:] if len(digits_only) >= 10 else digits_only
+            search_terms = [
+                f'"{q_clean}" OR "{digits_only}" OR "{national}"',
+                f'"{national}" site:linkedin.com OR site:twitter.com OR site:facebook.com OR site:instagram.com OR site:t.me',
+                f'"{national}" contact OR phone OR email',
+            ]
+        else:
+            search_terms = [
+                f'"{q_clean}" site:linkedin.com OR site:twitter.com OR site:github.com OR site:instagram.com',
+                f'"{q_clean}" email OR phone OR contact',
+                f'inurl:"{q_clean}"',
+            ]
 
         all_results: List[Dict[str, Any]] = []
         queries_run = 0
