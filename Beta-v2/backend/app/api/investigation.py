@@ -195,34 +195,33 @@ async def run_investigation(request: InvestigationRequest):
         linkedin_combined["emails"] = list(dict.fromkeys([*linkedin_combined["emails"], *(str(e).strip() for e in sh_emails if e)]))
         linkedin_combined["phone_numbers"] = list(dict.fromkeys([*linkedin_combined["phone_numbers"], *(str(p).strip() for p in sh_phones if p)]))
         linkedin_combined["phones"] = linkedin_combined["phone_numbers"]
+    if isinstance(rr_res, dict):
+        if rr_res.get("success"):
+            rr_emails = rr_res.get("emails") or []
+            rr_phones = rr_res.get("phones") or []
+            linkedin_combined["emails"] = list(dict.fromkeys([*linkedin_combined["emails"], *(str(e).strip() for e in rr_emails if e)]))
+            linkedin_combined["phone_numbers"] = list(dict.fromkeys([*linkedin_combined["phone_numbers"], *(str(p).strip() for p in rr_phones if p)]))
+            linkedin_combined["phones"] = linkedin_combined["phone_numbers"]
+            linkedin_combined["rocketreach"] = rr_res
+            linkedin_combined["success"] = True
+            
+            if not linkedin_combined.get("full_name") and rr_res.get("full_name"):
+                linkedin_combined["full_name"] = rr_res["full_name"]
+            if not linkedin_combined.get("headline") and rr_res.get("current_title"):
+                emp = f" at {rr_res['current_employer']}" if rr_res.get("current_employer") else ""
+                linkedin_combined["headline"] = f"{rr_res['current_title']}{emp}"
+            if not linkedin_combined.get("location") and rr_res.get("location"):
+                linkedin_combined["location"] = rr_res["location"]
+            if not linkedin_combined.get("current_company") and rr_res.get("current_employer"):
+                linkedin_combined["current_company"] = rr_res["current_employer"]
+            if not linkedin_combined.get("profile_url"):
+                linkedin_combined["profile_url"] = li_url
+            if not linkedin_combined.get("experience") and rr_res.get("job_history"):
+                linkedin_combined["experience"] = rr_res["job_history"]
+            if not linkedin_combined.get("education") and rr_res.get("education"):
+                linkedin_combined["education"] = rr_res["education"]
 
-    # Merge RocketReach data resolved concurrently
-    if isinstance(rr_res, dict) and rr_res.get("success"):
-        rr_emails = rr_res.get("emails") or []
-        rr_phones = rr_res.get("phones") or []
-        linkedin_combined["emails"] = list(dict.fromkeys([*linkedin_combined["emails"], *(str(e).strip() for e in rr_emails if e)]))
-        linkedin_combined["phone_numbers"] = list(dict.fromkeys([*linkedin_combined["phone_numbers"], *(str(p).strip() for p in rr_phones if p)]))
-        linkedin_combined["phones"] = linkedin_combined["phone_numbers"]
-        linkedin_combined["rocketreach"] = rr_res
-        linkedin_combined["success"] = True
-        
-        if not linkedin_combined.get("full_name") and rr_res.get("full_name"):
-            linkedin_combined["full_name"] = rr_res["full_name"]
-        if not linkedin_combined.get("headline") and rr_res.get("current_title"):
-            emp = f" at {rr_res['current_employer']}" if rr_res.get("current_employer") else ""
-            linkedin_combined["headline"] = f"{rr_res['current_title']}{emp}"
-        if not linkedin_combined.get("location") and rr_res.get("location"):
-            linkedin_combined["location"] = rr_res["location"]
-        if not linkedin_combined.get("current_company") and rr_res.get("current_employer"):
-            linkedin_combined["current_company"] = rr_res["current_employer"]
-        if not linkedin_combined.get("profile_url"):
-            linkedin_combined["profile_url"] = li_url
-        if not linkedin_combined.get("experience") and rr_res.get("job_history"):
-            linkedin_combined["experience"] = rr_res["job_history"]
-        if not linkedin_combined.get("education") and rr_res.get("education"):
-            linkedin_combined["education"] = rr_res["education"]
-
-        # Expose top-level rocketreach module in scraped_data
+        # Always expose top-level rocketreach module in scraped_data
         scraped_data["rocketreach"] = rr_res
 
     # Filter only successful profiles

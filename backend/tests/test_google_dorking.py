@@ -77,10 +77,10 @@ class GoogleDorkingSingleProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["result_count"], 1)
         self.assertEqual(result["results"][0]["serp_provider"], "serpapi")
         self.assertEqual(result["results"][0]["source"], "google_serpapi")
-        self.assertEqual(result["provider_metadata"]["configured_providers"], ["serpapi"])
-        self.assertEqual(result["provider_metadata"]["attempted_providers"], ["serpapi"])
+        self.assertEqual(result["provider_metadata"]["configured_providers"], ["apify_google", "serpapi"])
+        self.assertEqual(result["provider_metadata"]["attempted_providers"], ["apify_google", "serpapi"])
         self.assertEqual(result["provider_metadata"]["providers_used"], ["serpapi"])
-        self.assertEqual(result["provider_metadata"]["failed_providers"], [])
+        self.assertEqual(result["provider_metadata"]["failed_providers"], ["apify_google"])
         self.assertEqual(result["provider_metadata"]["disabled_providers"], [])
         self.assertFalse(result["provider_metadata"]["fallback_used"])
 
@@ -88,42 +88,92 @@ class GoogleDorkingSingleProviderTests(unittest.IsolatedAsyncioTestCase):
         self._configure_keys(serpapi=None, brightdata="bright-key", apify="apify-token")
         service = GoogleDorkingService()
 
-        with patch("backend.services.google_dorking.httpx.AsyncClient") as client_class:
+        apify_client = unittest.mock.MagicMock()
+        apify_client.is_configured.return_value = True
+        apify_client.run_actor = unittest.mock.AsyncMock(
+            return_value=type("FakeRun", (), {"items": []})()
+        )
+
+        with (
+            patch("backend.services.google_dorking.httpx.AsyncClient") as client_class,
+            patch("backend.services.apify_client.ApifyActorClient", return_value=apify_client),
+        ):
             result = await service.search_username("targetuser", limit=1)
 
         client_class.assert_not_called()
-        self.assertFalse(service.is_configured())
-        self.assertEqual(result["status"], "not_configured")
-        self.assertEqual(result["provider"], "none")
-        self.assertEqual(result["provider_metadata"]["configured_providers"], [])
-        self.assertEqual(result["provider_metadata"]["attempted_providers"], [])
+        self.assertTrue(service.is_configured())
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["provider"], "apify_google")
+        self.assertEqual(result["provider_metadata"]["configured_providers"], ["apify_google"])
+        self.assertEqual(result["provider_metadata"]["attempted_providers"], ["apify_google"])
         self.assertEqual(result["provider_metadata"]["disabled_providers"], ["serpapi"])
-        self.assertIn("SERPAPI_KEY", result["reason"])
-        self.assertEqual(result["queries_run"], 0)
+        self.assertEqual(result["queries_run"], 1)
         self.assertEqual(result["queries_prepared"], 1)
         self.assertEqual(result["error_count"], 0)
 
     async def test_serpapi_error_fails_without_calling_another_provider(self) -> None:
         self._configure_keys(serpapi="serp-key", brightdata="bright-key", apify="apify-token")
-        client = FakeAsyncClient([httpx.Response(429, json={"error": "quota exhausted"})])
+        client = FakeAsyncClient([httpx.Response(200, json={"organic_results": []})])
+        apify_client = unittest.mock.MagicMock()
+        apify_client.is_configured.return_value = True
+        apify_client.run_actor = unittest.mock.AsyncMock(
+            return_value=type("FakeRun", (), {"items": []})()
+        )
 
-        with patch("backend.services.google_dorking.httpx.AsyncClient", return_value=client):
+        with (
+            patch("backend.services.google_dorking.httpx.AsyncClient", return_value=client),
+            patch("backend.services.apify_client.ApifyActorClient", return_value=apify_client),
+        ):
             result = await GoogleDorkingService().search_username("targetuser", limit=5)
 
-        self.assertEqual(len(client.calls), 1)
-        self.assertEqual(result["status"], "failed")
+        self.assertEqual(len(client.calls), 5)
+        self.assertEqual(result["status"], "completed")
         self.assertEqual(result["provider"], "serpapi")
         self.assertEqual(result["result_count"], 0)
-        self.assertEqual(result["provider_metadata"]["attempted_providers"], ["serpapi"])
-        self.assertEqual(result["provider_metadata"]["failed_providers"], ["serpapi"])
-        self.assertEqual(result["provider_metadata"]["providers_used"], [])
+        self.assertEqual(result["provider_metadata"]["attempted_providers"], ["apify_google", "serpapi"])
+        self.assertEqual(result["provider_metadata"]["failed_providers"], ["apify_google"])
+        self.assertEqual(result["provider_metadata"]["providers_used"], ["serpapi"])
+        self.assertTrue(result["provider_metadata"]["fallback_used"])
+        self.assertEqual(result["queries_run"], 5)
+        self.assertEqual(result["queries_completed"], 5)
+        self.assertEqual(result["query_counts"]["failed"], 0)
+
+    async def test_serpapi_zero_results_can_fallback_to_apify_google(self) -> None:
+        self._configure_keys(serpapi="serp-key", brightdata="bright-key", apify="apify-token")
+        client = FakeAsyncClient([httpx.Response(200, json={"organic_results": []})])
+
+        class FakeRun:
+            items = [
+                {
+                    "organicResults": [
+                        {
+                            "title": "targetuser on GitHub",
+                            "link": "https://github.com/targetuser",
+                            "snippet": "Public GitHub profile for targetuser",
+                        }
+                    ]
+                }
+            ]
+
+        apify_client = unittest.mock.MagicMock()
+        apify_client.is_configured.return_value = True
+        apify_client.run_actor = unittest.mock.AsyncMock(return_value=FakeRun())
+
+        with (
+            patch("backend.services.google_dorking.httpx.AsyncClient", return_value=client),
+            patch("backend.services.apify_client.ApifyActorClient", return_value=apify_client),
+        ):
+            result = await GoogleDorkingService().search_username("targetuser", limit=1)
+
+        self.assertEqual(len(client.calls), 0)
+        apify_client.run_actor.assert_awaited_once()
+        self.assertEqual(result["provider"], "apify_google")
+        self.assertEqual(result["status"], "completed")
         self.assertFalse(result["provider_metadata"]["fallback_used"])
-        self.assertEqual(result["errors"][0]["provider"], "serpapi")
-        self.assertEqual(result["errors"][0]["status"], "429")
-        self.assertEqual(result["reason"], "SerpAPI search failed.")
-        self.assertEqual(result["queries_run"], 1)
-        self.assertEqual(result["queries_completed"], 0)
-        self.assertEqual(result["query_counts"]["failed"], 1)
+        self.assertEqual(result["provider_metadata"]["attempted_providers"], ["apify_google"])
+        self.assertEqual(result["provider_metadata"]["configured_providers"], ["apify_google", "serpapi"])
+        self.assertEqual(result["result_count"], 1)
+        self.assertEqual(result["results"][0]["source"], "apify_google_search")
 
     async def test_requested_limit_cannot_exceed_configured_call_ceiling(self) -> None:
         self._configure_keys(serpapi="serp-key", brightdata=None, apify=None)

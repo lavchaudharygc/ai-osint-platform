@@ -404,6 +404,7 @@ function renderDorkingPanel(dorking, countElement, containerElement) {
     const queryDetails = getDorkQueryDetails(dorking);
     const isFailure = ["failed", "not_configured"].includes(view.kind);
     const isWarning = ["partial", "budget", "skipped", "unknown"].includes(view.kind);
+    const isSuccess = ["completed", "empty"].includes(view.kind);
     const statusColor = isFailure
         ? "var(--accent-crimson)"
         : (isWarning ? "var(--accent-gold)" : "var(--accent-blue)");
@@ -417,10 +418,10 @@ function renderDorkingPanel(dorking, countElement, containerElement) {
     }
 
     let html = `
-        <div style="background:rgba(255,255,255,0.025); border:1px solid ${statusBorder}; padding:10px 12px; border-radius:6px; line-height:1.45;">
-            <div style="font-size:0.78rem; font-weight:700; color:${statusColor};">${escapeHTML(view.label)}</div>
-            <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:3px;">${escapeHTML(view.detail)}</div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:7px; font-family:'Share Tech Mono',monospace; font-size:0.65rem; color:var(--text-secondary);">
+        <div style="background:rgba(255,255,255,0.04); border:1px solid ${statusBorder}; padding:12px 14px; border-radius:8px; line-height:1.5;">
+            <div style="font-size:0.82rem; font-weight:800; color:${statusColor}; letter-spacing:0.02em;">${escapeHTML(view.label)}</div>
+            <div style="font-size:0.74rem; color:var(--text-primary); margin-top:4px;">${escapeHTML(view.detail)}</div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; font-family:'Share Tech Mono',monospace; font-size:0.66rem; color:var(--text-primary);">
                 <span>Provider: ${escapeHTML(dorking.provider || "serpapi")}</span>
                 <span>Queries attempted: ${view.queriesRun}</span>
                 <span>Results retained: ${view.results.length}</span>
@@ -449,19 +450,19 @@ function renderDorkingPanel(dorking, countElement, containerElement) {
 
     if (queryDetails.length > 0) {
         html += `
-            <details style="border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:7px 9px;">
+            <details ${isSuccess ? "open" : ""} style="border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:7px 9px;">
                 <summary style="cursor:pointer; color:var(--text-primary); font-size:0.72rem; font-weight:700;">Prepared and executed queries (${queryDetails.length})</summary>
                 <div style="display:flex; flex-direction:column; gap:6px; margin-top:7px;">
                     ${queryDetails.map(query => {
                         const stateColor = query.state === "failed"
                             ? "var(--accent-crimson)"
                             : (query.state === "executed" ? "#00ff66" : "var(--text-secondary)");
-                        return `<div style="background:rgba(255,255,255,0.02); padding:6px 8px; border-radius:4px; font-size:0.66rem; word-break:break-word;">
+                        return `<div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); padding:6px 8px; border-radius:4px; font-size:0.66rem; word-break:break-word;">
                             <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:2px;">
-                                <span style="text-transform:uppercase; color:var(--text-secondary);">${escapeHTML(query.category.replace(/_/g, " "))}</span>
+                                <span style="text-transform:uppercase; color:var(--text-primary);">${escapeHTML(query.category.replace(/_/g, " "))}</span>
                                 <span style="color:${stateColor}; text-transform:uppercase;">${escapeHTML(query.state.replace(/_/g, " "))}</span>
                             </div>
-                            <div style="font-family:monospace; color:var(--accent-gold);">${escapeHTML(query.query)}</div>
+                            <div style="font-family:monospace; color:#ffd36a;">${escapeHTML(query.query)}</div>
                         </div>`;
                     }).join("")}
                 </div>
@@ -1848,7 +1849,7 @@ function renderInvestigationResults(data) {
                         if (ia.recommended_osint_bots && ia.recommended_osint_bots.length > 0) {
                             extraHTML += `
                                 <div style="margin-top:10px; background:rgba(0,198,255,0.03); border:1px solid rgba(0,198,255,0.12); padding:8px 10px; border-radius:6px;">
-                                    <div style="font-size:0.7rem; text-transform:uppercase; font-weight:700; color:var(--accent-blue); margin-bottom:4px;">Recommended Telegram OSINT Bots (Methodology):</div>
+                                    <div style="font-size:0.7rem; text-transform:uppercase; font-weight:700; color:var(--accent-blue); margin-bottom:4px;">Recommended Telegram Checks:</div>
                                     <div style="display:flex; flex-direction:column; gap:3px;">
                                         ${ia.recommended_osint_bots.map(b => `<div style="font-size:0.72rem; color:var(--text-secondary);"><strong style="color:var(--accent-gold);">${b.bot}</strong> — ${b.purpose}</div>`).join("")}
                                     </div>
@@ -1866,8 +1867,8 @@ function renderInvestigationResults(data) {
                 let ctiHTML = `
                     <div style="margin-top:${hasTelegramProfile ? '14px' : '0'}; background:rgba(255,170,0,0.04); border:1px solid rgba(255,170,0,0.25); border-radius:8px; padding:14px;">
                         <div style="font-size:0.78rem; text-transform:uppercase; font-weight:700; color:var(--accent-gold); display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid rgba(255,170,0,0.15); padding-bottom:8px;">
-                            <span>🔍 Telegram CTI / Breach Intelligence</span>
-                            <span class="system-badge" style="background:rgba(255,170,0,0.1); border-color:rgba(255,170,0,0.3); color:var(--accent-gold);">Searches: ${data.telegram_cti.searches_performed || 0}</span>
+                            <span>Telegram CTI</span>
+                            <span class="system-badge" style="background:rgba(255,170,0,0.1); border-color:rgba(255,170,0,0.3); color:var(--accent-gold);">${data.telegram_cti.searches_performed || 0} checks</span>
                         </div>
                 `;
                 data.telegram_cti.results.forEach(res => {
@@ -2931,11 +2932,11 @@ function renderOfficialReportTemplate(data, caseId) {
     <p>This public-source run returned ${escapeHTML(evidenceTierSummary)} for handle <strong>${escapeHTML(pData.username || "N/A")}</strong>. These results do not by themselves establish intent, criminality, or a legal basis for intrusive action. Human review of independent attributes and provider limitations is required.</p>
     
     <div style="margin-top: 50px;">
-        <p>Report Generated by: AI-OSINT Platform v0.1</p>
+        <p>Report Generated by: AI-OSINT Platform</p>
         <p>Date: ${currentDate}</p>
         <p>Signature: ___________________________</p>
         <p>Name: Investigator Ark Agrawal</p>
-        <p>Designation: Cybersecurity Special Agent, U.P. Police</p>
+        <p>Designation: Analyst</p>
     </div>
 
     <!-- Print control bar for browser save -->

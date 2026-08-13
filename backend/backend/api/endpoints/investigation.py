@@ -2211,9 +2211,13 @@ async def _investigate_username_impl(
         if request.dork_query_limit is None
         else min(request.dork_query_limit, configured_dork_limit)
     )
-    # Search is lowest priority because one dork can consume one SerpAPI call.
-    # Explicit specialist inputs and the requested platform reserve first.
+    # Keep a small SerpAPI slice available before later provider work can
+    # consume the request budget.
     dork_query_limit = 0
+    if settings.serpapi_key and requested_dork_limit > 0:
+        dork_query_limit = min(requested_dork_limit, provider_budget.remaining)
+        if dork_query_limit:
+            provider_budget.reserve("search.serpapi", dork_query_limit)
 
     # 1. Run cross platform check to find where username exists
     cross_matches = await CrossPlatformSearchService().search_all_platforms(request.username)
@@ -2626,11 +2630,7 @@ async def _investigate_username_impl(
     )
 
     # 6. Fetch a bounded SerpAPI-only dork batch using the resolved name.
-    if settings.serpapi_key and requested_dork_limit > 0:
-        dork_query_limit = min(requested_dork_limit, provider_budget.remaining)
-        if dork_query_limit:
-            provider_budget.reserve("search.serpapi", dork_query_limit)
-    elif requested_dork_limit > 0:
+    if not settings.serpapi_key and requested_dork_limit > 0:
         # Preserve the requested query count in the not-configured response,
         # but do not reserve budget because no network request can be made.
         dork_query_limit = requested_dork_limit
@@ -2834,38 +2834,12 @@ async def _investigate_username_impl(
     cti_service = get_cti_service()
     if cti_service.is_configured() and getattr(settings, "telegram_cti_enabled", True):
         cti_queries: list[str] = []
-        if request.username:
-            cti_queries.append(request.username)
         if request.email:
             cti_queries.append(request.email)
         if request.phone_number:
             cti_queries.append(request.phone_number)
-        if fetched_name:
-            cti_queries.append(fetched_name)
 
-        # Collect discovered emails/phones from reverse lookup (scraped bios/captions)
-        if reverse_lookup_results and isinstance(reverse_lookup_results, dict):
-            c_intel = reverse_lookup_results.get("collected_intel") or {}
-            for e_val in c_intel.get("emails") or []:
-                if e_val and "@" in str(e_val):
-                    cti_queries.append(str(e_val).strip())
-
-        # Collect discovered emails from Hunter (stored under provider_results["contact"])
-        _hunter_contact = (provider_results or {}).get("contact") or {}
-        _hunter_data = None
-        for _hk in ("email_verification", "email_finder", "email_discovery"):
-            _v = _hunter_contact.get(_hk)
-            if isinstance(_v, dict) and (_v.get("data") or _v.get("emails")):
-                _hunter_data = _v
-                break
-        if _hunter_data:
-            h_data = _hunter_data.get("data") or {}
-            for e_item in h_data.get("emails") or []:
-                val = e_item.get("value") if isinstance(e_item, dict) else str(e_item)
-                if val and "@" in str(val):
-                    cti_queries.append(str(val).strip())
-
-        # Deduplicate and clean queries (min length 3)
+        # Deduplicate and clean queries (email / phone only)
         clean_queries: list[str] = []
         seen_queries: set[str] = set()
         for q_raw in cti_queries:

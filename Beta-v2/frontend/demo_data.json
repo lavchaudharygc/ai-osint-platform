@@ -855,7 +855,47 @@
         "full": "Delhi, India",
         "postal_code": "",
         "country_code": "IN"
+      },
+      "rocketreach": {
+        "success": true,
+        "full_name": "Narendra Modi",
+        "current_title": "Prime Minister",
+        "current_employer": "Government of India",
+        "location": "New Delhi, Delhi, India",
+        "emails": [
+          "narendramodi@pmo.gov.in"
+        ],
+        "phones": [
+          "+91 11-2301-2312"
+        ]
       }
+    },
+    "rocketreach": {
+      "success": true,
+      "full_name": "Narendra Modi",
+      "current_title": "Prime Minister",
+      "current_employer": "Government of India",
+      "location": "New Delhi, Delhi, India",
+      "emails": [
+        "narendramodi@pmo.gov.in"
+      ],
+      "phones": [
+        "+91 11-2301-2312"
+      ],
+      "job_history": [
+        {
+          "title": "Prime Minister",
+          "company": "Government of India",
+          "duration": "2014 - Present",
+          "location": "New Delhi, India"
+        },
+        {
+          "title": "Chief Minister",
+          "company": "Government of Gujarat",
+          "duration": "2001 - 2014",
+          "location": "Gandhinagar, India"
+        }
+      ]
     },
     "facebook": {
       "success": true,

@@ -139,7 +139,7 @@ async def fetch_cti(
 
     url = "https://leakosintapi.com/"
     semaphore = asyncio.Semaphore(3)
-    effective_limit = max(100, min(int(limit), 10000))
+    effective_limit = max(1, min(int(limit), 10000))
 
     async def _query_api(q: str, client: httpx.AsyncClient) -> tuple[str, Dict[str, Any] | None, str | None]:
         async with semaphore:
@@ -287,7 +287,7 @@ class TelegramCTIService:
     async def health_check(self) -> dict[str, Any]:
         """Run a safe live provider probe without querying a real target."""
         checked_at = datetime.now().isoformat()
-        probe_limit = max(100, min(int(self.default_limit or 100), 10_000))
+        probe_limit = 100
         if not getattr(settings, "telegram_cti_enabled", True):
             return {
                 "provider": "leakosintapi",

@@ -3032,7 +3032,7 @@ a.person-username-card:hover {
     border: 1px solid rgba(255, 215, 0, 0.3);
     border-left: 3px solid var(--accent-gold);
     border-radius: 7px;
-    color: var(--text-secondary);
+    color: #d8e2f0;
     font-size: 0.7rem;
     line-height: 1.5;
     padding: 14px 16px;
@@ -3042,6 +3042,12 @@ a.person-username-card:hover {
 .person-search-alert.is-error {
     border-color: rgba(255, 51, 102, 0.3);
     border-left-color: var(--accent-crimson);
+}
+
+.person-result-issues a,
+.person-setup-result a,
+.person-search-alert a {
+    color: var(--accent-blue);
 }
 
 .person-result-issues > strong,
@@ -3092,7 +3098,7 @@ a.person-username-card:hover {
 }
 
 .person-search-progress p {
-    color: var(--text-secondary);
+    color: #b7c3d9;
     font-size: 0.7rem;
     margin-top: 5px;
 }

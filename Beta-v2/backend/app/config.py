@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-chat"
 
     apify_api_token: str | None = Field(default_factory=lambda: os.getenv("APIFY_API_TOKEN"))
+    apify_base_url: str = "https://api.apify.com/v2"
+    apify_http_timeout_seconds: float = 30.0
+    apify_run_timeout_seconds: float = 300.0
+    apify_poll_wait_seconds: int = 5
+    apify_linkedin_profile_actor_id: str = "apimaestro/linkedin-profile-detail"
+    apify_linkedin_posts_actor_id: str = "bebity/linkedin-post-search-scraper"
     signalhire_api_key: str | None = Field(default_factory=lambda: os.getenv("SIGNALHIRE_API_KEY"))
     serpapi_key: str | None = Field(default_factory=lambda: os.getenv("SERPAPI_KEY"))
     hunter_api_key: str | None = Field(default_factory=lambda: os.getenv("HUNTER_API_KEY"))

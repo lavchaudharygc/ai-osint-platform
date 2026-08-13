@@ -113,13 +113,13 @@ function startScanLoader(target) {
 
     // Calibrated against live backend pipeline timing (avg 180,000 ms total runtime)
     const steps = [
-        { p: 10, msg: "Initializing WhatsMyName 700+ cross-platform probe engine..." },
-        { p: 25, msg: "Scraping public profiles & LinkedIn dossier (Apify + SignalHire)..." },
-        { p: 40, msg: "Querying SignalHire candidate enrichment & contact discovery..." },
-        { p: 55, msg: "Executing Google Search Dorking queries via SerpAPI & BrightData..." },
-        { p: 70, msg: "Searching Telegram CTI darkweb & leak databases..." },
-        { p: 85, msg: "Running AI multi-source behavioral classifier & threat scoring..." },
-        { p: 95, msg: "Synthesizing Consolidated Identity & associated accounts matrix..." },
+        { p: 10, msg: "Initializing 700+ cross-platform probe engine..." },
+        { p: 25, msg: "Scraping public profiles & professional dossier..." },
+        { p: 40, msg: "Querying contact discovery & enrichment..." },
+        { p: 55, msg: "Executing web search and query dorking..." },
+        { p: 70, msg: "Searching CTI breach & leak databases..." },
+        { p: 85, msg: "Running AI behavioral classifier & threat scoring..." },
+        { p: 95, msg: "Synthesizing Consolidated Identity & associated accounts..." },
     ];
 
     let currentPct = 0;
@@ -328,7 +328,7 @@ function handleAiToggleChange(isGemini) {
     });
 
     const label = document.getElementById("hero-ai-mode-label");
-    if (label) label.textContent = isGemini ? "Gemini 3.6" : "Groq Llama-3.3";
+    if (label) label.textContent = isGemini ? "SECONDARY ENGINE" : "PRIMARY ENGINE";
 
     renderAiPersonalityBody();
 }
@@ -360,7 +360,7 @@ function renderAiPersonalityBody() {
     }
 
     if (catBadge) {
-        catBadge.textContent = `${groq.primaryCategory || "Unclassified"} · ${groq.confidence || 0}% (Groq)`;
+        catBadge.textContent = `${groq.primaryCategory || "Unclassified"} · ${groq.confidence || 0}%`;
     }
 
     body.innerHTML = renderGroqView(groq);
@@ -368,7 +368,7 @@ function renderAiPersonalityBody() {
 window.renderAiPersonalityBody = renderAiPersonalityBody;
 
 function renderGroqView(ap) {
-    if (!ap || !ap.summary) return "<div style='color:var(--text-muted); font-size:12px;'>Groq profiling data unavailable.</div>";
+    if (!ap || !ap.summary) return "<div style='color:var(--text-muted); font-size:12px;'>AI profiling data unavailable.</div>";
     const traitsHTML = (ap.traits || []).map(t => `<span class="tag-chip">${escapeHTML(t)}</span>`).join("");
     const interestsHTML = (ap.interests || []).map(i => `<span class="tag-chip interest">${escapeHTML(i)}</span>`).join("");
     const riskFlagsHTML = (ap.riskFlags || []).map(f => `
@@ -391,7 +391,6 @@ function renderGroqView(ap) {
         </div>
     `;
 }
-// 3. WhatsMyName Probe Matrix (deprecated, merged into platform matrix)
 
 // 4. Google Search Dorking
 function renderGoogleDorking(dorking) {
@@ -403,7 +402,7 @@ function renderGoogleDorking(dorking) {
     if (badge) badge.textContent = `${results.length} HITS RESOLVED`;
 
     if (!results.length) {
-        body.innerHTML = "<div style='color:var(--text-muted); font-size:12px;'>No organic Google dorking hits.</div>";
+        body.innerHTML = "<div style='color:var(--text-muted); font-size:12px;'>No organic search hits.</div>";
         return;
     }
 
@@ -665,7 +664,7 @@ function renderPlatformDossiers(scraped) {
             rrHTML = `
                 <div style="margin-top:12px; padding:10px; background:rgba(0,220,255,0.04); border:1px solid rgba(0,220,255,0.2); border-radius:4px;">
                     <div style="font-size:10px; font-weight:700; color:var(--accent-cyan); margin-bottom:6px; letter-spacing:0.05em; display:flex; justify-content:space-between;">
-                        <span>🚀 ROCKETREACH CONTACT ENRICHMENT</span>
+                        <span>🚀 CONTACT ENRICHMENT</span>
                         <span>CONFIRMED MATCH</span>
                     </div>
                     ${rr.full_name ? `<div style="font-size:11px; color:var(--text-primary);"><strong>Full Name:</strong> ${escapeHTML(rr.full_name)} ${rr.current_title ? `· <em>${escapeHTML(rr.current_title)}</em>` : ''}</div>` : ''}
@@ -702,10 +701,11 @@ function renderPlatformDossiers(scraped) {
                 ${rrHTML}
                 ${expHTML}
                 ${eduHTML}
-                ${featHTML}
             </div>
         `;
-    // Standalone RocketReach Card
+    }
+
+    // Standalone Enrichment Card
     const rrData = scraped.rocketreach || (scraped.linkedin && scraped.linkedin.rocketreach);
     if (rrData && (rrData.success || (rrData.emails && rrData.emails.length > 0) || (rrData.phones && rrData.phones.length > 0) || rrData.full_name)) {
         const rr = rrData;
@@ -727,7 +727,7 @@ function renderPlatformDossiers(scraped) {
         if (rr.job_history && rr.job_history.length > 0) {
             rrExp = `
                 <div style="margin-top:12px;">
-                    <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">WORK HISTORY (ROCKETREACH)</div>
+                    <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">WORK HISTORY (ENRICHMENT)</div>
                     <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid var(--accent-cyan); padding-left:10px;">
                         ${rr.job_history.map(j => `
                             <div style="font-size:11px; line-height:1.4;">
@@ -743,7 +743,7 @@ function renderPlatformDossiers(scraped) {
         cardsHTML += `
             <div style="background:var(--bg-elevated); border:1px solid rgba(0,220,255,0.3); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <span style="font-weight:600; color:var(--accent-cyan);">🚀 ROCKETREACH CONTACT DOSSIER</span>
+                    <span style="font-weight:600; color:var(--accent-cyan);">🚀 CONTACT ENRICHMENT DOSSIER</span>
                     <span class="mono" style="font-size:11px; color:var(--status-success);">CONFIRMED MATCH</span>
                 </div>
                 <div style="font-size:14px; font-weight:700; color:var(--text-primary);">${escapeHTML(rr.full_name || 'N/A')}</div>
@@ -836,7 +836,18 @@ async function fetchApiKeysStatus() {
             const isOK = details.configured;
             const badgeColor = isOK ? "var(--status-success)" : "var(--text-muted)";
             const badgeBg = isOK ? "rgba(40,167,69,0.15)" : "rgba(255,255,255,0.05)";
-            const label = keyName.toUpperCase().replace("_", " ");
+            
+            const labelMap = {
+                "apify": "PLATFORM SCRAPER",
+                "groq": "PRIMARY ANALYZER",
+                "gemini": "SECONDARY ANALYZER",
+                "serpapi": "WEB SEARCH DORKING",
+                "zerobounce": "EMAIL VALIDATOR",
+                "telegram_cti": "CTI BREACH LOOKUP",
+                "hunter": "ASSOCIATED MAIL LOOKUP",
+                "rocketreach": "CONTACT ENRICHMENT"
+            };
+            const label = labelMap[keyName] || keyName.toUpperCase().replace("_", " ");
 
             if (isOK) activeCount++; else missingCount++;
 
@@ -880,22 +891,22 @@ function renderDiagnosticsPanel(data) {
     let errorsCount = 0;
     let warningsCount = 0;
 
-    // WMN Probe
+    // Probe
     const wmn = data.wmn_results || {};
     if (wmn.status === "success") {
         items.push({
-            name: "WhatsMyName 700+ Site Probe",
+            name: "Identifier Discovery Engine",
             status: "OK",
-            details: `Scanned ${wmn.scanned || 719} sites. Found ${wmn.hits_count || 0} hits.`,
+            details: `Scanned site templates. Found ${wmn.hits_count || 0} hits.`,
             recovery: null
         });
     } else {
         errorsCount++;
         items.push({
-            name: "WhatsMyName 700+ Site Probe",
+            name: "Identifier Discovery Engine",
             status: "ERROR",
             details: wmn.message || "Failed to query site availability templates.",
-            recovery: "Ensure local app/data/wmn-data.json is present and has correct formatting."
+            recovery: "Ensure local platform mapping data is present."
         });
     }
 
@@ -906,7 +917,7 @@ function renderDiagnosticsPanel(data) {
         { key: "facebook", name: "Facebook Scraper" },
         { key: "tiktok", name: "TikTok Scraper" },
         { key: "linkedin", name: "LinkedIn Scraper" },
-        { key: "rocketreach", name: "RocketReach Enrichment" }
+        { key: "rocketreach", name: "Contact Enrichment Engine" }
     ];
 
     scrapersList.forEach(s => {
@@ -916,7 +927,7 @@ function renderDiagnosticsPanel(data) {
                 items.push({
                     name: s.name,
                     status: "OK",
-                    details: `Data fetched successfully (${sd.source || 'Apify'}).`,
+                    details: `Data fetched successfully.`,
                     recovery: null
                 });
             } else {
@@ -924,8 +935,8 @@ function renderDiagnosticsPanel(data) {
                 items.push({
                     name: s.name,
                     status: "WARNING",
-                    details: sd.error || "Empty response or selector mismatch.",
-                    recovery: "Check APIFY_API_TOKEN configuration, verify target profile actually exists, or check Apify Actor status."
+                    details: sd.error || "Empty response or configuration mismatch.",
+                    recovery: "Verify target profile exists and scraper configurations are active."
                 });
             }
         } else {
@@ -934,7 +945,7 @@ function renderDiagnosticsPanel(data) {
                 name: s.name,
                 status: "NOT_RUN",
                 details: "Scraper did not execute or returned no data.",
-                recovery: "Ensure APIFY_API_TOKEN is configured in backend/.env file."
+                recovery: "Ensure proper configuration keys are active in backend."
             });
         }
     });
@@ -943,18 +954,18 @@ function renderDiagnosticsPanel(data) {
     const dork = data.dorking_results || {};
     if (dork.status === "success" || dork.status === "completed") {
         items.push({
-            name: "Google Dorking Engine",
+            name: "Web Dorking Engine",
             status: "OK",
-            details: `Found ${dork.results_count || (dork.results || []).length || 0} search results via SerpAPI.`,
+            details: `Found ${dork.results_count || (dork.results || []).length || 0} search results.`,
             recovery: null
         });
     } else {
         warningsCount++;
         items.push({
-            name: "Google Dorking Engine",
+            name: "Web Dorking Engine",
             status: "WARNING",
-            details: dork.error || "SerpAPI rate limit or connection issue.",
-            recovery: "Check SERPAPI_KEY in backend/.env file."
+            details: dork.error || "Search rate limit or connection issue.",
+            recovery: "Check search provider credentials."
         });
     }
 
@@ -962,7 +973,7 @@ function renderDiagnosticsPanel(data) {
     const cti = data.telegram_cti || {};
     if (cti.status === "success") {
         items.push({
-            name: "Telegram CTI Breach Lookup",
+            name: "CTI Leak Lookup",
             status: "OK",
             details: `Queried identifiers. Found ${cti.total_records || 0} leak records.`,
             recovery: null
@@ -970,18 +981,18 @@ function renderDiagnosticsPanel(data) {
     } else if (cti.status === "not_configured") {
         warningsCount++;
         items.push({
-            name: "Telegram CTI Breach Lookup",
+            name: "CTI Leak Lookup",
             status: "DISABLED",
-            details: "TELEGRAM_CTI_API_KEY is not configured.",
-            recovery: "Add a valid LeakOSINT API token as TELEGRAM_CTI_API_KEY in .env."
+            details: "CTI API token is not configured.",
+            recovery: "Add a valid CTI API token in config."
         });
     } else {
         errorsCount++;
         items.push({
-            name: "Telegram CTI Breach Lookup",
+            name: "CTI Leak Lookup",
             status: "ERROR",
-            details: cti.error || "Subscription expired or API server 502/outage.",
-            recovery: "Verify CTI token. If message is 502, retry scan shortly as the leakosintapi.com server is temporarily down."
+            details: cti.error || "Subscription expired or API server offline.",
+            recovery: "Verify CTI token. Retry scan shortly if provider is temporarily down."
         });
     }
 
@@ -989,17 +1000,17 @@ function renderDiagnosticsPanel(data) {
     const hitek = data.internal_database_matches || {};
     if (hitek.status === "success") {
         items.push({
-            name: "HiTek Offline Database",
+            name: "Internal Offline Database",
             status: "OK",
             details: `Found ${hitek.matches?.length || 0} local matches.`,
             recovery: null
         });
     } else {
         items.push({
-            name: "HiTek Offline Database",
+            name: "Internal Offline Database",
             status: "NOT_RUN",
-            details: "Local SQLite matches database is offline or not found.",
-            recovery: "Check if DBs/hi-tek/hitek.db exists in backend workspace."
+            details: "Local matches database is offline or not found.",
+            recovery: "Check if offline database files exist."
         });
     }
 

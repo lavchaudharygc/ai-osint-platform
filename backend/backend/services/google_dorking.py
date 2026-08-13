@@ -197,7 +197,9 @@ class GoogleDorkingService:
         self.serpapi_timeout = settings.serpapi_timeout_seconds
 
     def is_configured(self) -> bool:
-        return self._serpapi_provider() is not None
+        from backend.services.apify_client import ApifyActorClient
+
+        return self._serpapi_provider() is not None or ApifyActorClient().is_configured()
 
     def build_queries(
         self,
@@ -373,46 +375,81 @@ class GoogleDorkingService:
         *,
         country_code: str | None = None,
     ) -> dict[str, Any]:
-        provider = self._serpapi_provider()
-        configured_providers = [provider.name] if provider else []
+        serpapi_provider = self._serpapi_provider()
+        configured_providers: list[str] = []
         disabled_providers = self._disabled_provider_names()
         attempted_providers = []
         failed_providers = []
         fallback_used = False
 
-        if provider is None:
+        from backend.services.apify_client import ApifyActorClient
+        apify_provider_configured = ApifyActorClient().is_configured()
+        if apify_provider_configured:
+            configured_providers.append("apify_google")
+        if serpapi_provider:
+            configured_providers.append(serpapi_provider.name)
+
+        if not serpapi_provider and not apify_provider_configured:
             return self._not_configured_response(queries, disabled_providers)
 
-        attempted_providers.append(provider.name)
-        attempt = await self._search_with_provider(provider, queries, country_code=country_code)
-
-        if attempt.get("failed") and not attempt.get("results"):
-            failed_providers.append(provider.name)
-            from backend.services.apify_client import ApifyActorClient
-            if ApifyActorClient().is_configured():
-                apify_attempt = await self._search_apify_google(queries)
-                if apify_attempt.get("results"):
-                    attempt = apify_attempt
-                    fallback_used = True
-                    attempted_providers.append("apify_google")
-                    configured_providers.append("apify_google")
+        attempt: dict[str, Any] = {"provider": "none", "results": [], "errors": [], "failed": True}
+        if apify_provider_configured:
+            attempted_providers.append("apify_google")
+            attempt = await self._search_apify_google(queries)
+            if not attempt.get("results") and serpapi_provider is not None:
+                attempted_providers.append(serpapi_provider.name)
+                fallback_used = True
+                serpapi_attempt = await self._search_with_provider(
+                    serpapi_provider,
+                    queries,
+                    country_code=country_code,
+                )
+                if serpapi_attempt.get("results"):
+                    attempt = serpapi_attempt
+                    failed_providers.append("apify_google")
+                else:
+                    failed_providers.append("apify_google")
+                    if serpapi_attempt.get("failed"):
+                        failed_providers.append(serpapi_provider.name)
+                    attempt = serpapi_attempt
+        else:
+            if serpapi_provider is None:
+                return self._not_configured_response(queries, disabled_providers)
+            attempted_providers.append(serpapi_provider.name)
+            attempt = await self._search_with_provider(
+                serpapi_provider,
+                queries,
+                country_code=country_code,
+            )
+            if not attempt.get("results"):
+                failed_providers.append(serpapi_provider.name)
 
         attempt_results = attempt.get("results", [])
-        attempt_errors = self._normalize_provider_errors(provider, attempt.get("errors", []))
+        provider_name = str(attempt.get("provider") or "none")
+        attempt_errors = self._normalize_provider_errors(
+            serpapi_provider if provider_name == "serpapi" else SearchProvider(
+                name=provider_name,
+                kind=provider_name,
+                api_key="",
+                base_url="",
+                priority=0,
+            ),
+            attempt.get("errors", []),
+        )
         failed = bool(attempt.get("failed")) and not attempt_results
         status = "completed_with_errors" if attempt.get("failed") and attempt_results else "failed" if failed else "completed"
         reason = None
         if failed:
             reason = (
-                "SerpAPI returned partial results with provider errors."
-                if attempt_results
-                else "SerpAPI search failed."
+                "Apify returned partial results with provider errors."
+                if attempt_results and provider_name == "apify_google"
+                else ("SerpAPI returned partial results with provider errors." if attempt_results else f"{attempt.get('provider', 'Search')} search failed.")
             )
         elif fallback_used:
-            reason = "SerpAPI failed (e.g. 429 limit); secondary Apify Google Search fallback was used."
+            reason = "Apify returned no results; SerpAPI fallback was used."
 
         return self._build_search_response(
-            provider_name=attempt.get("provider", provider.name),
+            provider_name=provider_name,
             status=status,
             queries=queries,
             results=attempt_results,

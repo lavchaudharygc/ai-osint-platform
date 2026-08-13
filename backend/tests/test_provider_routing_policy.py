@@ -453,6 +453,93 @@ class SpecializedProviderBudgetTests(unittest.IsolatedAsyncioTestCase):
             ["specialized.email_verification"],
         )
 
+    async def test_dorking_reserves_before_later_provider_fanout(self) -> None:
+        request = UsernameInvestigationRequest(
+            username="target-user",
+            platform="twitter",
+            dork_query_limit=1,
+            cache_mode="bypass",
+        )
+
+        async def fake_google_dork_username(*args, **kwargs):
+            return {
+                "status": "completed",
+                "provider": "serpapi",
+                "results": [],
+                "provider_metadata": {"fallback_used": False},
+            }
+
+        async def fake_search_all_platforms(*args, **kwargs):
+            return []
+
+        async def fake_scan_handle(*args, **kwargs):
+            return {"scanned": 0, "found_count": 0, "hits": []}
+
+        async def fake_run_all_social_scrapers(*args, **kwargs):
+            return ({}, {}, {})
+
+        async def fake_run_specialized_provider_enrichment(*args, **kwargs):
+            return {}
+
+        async def fake_analyze_hashtags(*args, **kwargs):
+            return {}
+
+        async def fake_reverse_lookup(*args, **kwargs):
+            return type("ReverseLookupResultMock", (), {"dict": lambda self=None: {}})()
+
+        async def fake_extract_from_content(*args, **kwargs):
+            return type("ContentIntelMock", (), {"dict": lambda self=None: {}})()
+
+        async def fake_ai_correlate(*args, **kwargs):
+            return {"decision": "NO"}
+
+        async def fake_assess_risk(*args, **kwargs):
+            return {"level": "low"}
+
+        with (
+            patch.object(investigation_endpoint.settings, "serpapi_key", "test-key"),
+            patch.object(investigation_endpoint, "reserve_priority_provider_calls") as reserve_mock,
+            patch.object(investigation_endpoint, "CrossPlatformSearchService") as cross_class,
+            patch.object(investigation_endpoint, "WhatsMyNameService") as wmn_class,
+            patch.object(investigation_endpoint, "run_all_social_scrapers", side_effect=fake_run_all_social_scrapers),
+            patch.object(investigation_endpoint, "run_specialized_provider_enrichment", side_effect=fake_run_specialized_provider_enrichment),
+            patch.object(investigation_endpoint, "google_dork_username", side_effect=fake_google_dork_username) as dork_mock,
+            patch.object(investigation_endpoint, "DatabaseLookup") as db_class,
+            patch.object(investigation_endpoint, "HiTekConnectorService") as hitek_class,
+            patch.object(investigation_endpoint, "extract_platform_content", return_value={}),
+            patch.object(investigation_endpoint, "extract_content_texts", return_value=[]),
+            patch.object(investigation_endpoint, "extract_hashtags", return_value=set()),
+            patch.object(investigation_endpoint, "HashtagAnalyzer") as hashtag_class,
+            patch.object(investigation_endpoint, "ReverseKeywordLookup") as reverse_class,
+            patch.object(investigation_endpoint, "ContentIntelligenceExtractor") as content_class,
+            patch.object(investigation_endpoint, "ai_correlate", side_effect=fake_ai_correlate),
+            patch.object(investigation_endpoint, "assess_risk", side_effect=fake_assess_risk),
+            patch.object(investigation_endpoint, "generate_investigation_id", return_value="inv_test"),
+            patch.object(investigation_endpoint, "_store_investigation"),
+        ):
+            cross_class.return_value.search_all_platforms = AsyncMock(side_effect=fake_search_all_platforms)
+            wmn_class.return_value.scan_handle = AsyncMock(side_effect=fake_scan_handle)
+            db_class.return_value.search_all.return_value = {}
+            hitek_class.return_value.get_status.return_value = {"configured": False}
+            hashtag_class.return_value.analyze_hashtags = AsyncMock(side_effect=fake_analyze_hashtags)
+            reverse_class.return_value.perform_reverse_lookup = AsyncMock(side_effect=fake_reverse_lookup)
+            content_class.return_value.extract_from_content = AsyncMock(side_effect=fake_extract_from_content)
+            def reserve_side_effect(request_obj, primary_platform, budget):
+                self.assertEqual(
+                    budget.reservations[0]["capability"],
+                    "search.serpapi",
+                )
+                self.assertEqual(budget.reservations[0]["calls"], 1)
+                self.assertEqual(budget.used, 1)
+
+            reserve_mock.side_effect = reserve_side_effect
+
+            result = await investigation_endpoint.investigate_username(request)
+
+        self.assertEqual(result.dorking_results["status"], "completed")
+        self.assertEqual(result.dorking_results["provider"], "serpapi")
+        self.assertEqual(dork_mock.await_count, 1)
+
     async def test_company_email_reservation_can_use_collected_full_name(self) -> None:
         request = UsernameInvestigationRequest(
             username="target-user",

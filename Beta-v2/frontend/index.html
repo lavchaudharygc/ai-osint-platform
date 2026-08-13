@@ -141,6 +141,46 @@
                 min-width: 0;
             }
         }
+
+        /* Mobile Header and Grid Responsiveness */
+        @media (max-width: 768px) {
+            .soc-header {
+                flex-direction: column;
+                align-items: stretch !important;
+                gap: 12px;
+                padding: 12px 16px !important;
+            }
+            .soc-brand {
+                justify-content: center;
+                text-align: center;
+            }
+            .soc-actions {
+                justify-content: center;
+                flex-wrap: wrap;
+                width: 100%;
+                gap: 8px;
+            }
+            .soc-actions .btn-lea {
+                flex: 1;
+                min-width: 110px;
+                justify-content: center;
+                font-size: 10px;
+                padding: 6px 10px;
+            }
+        }
+
+        .responsive-input-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 580px) {
+            .responsive-input-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 
@@ -587,12 +627,7 @@
 
             <!-- EMAIL / PHONE -->
 
-            <div style="
-                display:grid;
-                grid-template-columns:1fr 1fr;
-                gap:12px;
-                margin-bottom:16px;
-            ">
+            <div class="responsive-input-grid">
 
                 <div>
 
@@ -630,7 +665,7 @@
             <div style="margin-bottom:20px;">
                 <label class="form-label" style="margin-bottom:0; display:flex; justify-content:space-between; align-items:center;">
                     <span>AI Analysis Engine</span>
-                    <span class="mono" style="font-size:10px; color:var(--accent-cyan);" id="hero-ai-mode-label">Groq Llama-3.3-70B</span>
+                    <span class="mono" style="font-size:10px; color:var(--accent-cyan);" id="hero-ai-mode-label">PRIMARY ENGINE</span>
                 </label>
             </div>
 
@@ -768,7 +803,7 @@
 
                     <!-- AI Model Label -->
                     <div style="margin-bottom:12px;">
-                        <label class="form-label" style="margin-bottom:0;">AI Engine: <span class="mono" style="color:var(--accent-cyan);">Groq Llama-3.3</span></label>
+                        <label class="form-label" style="margin-bottom:0;">AI Engine: <span class="mono" style="color:var(--accent-cyan);">PRIMARY ENGINE</span></label>
                     </div>
 
 

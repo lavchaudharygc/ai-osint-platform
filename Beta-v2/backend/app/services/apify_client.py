@@ -94,10 +94,10 @@ class ApifyActorClient:
         if not configured_token:
             configured_token = os.getenv("APIFY_TOKEN") or os.getenv("APIFY_API_TOKEN")
         self.token = configured_token.strip() if configured_token else None
-        self.base_url = (base_url or settings.apify_base_url).rstrip("/")
-        self.http_timeout_seconds = http_timeout_seconds or settings.apify_http_timeout_seconds
-        self.run_timeout_seconds = run_timeout_seconds or settings.apify_run_timeout_seconds
-        self.poll_wait_seconds = poll_wait_seconds or settings.apify_poll_wait_seconds
+        self.base_url = (base_url or getattr(settings, "apify_base_url", "https://api.apify.com/v2")).rstrip("/")
+        self.http_timeout_seconds = http_timeout_seconds or getattr(settings, "apify_http_timeout_seconds", 30.0)
+        self.run_timeout_seconds = run_timeout_seconds or getattr(settings, "apify_run_timeout_seconds", 300.0)
+        self.poll_wait_seconds = poll_wait_seconds or getattr(settings, "apify_poll_wait_seconds", 5)
         self.transport = transport
 
     def is_configured(self) -> bool:

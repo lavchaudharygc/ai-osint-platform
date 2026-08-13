@@ -348,7 +348,7 @@ class LinkedInApifyService:
             getattr(settings, "apify_linkedin_actor", None)
             or getattr(settings, "apify_linkedin_profile_actor_id", "apimaestro/linkedin-profile-detail")
         )
-        self.posts_actor_id = settings.apify_linkedin_posts_actor_id
+        self.posts_actor_id = getattr(settings, "apify_linkedin_posts_actor_id", "bebity/linkedin-post-search-scraper")
 
     def is_configured(self) -> bool:
         return self.client.is_configured()

@@ -99,7 +99,16 @@ class RocketReachService:
                     }
                 else:
                     logger.warning("RocketReach HTTP %d: %s (url: %s)", res.status_code, res.text[:200], formatted_url)
+                    error_msg = f"HTTP {res.status_code} Error"
+                    try:
+                        error_data = res.json()
+                        if isinstance(error_data, dict):
+                            error_msg = error_data.get("detail") or error_data.get("message") or error_msg
+                    except Exception:
+                        pass
+                    return {"success": False, "error": error_msg, "emails": [], "phones": []}
         except Exception as exc:
             logger.warning("RocketReach error: %s", exc)
+            return {"success": False, "error": str(exc), "emails": [], "phones": []}
 
         return {"success": False, "emails": [], "phones": []}
