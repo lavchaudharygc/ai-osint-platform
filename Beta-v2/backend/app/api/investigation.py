@@ -27,6 +27,7 @@ from app.services.dorking_service import DorkingService
 from app.services.hitek_service import HiTekService
 from app.services.ai_analyzer import AIAnalyzer
 from app.services.twitter_service import TwitterService
+from app.services.rocketreach_service import RocketReachService
 
 from app.config import settings
 from app.services.ai_analyzer import AIAnalyzer
@@ -45,7 +46,32 @@ async def get_keys_diagnostics():
         "zerobounce": {"configured": bool(settings.zerobounce_api_key), "status": "Active" if settings.zerobounce_api_key else "Missing"},
         "telegram_cti": {"configured": bool(settings.telegram_cti_api_key), "status": "Active" if settings.telegram_cti_api_key else "Missing"},
         "hunter": {"configured": bool(settings.hunter_api_key), "status": "Active" if settings.hunter_api_key else "Missing"},
+        "rocketreach": {"configured": bool(settings.rocketreach_api_key), "status": "Active" if settings.rocketreach_api_key else "Missing"},
     }
+
+
+@router.get("/proxy_image")
+async def proxy_image(url: str):
+    """Proxy image requests to bypass CDN hotlinking and CORS restrictions."""
+    import httpx
+    from fastapi.responses import Response
+    
+    if not url or not url.startswith("http"):
+        return Response(status_code=400)
+        
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        }
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                content_type = resp.headers.get("content-type", "image/jpeg")
+                return Response(content=resp.content, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
+    except Exception as exc:
+        logger.warning("Image proxy error for %s: %s", url, exc)
+    return Response(status_code=404)
 
 
 def _format_string_clue(val: Any) -> str | None:
@@ -123,30 +149,81 @@ async def run_investigation(request: InvestigationRequest):
     wmn_hits = wmn_data.get("hits") or []
     discovered_sites = {h.get("site", "").lower() for h in wmn_hits}
 
-    # ── STEP 2: LinkedIn (Apify + SignalHire) + Facebook — run in parallel ──
+    # ── STEP 2: LinkedIn (Apify + SignalHire + RocketReach) + Facebook — run in parallel ──
     scraped_data: dict = {}
 
     try:
-        from backend.services.linkedin_apify_service import LinkedInApifyService
+        from app.services.linkedin_apify_service import LinkedInApifyService
         li_task = _safe(LinkedInApifyService().get_profile(clean_handle))
-    except ImportError:
+    except Exception as err:
+        logger.warning("LinkedInApifyService import error: %s", err)
         li_task = _safe(asyncio.sleep(0, result=None))
 
+    li_url = f"https://www.linkedin.com/in/{clean_handle}"
     sh_task = _safe(SignalHireService().search_candidate(raw_query))
+    rr_task = _safe(RocketReachService().lookup_by_linkedin_url(li_url))
     fb_task = _safe(FacebookService().fetch_page_or_profile(clean_handle))
 
-    li_res, sh_res, fb_res = await asyncio.gather(li_task, sh_task, fb_task)
+    li_res, sh_res, rr_res, fb_res = await asyncio.gather(li_task, sh_task, rr_task, fb_task)
     
     linkedin_combined: dict = {}
     if isinstance(li_res, dict) and li_res.get("success"):
         linkedin_combined.update(li_res)
+    
+    # Standardize initial emails/phones list in linkedin_combined
+    li_emails = linkedin_combined.get("emails") or []
+    if not isinstance(li_emails, list):
+        li_emails = [li_emails] if li_emails else []
+    if linkedin_combined.get("email") and linkedin_combined["email"] not in li_emails:
+        li_emails.append(linkedin_combined["email"])
+    linkedin_combined["emails"] = list(dict.fromkeys(str(e).strip() for e in li_emails if e))
+
+    li_phones = linkedin_combined.get("phone_numbers") or linkedin_combined.get("phones") or []
+    if not isinstance(li_phones, list):
+        li_phones = [li_phones] if li_phones else []
+    if linkedin_combined.get("phone") and linkedin_combined["phone"] not in li_phones:
+        li_phones.append(linkedin_combined["phone"])
+    linkedin_combined["phone_numbers"] = list(dict.fromkeys(str(p).strip() for p in li_phones if p))
+    linkedin_combined["phones"] = linkedin_combined["phone_numbers"]
+
     if isinstance(sh_res, dict) and sh_res.get("success"):
         for k, v in sh_res.items():
-            if v and not linkedin_combined.get(k):
+            if v and k not in ("emails", "phones", "phone_numbers") and not linkedin_combined.get(k):
                 linkedin_combined[k] = v
         sh_emails = sh_res.get("emails") or []
-        existing_emails = linkedin_combined.get("emails") or []
-        linkedin_combined["emails"] = list(dict.fromkeys([*existing_emails, *sh_emails]))
+        sh_phones = sh_res.get("phones") or []
+        linkedin_combined["emails"] = list(dict.fromkeys([*linkedin_combined["emails"], *(str(e).strip() for e in sh_emails if e)]))
+        linkedin_combined["phone_numbers"] = list(dict.fromkeys([*linkedin_combined["phone_numbers"], *(str(p).strip() for p in sh_phones if p)]))
+        linkedin_combined["phones"] = linkedin_combined["phone_numbers"]
+
+    # Merge RocketReach data resolved concurrently
+    if isinstance(rr_res, dict) and rr_res.get("success"):
+        rr_emails = rr_res.get("emails") or []
+        rr_phones = rr_res.get("phones") or []
+        linkedin_combined["emails"] = list(dict.fromkeys([*linkedin_combined["emails"], *(str(e).strip() for e in rr_emails if e)]))
+        linkedin_combined["phone_numbers"] = list(dict.fromkeys([*linkedin_combined["phone_numbers"], *(str(p).strip() for p in rr_phones if p)]))
+        linkedin_combined["phones"] = linkedin_combined["phone_numbers"]
+        linkedin_combined["rocketreach"] = rr_res
+        linkedin_combined["success"] = True
+        
+        if not linkedin_combined.get("full_name") and rr_res.get("full_name"):
+            linkedin_combined["full_name"] = rr_res["full_name"]
+        if not linkedin_combined.get("headline") and rr_res.get("current_title"):
+            emp = f" at {rr_res['current_employer']}" if rr_res.get("current_employer") else ""
+            linkedin_combined["headline"] = f"{rr_res['current_title']}{emp}"
+        if not linkedin_combined.get("location") and rr_res.get("location"):
+            linkedin_combined["location"] = rr_res["location"]
+        if not linkedin_combined.get("current_company") and rr_res.get("current_employer"):
+            linkedin_combined["current_company"] = rr_res["current_employer"]
+        if not linkedin_combined.get("profile_url"):
+            linkedin_combined["profile_url"] = li_url
+        if not linkedin_combined.get("experience") and rr_res.get("job_history"):
+            linkedin_combined["experience"] = rr_res["job_history"]
+        if not linkedin_combined.get("education") and rr_res.get("education"):
+            linkedin_combined["education"] = rr_res["education"]
+
+        # Expose top-level rocketreach module in scraped_data
+        scraped_data["rocketreach"] = rr_res
 
     # Filter only successful profiles
     if ig_res and ig_res.get("success"):
@@ -158,8 +235,9 @@ async def run_investigation(request: InvestigationRequest):
     if twitter_res and twitter_res.get("success"):
         twitter_res["status"] = "success"
         scraped_data["twitter"] = twitter_res
-    if linkedin_combined and linkedin_combined.get("success"):
+    if linkedin_combined and (linkedin_combined.get("success") or linkedin_combined.get("emails") or linkedin_combined.get("phone_numbers") or linkedin_combined.get("rocketreach")):
         linkedin_combined["status"] = "success"
+        linkedin_combined["success"] = True
         scraped_data["linkedin"] = linkedin_combined
     if fb_res and fb_res.get("success"):
         fb_res["status"] = "success"
@@ -194,22 +272,36 @@ async def run_investigation(request: InvestigationRequest):
     # ── STEP 4: Email verification + Telegram CTI — run in parallel ──
     pattern_emails = EmailVerifierService.process_pattern_guesses(clean_handle, full_name_hint)
 
-    # Gather extra emails from caller + SignalHire
+    # Gather extra emails from caller + RocketReach / LinkedIn
     extra_emails: list[str] = []
     if request.email:
         extra_emails.append(request.email)
     for em in (scraped_data.get("linkedin", {}).get("emails") or []):
         extra_emails.append(em)
 
-    raw_cti_list = [
-        raw_query,
-        clean_handle,
-        f"@{clean_handle}" if not clean_handle.startswith("+") and not clean_handle.isdigit() else None,
-        request.email or None,
-        request.phone_number or None,
-        *[e["email"] for e in pattern_emails if e.get("status") == "verified" and e.get("email")],
-    ]
-    cti_queries = list(dict.fromkeys(q.strip() for q in raw_cti_list if q and len(q.strip()) >= 3))[:6]
+    # RESTRICT TELEGRAM CTI ONLY TO RESOLVED EMAILS AND PHONE NUMBERS TO SAVE API QUOTA
+    raw_cti_list = []
+    if request.email:
+        raw_cti_list.append(request.email.strip().lower())
+    if request.phone_number:
+        clean_p = "".join(c for c in request.phone_number if c.isdigit() or c == "+")
+        if clean_p:
+            raw_cti_list.append(clean_p)
+        
+    for em in (scraped_data.get("linkedin", {}).get("emails") or []):
+        if em and isinstance(em, str):
+            raw_cti_list.append(em.strip().lower())
+    for ph in (scraped_data.get("linkedin", {}).get("phone_numbers") or []):
+        if ph and isinstance(ph, str):
+            clean_p = "".join(c for c in ph if c.isdigit() or c == "+")
+            if clean_p:
+                raw_cti_list.append(clean_p)
+
+    # Fallback to handle only if no email or phone was resolved
+    if not raw_cti_list:
+        raw_cti_list.append(clean_handle)
+
+    cti_queries = list(dict.fromkeys(q.strip() for q in raw_cti_list if q and len(str(q).strip()) >= 3))[:5]
 
     # Verify extra emails + run CTI concurrently
     verify_tasks = [_safe(EmailVerifierService.verify_with_hunter(e)) for e in extra_emails]
@@ -228,9 +320,34 @@ async def run_investigation(request: InvestigationRequest):
     deduped_emails = []
     for e in [*verified_extras, *pattern_emails]:
         addr = e.get("email", "")
-        if addr and addr not in seen_emails:
-            seen_emails.add(addr)
-            deduped_emails.append(e)
+        if addr:
+            cleaned_addr = addr.strip().lower()
+            if cleaned_addr not in seen_emails:
+                seen_emails.add(cleaned_addr)
+                deduped_emails.append(e)
+
+    # Fallback to append any remaining LinkedIn/RocketReach emails that missed verification
+    for em in (scraped_data.get("linkedin", {}).get("emails") or []):
+        if em and isinstance(em, str):
+            cleaned_em = em.strip().lower()
+            if cleaned_em not in seen_emails:
+                seen_emails.add(cleaned_em)
+                rr_info = None
+                if isinstance(rr_res, dict):
+                    for remail in (rr_res.get("raw_emails") or []):
+                        if isinstance(remail, dict) and str(remail.get("email")).strip().lower() == cleaned_em:
+                            rr_info = remail
+                            break
+                smtp_val = rr_info.get("smtp_valid") if (rr_info and rr_info.get("smtp_valid")) else "unknown"
+                grade_val = rr_info.get("grade") if rr_info else "B"
+                type_val = rr_info.get("type") if rr_info else "personal"
+                deduped_emails.append({
+                    "email": cleaned_em,
+                    "smtp_valid": smtp_val,
+                    "type": type_val,
+                    "grade": grade_val,
+                    "status": "resolved"
+                })
 
     # ── STEP 5: Associated Account Discovery (multi-signal) ──
     associated_accounts = AssociatedAccountsService.verify_account_matches(

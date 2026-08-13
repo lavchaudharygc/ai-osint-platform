@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     hunter_api_key: str | None = Field(default_factory=lambda: os.getenv("HUNTER_API_KEY"))
     zerobounce_api_key: str | None = Field(default_factory=lambda: os.getenv("ZEROBOUNCE_API_KEY"))
     rapidapi_key: str | None = Field(default_factory=lambda: os.getenv("RAPIDAPI_KEY"))
+    rocketreach_api_key: str | None = Field(default_factory=lambda: os.getenv("ROCKETREACH_API_KEY"))
 
     telegram_api_id: int = 39811427
     telegram_api_hash: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_API_HASH"))

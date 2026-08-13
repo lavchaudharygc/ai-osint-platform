@@ -69,18 +69,33 @@ window.LeaPdfExporter = {
 
     const currentDate = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
     const currentTime = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const caseId = data.investigation_id || `UPP-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-    const officerName = "Special Investigator Ark Agrawal (ID: UPP-811)";
+    const officerName = "Senior OSINT & Cyber Crime Investigator (ID: UPP-SOC-01)";
 
     // --- 1. Scraped Platform Dossiers Cards HTML ---
     let platformCardsHTML = "";
 
-    // LinkedIn Card
     if (scrapedData.linkedin && scrapedData.linkedin.success) {
       const li = scrapedData.linkedin;
       const expList = (li.experience || []).map(e => `<li><strong>${esc(e.title || e.role || "Role")}</strong> at ${esc(e.company || e.organization || "")} <small>(${esc(e.duration || "")})</small></li>`).join("");
       const eduList = (li.education || []).map(e => `<li><strong>${esc(e.school || e.degree || "Education")}</strong> <small>${esc(e.field || "")}</small></li>`).join("");
       const honorsList = (li.honors || []).map(h => `<li>${esc(typeof h === "string" ? h : h.title || h.name)}</li>`).join("");
+
+      let rrHTML = "";
+      if (li.rocketreach && li.rocketreach.success) {
+        const rr = li.rocketreach;
+        const rrEmailsHTML = (rr.emails || []).map(e => `<span class="badge badge-info">${esc(e)}</span>`).join(" ");
+        const rrPhonesHTML = (rr.phones || []).map(p => `<span class="badge badge-success">${esc(p)}</span>`).join(" ");
+        rrHTML = `
+        <div style="margin-top:10px; padding:8px; background:#f0f8ff; border:1px solid #add8e6; border-radius:4px; page-break-inside:avoid;">
+          <strong style="font-size:11px; color:#0056b3;">🚀 ROCKETREACH CONTACT ENRICHMENT (CONFIRMED MATCH)</strong>
+          ${rr.full_name ? `<div style="font-size:10px; margin-top:4px;"><strong>Full Name:</strong> ${esc(rr.full_name)} ${rr.current_title ? `· <em>${esc(rr.current_title)}</em>` : ''}</div>` : ''}
+          ${rr.current_employer ? `<div style="font-size:10px;"><strong>Employer:</strong> ${esc(rr.current_employer)} ${rr.location ? `(${esc(rr.location)})` : ''}</div>` : ''}
+          <div style="font-size:10px; margin-top:4px;">
+            <strong>Emails:</strong> ${rrEmailsHTML || "None"}<br/>
+            <strong>Phones:</strong> ${rrPhonesHTML || "None"}
+          </div>
+        </div>`;
+      }
 
       platformCardsHTML += `
       <div class="card-box">
@@ -94,8 +109,10 @@ window.LeaPdfExporter = {
             <tr><td>Headline</td><td>${esc(li.headline || li.basic_info?.headline || "N/A")}</td></tr>
             <tr><td>Profile URL</td><td><a href="${esc(li.profile_url)}" target="_blank">${esc(li.profile_url || "N/A")}</a></td></tr>
             <tr><td>Location</td><td>${esc(li.location || li.basic_info?.location || "N/A")}</td></tr>
-            <tr><td>Connections / Followers</td><td>${esc(li.connections || li.stats?.connections || "N/A")} Connections | ${esc(li.followers || li.stats?.followers || "N/A")} Followers</td></tr>
+            <tr><td>Discovered Emails</td><td>${(li.emails || []).map(e => `<span class="badge badge-info">${esc(e)}</span>`).join(" ") || "None"}</td></tr>
+            <tr><td>Discovered Phones</td><td>${(li.phone_numbers || li.phones || []).map(p => `<span class="badge badge-success">${esc(p)}</span>`).join(" ") || "None"}</td></tr>
           </table>
+          ${rrHTML}
           ${expList ? `<h5 style="margin:10px 0 4px 0;">Work Experience</h5><ul>${expList}</ul>` : ""}
           ${eduList ? `<h5 style="margin:10px 0 4px 0;">Education</h5><ul>${eduList}</ul>` : ""}
           ${honorsList ? `<h5 style="margin:10px 0 4px 0;">Honors &amp; Awards</h5><ul>${honorsList}</ul>` : ""}
@@ -421,6 +438,227 @@ window.LeaPdfExporter = {
         </tbody>
     </table>
 
+    // --- 8. Media Gallery HTML ---
+    const mediaItems = [];
+    const mediaPlatforms = ["instagram", "linkedin", "tiktok", "twitter", "facebook"];
+    mediaPlatforms.forEach(plat => {
+      const info = scrapedData[plat] || {};
+      const pic = info.profile_pic_url || info.profile_pic_hd || (info.basic_info && (info.basic_info.profile_picture_url || info.basic_info.profile_pic_url));
+      if (pic) {
+        mediaItems.push({
+          url: pic,
+          source: plat.toUpperCase(),
+          caption: `Profile photo resolved on ${plat.toUpperCase()}`
+        });
+      }
+    });
+
+    if (scrapedData.instagram && Array.isArray(scrapedData.instagram.posts)) {
+      scrapedData.instagram.posts.forEach(post => {
+        if (post.display_url) {
+          mediaItems.push({
+            url: post.display_url,
+            source: "INSTAGRAM",
+            caption: post.caption ? post.caption.substring(0, 100) + "..." : "Instagram post media"
+          });
+        }
+      });
+    }
+
+    if (scrapedData.facebook) {
+      const fb = scrapedData.facebook;
+      if (fb.cover_image_url) {
+        mediaItems.push({
+          url: fb.cover_image_url,
+          source: "FACEBOOK",
+          caption: `Facebook cover photo for ${fb.page_name || fb.username || ''}`
+        });
+      }
+      if (Array.isArray(fb.posts)) {
+        fb.posts.forEach(post => {
+          if (Array.isArray(post.media)) {
+            post.media.forEach(m => {
+              const imgUri = m.thumbnail || (m.photo_image && m.photo_image.uri) || (m.image && m.image.uri) || (m.placeholder_image && m.placeholder_image.uri);
+              if (imgUri) {
+                mediaItems.push({
+                  url: imgUri,
+                  source: "FACEBOOK",
+                  caption: post.text ? post.text.substring(0, 100) + "..." : "Facebook post photo"
+                });
+              }
+            });
+          }
+        });
+      }
+    }
+
+    let mediaGalleryHTML = "";
+    if (mediaItems.length > 0) {
+      const gridItems = mediaItems.map(item => `
+        <div style="border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: #f9f9f9; padding: 6px; text-align: center; page-break-inside: avoid;">
+          <img src="${esc(item.url)}" referrerpolicy="no-referrer" style="width: 100%; height: 110px; object-fit: cover; border-radius: 3px; display: block; margin-bottom: 4px;" onerror="if(!this.dataset.proxied){this.dataset.proxied='true';this.src='http://127.0.0.1:8010/api/v1/investigation/proxy_image?url='+encodeURIComponent('${esc(item.url)}');}else{this.style.display='none';}">
+          <div style="font-size: 8pt; font-weight: bold; color: #006699; margin-bottom: 2px;">${esc(item.source)}</div>
+          <div style="font-size: 7.5pt; color: #555; height: 26px; overflow: hidden; text-overflow: ellipsis;">${esc(item.caption)}</div>
+        </div>
+      `).join("");
+      mediaGalleryHTML = `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 10px;">${gridItems}</div>`;
+    } else {
+      mediaGalleryHTML = `<p><small style="color: #666;">No media files or post images extracted for this target.</small></p>`;
+    }
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Official LEA Investigation Dossier - ${esc(targetQuery)}</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.5; margin: 1.5cm; color: #111; background: #fff; }
+        .header { text-align: center; border-bottom: 3px double #000; padding-bottom: 12px; margin-bottom: 20px; }
+        .header h1 { margin: 0; font-size: 20pt; font-weight: bold; letter-spacing: 1px; color: #000; }
+        .header p { margin: 4px 0 0 0; font-size: 10pt; font-weight: bold; color: #333; }
+        .confidential { color: #d9534f; font-weight: bold; text-align: center; border: 2px solid #d9534f; padding: 6px; margin: 12px 0; background: #fff5f5; font-size: 11pt; letter-spacing: 1px; }
+        .section-title { font-weight: bold; font-size: 12pt; margin-top: 24px; margin-bottom: 10px; border-bottom: 2px solid #222; padding-bottom: 4px; text-transform: uppercase; color: #111; }
+        .card-box { border: 1px solid #ccc; border-radius: 6px; margin-bottom: 14px; background: #fafafa; overflow: hidden; page-break-inside: avoid; }
+        .card-header { background: #eee; padding: 8px 12px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
+        .card-status { font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 3px; }
+        .status-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .card-body { padding: 12px; font-size: 10pt; }
+        .card-table { width: 100%; border: none; margin: 0; }
+        .card-table td { border: none; border-bottom: 1px solid #eee; padding: 4px 6px; }
+        table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 10pt; }
+        th, td { border: 1px solid #444; padding: 6px 8px; text-align: left; }
+        th { background: #222; color: #fff; font-size: 9.5pt; text-transform: uppercase; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 9.5pt; margin-right: 4px; margin-bottom: 4px; }
+        .badge-danger { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .badge-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .badge-info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .badge-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .evidence-box { border: 1px solid #bbb; padding: 12px; background: #f9f9f9; margin: 10px 0; border-radius: 4px; }
+        @media print { body { margin: 1cm; } .no-print { display: none; } }
+    </style>
+</head>
+<body>
+    <div class="no-print" style="margin-bottom:20px; text-align:right;">
+        <button onclick="window.print()" style="padding:10px 20px; background:#000; color:#fff; font-size:14px; font-weight:bold; cursor:pointer; border:none; border-radius:6px;">Print / Save Official PDF Report</button>
+    </div>
+
+    <div class="header">
+        <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:8px;">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="#002147"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-5.45 9-12V5l-9-4zm0 4.18l5 2.22v4.6c0 3.3-2.18 6.44-5 7.42-2.82-.98-5-4.12-5-7.42V7.4s.001 0 5-2.22z"/></svg>
+            <div>
+                <h1>UP POLICE CYBER CRIME HEADQUARTERS</h1>
+                <p>LAW ENFORCEMENT OFFICIAL OSINT &amp; CYBER THREAT ASSESSMENT REPORT</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="confidential">
+        CONFIDENTIAL // LAW ENFORCEMENT SENSITIVE // RESTRICTED ACCESS
+    </div>
+    
+    <table style="margin-top:15px; margin-bottom:20px;">
+        <tr><td style="width:25%; background:#eee;"><strong>Case ID / Reference</strong></td><td><strong>${esc(caseId)}</strong></td><td style="width:20%; background:#eee;"><strong>Target Query</strong></td><td><strong>${esc(targetQuery)}</strong></td></tr>
+        <tr><td style="background:#eee;"><strong>Investigating Unit</strong></td><td>${esc(officerName)}</td><td style="background:#eee;"><strong>Date &amp; Time</strong></td><td>${currentDate} ${currentTime}</td></tr>
+        <tr><td style="background:#eee;"><strong>Classification Kind</strong></td><td><strong>${esc((data.classified_kind || "username").toUpperCase())}</strong></td><td style="background:#eee;"><strong>AI Classifier Engines</strong></td><td>Groq Llama-3.3 + Google Gemini 3.6-Flash</td></tr>
+    </table>
+    
+    <div class="section-title">1. EXECUTIVE SUMMARY &amp; CONSOLIDATED IDENTITY</div>
+    <div class="evidence-box">
+        <p style="margin-top:0;">${esc(aiPersonality.summary || `Public-source OSINT scan completed for target ${targetQuery}. Identified ${wmnHits.length} cross-platform presences and ${ctiData.total_records || 0} breach database hits.`)}</p>
+    </div>
+
+    <table>
+        <tr><td style="width:30%; background:#eee;"><strong>Likely Full Name</strong></td><td><strong>${esc(consolidated.likely_name || "N/A")}</strong></td></tr>
+        <tr><td style="background:#eee;"><strong>Location / Clues</strong></td><td>${esc(consolidated.location || "N/A")}</td></tr>
+        <tr><td style="background:#eee;"><strong>Behavioral Classification</strong></td><td><strong>${esc(consolidated.profession || aiPersonality.primaryCategory || "N/A")}</strong></td></tr>
+        <tr><td style="background:#eee;"><strong>Identity Confidence Score</strong></td><td><strong style="font-size:12pt; color:#2E9E5B;">${consolidated.confidence_percentage || 0}%</strong> (${esc((consolidated.overall_confidence || "low").toUpperCase())})</td></tr>
+    </table>
+
+    <h4 style="margin-top:14px; margin-bottom:6px;">Discovered &amp; Verified Email Addresses</h4>
+    <ul>${emailsHTML || "<li>No email addresses discovered.</li>"}</ul>
+
+    <div class="section-title">2. SCRAPED PLATFORM DOSSIERS &amp; CARDS</div>
+    ${platformCardsHTML}
+
+    <div class="section-title">3. TELEGRAM CTI DARKWEB BREACH &amp; LEAK DOSSIER</div>
+    <p><small>Matches retrieved from darkweb paste dumps, telecom subscriber leaks, and credential breach registries:</small></p>
+    <table>
+        <thead>
+            <tr>
+                <th style="width:25%;">Database / Source</th>
+                <th style="width:30%;">Breach Context / Leak Details</th>
+                <th>Exposed Record Fields (Address, DocNumber, Password, Phone)</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${ctiRowsHTML}
+        </tbody>
+    </table>
+
+    <div class="section-title">4. ASSOCIATED ACCOUNTS MATRIX</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Platform</th>
+                <th>Handle / Account</th>
+                <th>URL Link</th>
+                <th>Confidence</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${assocRowsHTML}
+        </tbody>
+    </table>
+
+    <div class="section-title">5. CROSS-PLATFORM PROBE &amp; SEARCH DISCOVERY</div>
+    <h4>5.1 WhatsMyName Probe Matrix (700+ Templates)</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Platform</th>
+                <th>Handle</th>
+                <th>Status</th>
+                <th>URL Link</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${wmnRows}
+        </tbody>
+    </table>
+
+    <h4>5.2 Google Search Dorking Discovery</h4>
+    <table>
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Title / Source</th>
+                <th>Snippet</th>
+                <th>Query Used</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${dorkingRows}
+        </tbody>
+    </table>
+
+    <div class="section-title">6. INTERNAL TARGET REGISTRY MATCHES</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Alt Username</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>Source</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${internalDbRows}
+        </tbody>
+    </table>
+
     <div class="section-title">7. AI BEHAVIORAL PROFILING &amp; THREAT RISK ASSESSMENT</div>
     <div class="evidence-box">
         <p><strong>Groq Llama-3.3 Category:</strong> <span class="badge badge-info">${esc(aiPersonality.primaryCategory || "Unable to Classify")}</span></p>
@@ -431,19 +669,22 @@ window.LeaPdfExporter = {
         <p><strong>Cross-Platform Note:</strong> ${esc(aiPersonality.crossPlatformNote || "Verified across multiple data sources.")}</p>
     </div>
 
-    <div class="section-title">8. LAW ENFORCEMENT RECOMMENDATIONS &amp; SIGN-OFF</div>
+    <div class="section-title">8. RESOLVED MEDIA &amp; PHOTO EVIDENCE GALLERY</div>
+    ${mediaGalleryHTML}
+
+    <div class="section-title">9. LAW ENFORCEMENT RECOMMENDATIONS &amp; SIGN-OFF</div>
     <ol>
         <li>Perform lawful human verification before asserting common account ownership.</li>
         <li>Preserve public-source timestamps and provider logs for administrative reference.</li>
         <li>All material contained herein is compiled strictly from public-source OSINT and breach intelligence feeds for investigative lead generation.</li>
     </ol>
     
-    <div style="margin-top: 40px; border-top: 1px solid #ccc; padding-top: 15px;">
+    <div style="margin-top: 40px; border-top: 1px solid #ccc; padding-top: 15px; page-break-inside: avoid;">
         <p><strong>Report Generated By:</strong> UP Police Cyber Crime HQ OSINT Platform (Beta-v2 SOC Engine)</p>
         <p><strong>Date &amp; Timestamp:</strong> ${currentDate} ${currentTime}</p>
-        <p><strong>Investigating Officer Signature:</strong> ___________________________</p>
-        <p><strong>Officer Name:</strong> ${esc(officerName)}</p>
-        <p><strong>Designation:</strong> Senior OSINT &amp; Cyber Crime Investigator</p>
+        <p><strong>Authorized Investigator Signature:</strong> ___________________________</p>
+        <p><strong>Investigating Unit:</strong> ${esc(officerName)}</p>
+        <p><strong>Designation:</strong> Senior OSINT &amp; Cyber Crime Intelligence Unit</p>
     </div>
 </body>
 </html>`;

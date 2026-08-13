@@ -645,6 +645,39 @@ function renderPlatformDossiers(scraped) {
             `;
         }
 
+        let rrHTML = "";
+        if (li.rocketreach && li.rocketreach.success) {
+            const rr = li.rocketreach;
+            const rrEmailsHTML = (rr.raw_emails || (rr.emails || []).map(e => ({email: e}))).map(e => {
+                const addr = typeof e === 'string' ? e : e.email;
+                const status = typeof e === 'object' && e.smtp_valid ? e.smtp_valid : '';
+                const typeStr = typeof e === 'object' && e.type ? ` (${e.type})` : '';
+                const isGood = status === 'valid' || !status;
+                return `<span class="tag-chip mono ${isGood ? 'interest' : ''}">${escapeHTML(addr)}${escapeHTML(typeStr)}</span>`;
+            }).join("");
+
+            const rrPhonesHTML = (rr.raw_phones || (rr.phones || []).map(p => ({number: p}))).map(p => {
+                const num = typeof p === 'string' ? p : (p.number || p.e164);
+                const typeStr = typeof p === 'object' && p.type ? ` [${p.type}]` : '';
+                return `<span class="tag-chip mono" style="color:var(--status-success); border-color:var(--status-success);">${escapeHTML(num)}${escapeHTML(typeStr)}</span>`;
+            }).join("");
+
+            rrHTML = `
+                <div style="margin-top:12px; padding:10px; background:rgba(0,220,255,0.04); border:1px solid rgba(0,220,255,0.2); border-radius:4px;">
+                    <div style="font-size:10px; font-weight:700; color:var(--accent-cyan); margin-bottom:6px; letter-spacing:0.05em; display:flex; justify-content:space-between;">
+                        <span>🚀 ROCKETREACH CONTACT ENRICHMENT</span>
+                        <span>CONFIRMED MATCH</span>
+                    </div>
+                    ${rr.full_name ? `<div style="font-size:11px; color:var(--text-primary);"><strong>Full Name:</strong> ${escapeHTML(rr.full_name)} ${rr.current_title ? `· <em>${escapeHTML(rr.current_title)}</em>` : ''}</div>` : ''}
+                    ${rr.current_employer ? `<div style="font-size:11px; color:var(--text-secondary);"><strong>Employer:</strong> ${escapeHTML(rr.current_employer)} ${rr.location ? `(${escapeHTML(rr.location)})` : ''}</div>` : ''}
+                    <div style="font-size:10px; margin-top:6px;">
+                        <strong>Direct Emails (${(rr.emails||[]).length}):</strong> ${rrEmailsHTML || "<span style='color:var(--text-muted);'>None</span>"}<br>
+                        <strong>Phone Numbers (${(rr.phones||[]).length}):</strong> ${rrPhonesHTML || "<span style='color:var(--text-muted);'>None</span>"}
+                    </div>
+                </div>
+            `;
+        }
+
         cardsHTML += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -662,11 +695,65 @@ function renderPlatformDossiers(scraped) {
                     </div>
                 </div>
                 <div style="font-size:11px; margin-top:6px; color:var(--text-secondary);">
-                    <strong>Followers:</strong> ${followers} | <strong>Emails:</strong> ${(li.emails || []).map(e => `<span class="tag-chip interest">${escapeHTML(e)}</span>`).join("") || "None"}
+                    <strong>Followers:</strong> ${followers}<br>
+                    <strong>Emails:</strong> ${(li.emails || []).map(e => `<span class="tag-chip interest">${escapeHTML(e)}</span>`).join("") || "<span style='color:var(--text-muted);'>None</span>"}<br>
+                    <strong>Phone Numbers:</strong> ${(li.phone_numbers || li.phones || []).map(p => `<span class="tag-chip mono" style="color:var(--status-success); border-color:var(--status-success);">${escapeHTML(p)}</span>`).join("") || "<span style='color:var(--text-muted);'>None</span>"}
                 </div>
+                ${rrHTML}
                 ${expHTML}
                 ${eduHTML}
                 ${featHTML}
+            </div>
+        `;
+    // Standalone RocketReach Card
+    const rrData = scraped.rocketreach || (scraped.linkedin && scraped.linkedin.rocketreach);
+    if (rrData && (rrData.success || (rrData.emails && rrData.emails.length > 0) || (rrData.phones && rrData.phones.length > 0) || rrData.full_name)) {
+        const rr = rrData;
+        const rrEmails = (rr.raw_emails || (rr.emails || []).map(e => ({email: e}))).map(e => {
+            const addr = typeof e === 'string' ? e : e.email;
+            const status = typeof e === 'object' && e.smtp_valid ? e.smtp_valid : '';
+            const typeStr = typeof e === 'object' && e.type ? ` (${e.type})` : '';
+            const isGood = status === 'valid' || !status;
+            return `<span class="tag-chip mono ${isGood ? 'interest' : ''}">${escapeHTML(addr)}${escapeHTML(typeStr)}</span>`;
+        }).join("");
+
+        const rrPhones = (rr.raw_phones || (rr.phones || []).map(p => ({number: p}))).map(p => {
+            const num = typeof p === 'string' ? p : (p.number || p.e164);
+            const typeStr = typeof p === 'object' && p.type ? ` [${p.type}]` : '';
+            return `<span class="tag-chip mono" style="color:var(--status-success); border-color:var(--status-success);">${escapeHTML(num)}${escapeHTML(typeStr)}</span>`;
+        }).join("");
+
+        let rrExp = "";
+        if (rr.job_history && rr.job_history.length > 0) {
+            rrExp = `
+                <div style="margin-top:12px;">
+                    <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">WORK HISTORY (ROCKETREACH)</div>
+                    <div style="display:flex; flex-direction:column; gap:6px; border-left:2px solid var(--accent-cyan); padding-left:10px;">
+                        ${rr.job_history.map(j => `
+                            <div style="font-size:11px; line-height:1.4;">
+                                <strong style="color:var(--text-primary);">${escapeHTML(j.title || 'Role')}</strong> at <span style="color:var(--accent-cyan);">${escapeHTML(j.company || 'Company')}</span>
+                                <div style="color:var(--text-muted); font-size:10px;">${escapeHTML(j.duration || '')} ${j.location ? `· ${escapeHTML(j.location)}` : ''}</div>
+                            </div>
+                        `).join("")}
+                    </div>
+                </div>
+            `;
+        }
+
+        cardsHTML += `
+            <div style="background:var(--bg-elevated); border:1px solid rgba(0,220,255,0.3); border-radius:6px; padding:14px; margin-bottom:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-weight:600; color:var(--accent-cyan);">🚀 ROCKETREACH CONTACT DOSSIER</span>
+                    <span class="mono" style="font-size:11px; color:var(--status-success);">CONFIRMED MATCH</span>
+                </div>
+                <div style="font-size:14px; font-weight:700; color:var(--text-primary);">${escapeHTML(rr.full_name || 'N/A')}</div>
+                <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">${escapeHTML(rr.current_title || 'N/A')} ${rr.current_employer ? `at ${escapeHTML(rr.current_employer)}` : ''}</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:4px;"><strong>Location:</strong> ${escapeHTML(rr.location || 'N/A')}</div>
+                <div style="font-size:11px; margin-top:10px; color:var(--text-secondary);">
+                    <strong>Verified Emails:</strong> ${rrEmails || "<span style='color:var(--text-muted);'>None</span>"}<br>
+                    <strong>Phone Numbers:</strong> ${rrPhones || "<span style='color:var(--text-muted);'>None</span>"}
+                </div>
+                ${rrExp}
             </div>
         `;
     }
@@ -818,7 +905,8 @@ function renderDiagnosticsPanel(data) {
         { key: "instagram", name: "Instagram Scraper" },
         { key: "facebook", name: "Facebook Scraper" },
         { key: "tiktok", name: "TikTok Scraper" },
-        { key: "linkedin", name: "LinkedIn Scraper" }
+        { key: "linkedin", name: "LinkedIn Scraper" },
+        { key: "rocketreach", name: "RocketReach Enrichment" }
     ];
 
     scrapersList.forEach(s => {
@@ -1014,25 +1102,45 @@ function renderMediaGallery(data) {
         });
     }
 
-    // LinkedIn featured
-    if (scraped.linkedin && Array.isArray(scraped.linkedin.featured)) {
-        scraped.linkedin.featured.forEach(item => {
-            if (item.image_url) {
-                mediaItems.push({
-                    url: item.image_url,
-                    source: "LINKEDIN",
-                    type: "Featured Image",
-                    caption: `${item.title || ''} - ${item.description || ''}`,
-                    link: item.url || "#"
-                });
-            }
-        });
+    // Facebook cover photo & post media
+    if (scraped.facebook) {
+        const fb = scraped.facebook;
+        if (fb.cover_image_url) {
+            mediaItems.push({
+                url: fb.cover_image_url,
+                source: "FACEBOOK",
+                type: "Cover Photo",
+                caption: `Facebook cover photo for ${fb.page_name || fb.username || ''}`,
+                link: fb.url || "#"
+            });
+        }
+        if (Array.isArray(fb.posts)) {
+            fb.posts.forEach(post => {
+                if (Array.isArray(post.media)) {
+                    post.media.forEach(m => {
+                        const imgUri = m.thumbnail || (m.photo_image && m.photo_image.uri) || (m.image && m.image.uri) || (m.placeholder_image && m.placeholder_image.uri);
+                        if (imgUri) {
+                            mediaItems.push({
+                                url: imgUri,
+                                source: "FACEBOOK",
+                                type: "Post Media",
+                                caption: post.text || "Facebook post photo",
+                                link: post.url || m.url || "#",
+                                likes: post.like_count,
+                                comments: post.comment_count
+                            });
+                        }
+                    });
+                }
+            });
+        }
     }
 
     if (badge) badge.textContent = `${mediaItems.length} FILES`;
 
     if (mediaItems.length === 0) {
         card.style.display = "none";
+        body.innerHTML = "";
         return;
     }
 
@@ -1043,13 +1151,14 @@ function renderMediaGallery(data) {
     `;
 
     mediaItems.forEach(item => {
-        const likesHTML = item.likes !== undefined ? `❤️ ${item.likes.toLocaleString()} ` : '';
-        const commentsHTML = item.comments !== undefined ? `💬 ${item.comments.toLocaleString()}` : '';
+        const likesHTML = (item.likes != null && !isNaN(item.likes)) ? `❤️ ${Number(item.likes).toLocaleString()} ` : '';
+        const commentsHTML = (item.comments != null && !isNaN(item.comments)) ? `💬 ${Number(item.comments).toLocaleString()}` : '';
+        const proxyUrl = `${API_BASE}/api/v1/investigation/proxy_image?url=${encodeURIComponent(item.url)}`;
         
         html += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; overflow:hidden; display:flex; flex-direction:column; position:relative;">
                 <a href="${item.url}" target="_blank" rel="noopener" style="display:block; height:120px; width:100%; background:var(--bg-panel); overflow:hidden;">
-                    <img src="${item.url}" referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; this.parentElement.style.display='flex'; this.parentElement.style.alignItems='center'; this.parentElement.style.justifyContent='center'; this.parentElement.innerHTML='<span style=\\'color:var(--text-muted); font-size:9px; text-align:center;\\'>Image<br>unavailable</span>';">
+                    <img src="${item.url}" referrerpolicy="no-referrer" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="if(!this.dataset.triedProxy){this.dataset.triedProxy='true';this.src='${proxyUrl}';}else{this.style.display='none';this.parentElement.style.display='flex';this.parentElement.style.alignItems='center';this.parentElement.style.justifyContent='center';this.parentElement.innerHTML='<span style=\\'color:var(--text-muted); font-size:9px; text-align:center;\\'>Image<br>unavailable</span>';}">
                 </a>
                 <div style="position:absolute; top:6px; left:6px; background:rgba(0,0,0,0.75); border:1px solid var(--accent-cyan); border-radius:3px; padding:2px 5px; font-size:7px; font-weight:700; color:var(--accent-cyan); font-family:monospace; letter-spacing:0.05em;">
                     ${escapeHTML(item.source)}
