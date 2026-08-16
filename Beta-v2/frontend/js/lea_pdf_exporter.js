@@ -372,7 +372,7 @@ window.LeaPdfExporter = {
     if (mediaItems.length > 0) {
       const gridItems = mediaItems.map(item => `
         <div style="border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: #f9f9f9; padding: 6px; text-align: center; page-break-inside: avoid;">
-          <img src="${esc(item.url)}" referrerpolicy="no-referrer" style="width: 100%; height: 110px; object-fit: cover; border-radius: 3px; display: block; margin-bottom: 4px;" onerror="if(!this.dataset.proxied){this.dataset.proxied='true';this.src='http://127.0.0.1:8010/api/v1/investigation/proxy_image?url='+encodeURIComponent('${esc(item.url)}');}else{this.style.display='none';}">
+          <img src="${esc(item.url)}" referrerpolicy="no-referrer" style="width: 100%; height: 110px; object-fit: cover; border-radius: 3px; display: block; margin-bottom: 4px;" onerror="if(!this.dataset.proxied){this.dataset.proxied='true';this.src='${(typeof API_BASE !== 'undefined' ? API_BASE : 'http://127.0.0.1:8010')}/api/v1/investigation/proxy_image?url='+encodeURIComponent('${esc(item.url)}');}else{this.style.display='none';}">
           <div style="font-size: 8pt; font-weight: bold; color: #006699; margin-bottom: 2px;">${esc(item.source)}</div>
           <div style="font-size: 7.5pt; color: #555; height: 26px; overflow: hidden; text-overflow: ellipsis;">${esc(item.caption)}</div>
         </div>

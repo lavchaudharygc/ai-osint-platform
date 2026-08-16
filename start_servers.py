@@ -1,61 +1,35 @@
-import subprocess
-import time
-import sys
-import os
+"""
+Root Launcher for UP Police Cyber Cell OSINT Platform (Beta-v2 SOC)
+Delegates execution to Beta-v2/run.py.
+"""
 
-def start_servers():
-    print("UP Cyber Cell AI-OSINT Platform Launcher")
-    print("=" * 40)
-    
-    # 1. Paths configuration
-    proj_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_dir = os.path.join(proj_dir, "backend")
-    frontend_dir = os.path.join(proj_dir, "frontend")
-    venv_python = os.path.join(backend_dir, ".venv", "Scripts", "python.exe")
-    
-    if not os.path.exists(venv_python):
-        print(f"Error: Virtual environment python not found at '{venv_python}'")
-        print("Please configure backend virtual environment first.")
+import os
+import sys
+import subprocess
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+BETA_V2_RUN = BASE_DIR / "Beta-v2" / "run.py"
+
+
+def main():
+    print("=====================================================================")
+    print("   UP POLICE CYBER CELL OSINT SOC PLATFORM (Beta-v2 Active)")
+    print("=====================================================================")
+    print("Notice: Active codebase is located in ./Beta-v2.")
+    print("Launching Beta-v2 servers...\n")
+
+    if not BETA_V2_RUN.exists():
+        print(f"Error: Could not locate Beta-v2 launcher at {BETA_V2_RUN}")
         sys.exit(1)
-        
-    print("Starting Backend API Server on http://127.0.0.1:8010...")
-    backend_proc = subprocess.Popen(
-        [venv_python, "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "8010"],
-        cwd=backend_dir
-    )
-    
-    # Give backend a moment to spin up
-    time.sleep(2.5)
-    
-    print("Starting Frontend UI Server on http://127.0.0.1:5500...")
-    frontend_proc = subprocess.Popen(
-        [venv_python, "-m", "http.server", "5500", "--bind", "127.0.0.1"],
-        cwd=frontend_dir
-    )
-    
-    print("\nSystem running! Press Ctrl+C to terminate both servers.")
-    print("-> Frontend: http://127.0.0.1:5500")
-    print("-> Backend API: http://127.0.0.1:8010")
-    print("=" * 40)
-    
+
     try:
-        while True:
-            # Check if any process has exited unexpectedly
-            if backend_proc.poll() is not None:
-                print("Backend server stopped unexpectedly.")
-                break
-            if frontend_proc.poll() is not None:
-                print("Frontend server stopped unexpectedly.")
-                break
-            time.sleep(1)
+        subprocess.run([sys.executable, str(BETA_V2_RUN)], check=True)
     except KeyboardInterrupt:
-        print("\nStopping servers...")
-    finally:
-        backend_proc.terminate()
-        frontend_proc.terminate()
-        backend_proc.wait()
-        frontend_proc.wait()
-        print("Both servers successfully stopped. Goodbye!")
+        print("\nShutdown complete.")
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
+
 
 if __name__ == "__main__":
-    start_servers()
+    main()

@@ -26,7 +26,7 @@ Beta-v2/
 
 - Start both servers + open browser: `python run.py` (backend on `http://127.0.0.1:8010`, frontend on `http://127.0.0.1:3000`) or `start.ps1`.
 - Backend alone: `python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8010` (from `Beta-v2/backend`).
-- `.env` is resolved via `Beta-v2/backend/app/config.py` (falls back to `Beta-v2/backend/.env`).
+- `.env` is loaded directly from `Beta-v2/backend/.env`. Beta-v2 is completely self-contained with its own services, config, and requirements.
 
 ### Beta-v2 Pipeline (in `backend/app/api/investigation.py`)
 

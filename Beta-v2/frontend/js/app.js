@@ -2,7 +2,7 @@
  * UP Police Cyber Cell — OSINT SOC Engine (Beta-v2) Frontend Core
  */
 
-const API_BASE = "http://127.0.0.1:8010";
+const API_BASE = window.API_BASE || (window.location.hostname ? `${window.location.protocol}//${window.location.hostname}:8010` : "http://127.0.0.1:8010");
 let currentInvestigationData = null;
 let progressInterval = null;
 

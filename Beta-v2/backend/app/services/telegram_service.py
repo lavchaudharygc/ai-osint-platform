@@ -8,11 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 from app.config import settings
 
-_root_backend = Path(__file__).resolve().parents[4] / "backend"
-if _root_backend.exists() and str(_root_backend) not in sys.path:
-    sys.path.insert(0, str(_root_backend))
-
-from backend.services.telegram_cti_service import fetch_cti, fetchCTI
+from app.services.telegram_cti_service import fetch_cti, fetchCTI
 
 logger = logging.getLogger(__name__)
 

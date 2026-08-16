@@ -5,9 +5,12 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ENV_PATH = Path(__file__).resolve().parents[3] / "backend" / ".env"
+# Resolution order: Beta-v2/backend/.env -> Beta-v2/.env -> legacy root backend/.env
+ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 if not ENV_PATH.exists():
     ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+if not ENV_PATH.exists():
+    ENV_PATH = Path(__file__).resolve().parents[3] / "backend" / ".env"
 
 
 class Settings(BaseSettings):
