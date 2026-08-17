@@ -5,12 +5,9 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Resolution order: Beta-v2/backend/.env -> Beta-v2/.env -> legacy root backend/.env
+# Beta-v2 is self-contained. Never fall through to the legacy application's secrets.
 ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
-if not ENV_PATH.exists():
-    ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
-if not ENV_PATH.exists():
-    ENV_PATH = Path(__file__).resolve().parents[3] / "backend" / ".env"
+BACKEND_PATH = Path(__file__).resolve().parents[1]
 
 
 class Settings(BaseSettings):
@@ -24,6 +21,29 @@ class Settings(BaseSettings):
     app_version: str = "2.0.0"
     host: str = "127.0.0.1"
     port: int = 8010
+    cors_allowed_origins: list[str] = Field(
+        default_factory=lambda: ["http://127.0.0.1:3000", "http://localhost:3000"]
+    )
+
+    # Operator authentication. There are deliberately no default credentials or
+    # signing keys: authentication fails closed until an administrator provisions
+    # both through the local environment and user-creation script.
+    auth_session_secret: str | None = Field(
+        default_factory=lambda: os.getenv("AUTH_SESSION_SECRET")
+    )
+    auth_users_file: Path = BACKEND_PATH / "runtime" / "soc_users.json"
+    auth_cookie_name: str = "upp_soc_session"
+    auth_cookie_path: str = "/api/v1"
+    auth_cookie_secure: bool = False
+    auth_session_ttl_seconds: int = Field(default=900, ge=300, le=3600)
+    auth_login_max_failures: int = Field(default=5, ge=1, le=20)
+    auth_login_window_seconds: int = Field(default=900, ge=60, le=3600)
+    auth_pbkdf2_iterations: int = Field(default=600_000, ge=100_000, le=2_000_000)
+
+    # Append-only, HMAC-chained security audit. The audit key must be distinct
+    # from AUTH_SESSION_SECRET. Protected operations fail when it is unavailable.
+    audit_hmac_key: str | None = Field(default_factory=lambda: os.getenv("AUDIT_HMAC_KEY"))
+    audit_log_path: Path = BACKEND_PATH / "runtime" / "security_audit.jsonl"
 
     # Credentials loaded safely from environment
     groq_api_key: str | None = Field(default_factory=lambda: os.getenv("GROQ_API_KEY"))
@@ -46,12 +66,21 @@ class Settings(BaseSettings):
     apify_linkedin_posts_actor_id: str = "bebity/linkedin-post-search-scraper"
     signalhire_api_key: str | None = Field(default_factory=lambda: os.getenv("SIGNALHIRE_API_KEY"))
     serpapi_key: str | None = Field(default_factory=lambda: os.getenv("SERPAPI_KEY"))
+    email_investigation_dork_enabled: bool = True
+    email_investigation_max_dork_queries: int = Field(default=3, ge=0, le=3)
+    email_investigation_max_dork_calls: int = Field(default=6, ge=0, le=6)
+    email_investigation_max_dork_results: int = Field(default=15, ge=1, le=30)
+    email_investigation_http_timeout_seconds: float = Field(default=10.0, ge=1.0, le=20.0)
+    email_investigation_breach_enabled: bool = False
+    email_investigation_breach_api_key: str | None = Field(
+        default_factory=lambda: os.getenv("EMAIL_INVESTIGATION_BREACH_API_KEY")
+    )
     hunter_api_key: str | None = Field(default_factory=lambda: os.getenv("HUNTER_API_KEY"))
     zerobounce_api_key: str | None = Field(default_factory=lambda: os.getenv("ZEROBOUNCE_API_KEY"))
     rapidapi_key: str | None = Field(default_factory=lambda: os.getenv("RAPIDAPI_KEY"))
     rocketreach_api_key: str | None = Field(default_factory=lambda: os.getenv("ROCKETREACH_API_KEY"))
 
-    telegram_api_id: int = 39811427
+    telegram_api_id: int = 0
     telegram_api_hash: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_API_HASH"))
     telegram_cti_api_key: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_CTI_API_KEY"))
     telegram_cti_enabled: bool = Field(default_factory=lambda: os.getenv("TELEGRAM_CTI_ENABLED", "true").lower() == "true")

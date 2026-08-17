@@ -25,7 +25,7 @@ def categorize_dork_hit(url: str, title: str, snippet: str) -> str:
 
 class DorkingService:
     def __init__(self):
-        self.api_key = settings.serpapi_key or "dfa979f569a529796b003b468c6d1fd498221dc1f49859cc8343b071015bbfcf"
+        self.api_key = settings.serpapi_key
         self.apify_client = ApifyActorClient()
 
     def is_configured(self) -> bool:

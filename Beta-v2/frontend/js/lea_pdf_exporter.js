@@ -47,11 +47,98 @@ window.LeaPdfExporter = {
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  },
+
+  hostnameIsClearlyNonPublic: function (value) {
+    const hostname = String(value || "").toLowerCase().replace(/^\[|\]$/g, "");
+    if (!hostname || hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".home.arpa")) return true;
+    if (hostname.includes(":")) {
+      return hostname === "::" || hostname === "::1" || hostname.startsWith("::ffff:") || /^(?:fc|fd|fe[89ab]|ff)/i.test(hostname);
+    }
+    if (!/^\d+(?:\.\d+){3}$/.test(hostname)) return false;
+    const octets = hostname.split(".").map(Number);
+    if (octets.some(octet => !Number.isInteger(octet) || octet < 0 || octet > 255)) return true;
+    const [a, b] = octets;
+    return a === 0 || a === 10 || a === 127 || a >= 224
+      || (a === 100 && b >= 64 && b <= 127)
+      || (a === 169 && b === 254)
+      || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && (b === 0 || b === 168))
+      || (a === 198 && (b === 18 || b === 19 || b === 51))
+      || (a === 203 && b === 0);
+  },
+
+  safeAbsoluteHttpURL: function (value) {
+    try {
+      const parsed = new URL(String(value || ""));
+      if (!["http:", "https:"].includes(parsed.protocol)) return "";
+      if (parsed.username || parsed.password) return "";
+      if (this.hostnameIsClearlyNonPublic(parsed.hostname)) return "";
+      return parsed.href;
+    } catch (_error) {
+      return "";
+    }
   },
 
   generateReportHtml: function (data) {
     const esc = this.escapeHTML.bind(this);
+    const boundedInteger = (value, fallback = 0, minimum = 0, maximum = Number.MAX_SAFE_INTEGER) => {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return fallback;
+      return Math.max(minimum, Math.min(maximum, Math.trunc(parsed)));
+    };
+    const configuredApiBase = typeof API_BASE !== "undefined"
+      ? API_BASE
+      : "http://127.0.0.1:8010";
+    let safeApiBase = "";
+    try {
+      const apiBase = new URL(String(configuredApiBase || ""));
+      if (["http:", "https:"].includes(apiBase.protocol) && !apiBase.username && !apiBase.password) {
+        safeApiBase = apiBase.href;
+      }
+    } catch (_error) {
+      safeApiBase = "";
+    }
+    const proxyImageURL = rawURL => {
+      const safeSource = this.safeAbsoluteHttpURL(rawURL);
+      if (!safeApiBase || !safeSource) return "";
+      const endpoint = new URL("/api/v1/investigation/proxy_image", safeApiBase);
+      endpoint.searchParams.set("url", safeSource);
+      return endpoint.href;
+    };
+    const safeAnchor = (rawURL, label, fallback = "Unavailable") => {
+      const safeURL = this.safeAbsoluteHttpURL(rawURL);
+      if (!safeURL) return esc(fallback);
+      return `<a href="${esc(safeURL)}" target="_blank" rel="noopener noreferrer">${esc(label || safeURL)}</a>`;
+    };
+    const isSensitiveFieldName = value => {
+      const normalized = String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const exact = new Set([
+        "pass", "hash", "pin", "otp", "salt", "ssn", "pan", "vin", "tin",
+        "cvv", "cvc", "iban", "swift", "balance", "ip", "ipv4", "ipv6",
+        "mac", "imei", "imsi", "dob",
+      ]);
+      const fragments = [
+        "password", "passwd", "passcode", "passphrase", "pwd", "credential",
+        "authorization", "secret", "token", "cookie", "securityanswer",
+        "securityquestion", "apikey", "authkey", "accesskey", "privatekey",
+        "sessionid", "sessionkey", "recoverycode", "mfacode", "cardnumber",
+        "creditcard", "debitcard", "bankaccount", "routingnumber", "payment",
+        "cryptowallet", "walletaddress", "aadhaar", "aadhar", "passport",
+        "governmentid", "nationalid", "voterid", "driverlicense", "medical",
+        "diagnosis", "treatment", "patient", "clinical", "medication",
+        "dateofbirth", "birthdate", "birthyear", "ipaddress", "lastip",
+        "loginip", "registrationip", "deviceid", "deviceidentifier",
+        "devicefingerprint", "macaddress", "useragent", "browserfingerprint",
+      ];
+      return exact.has(normalized) || fragments.some(fragment => normalized.includes(fragment));
+    };
+    const redactSensitiveText = value => String(value ?? "").replace(
+      /\b(password|passwd|pass|pass[_\s-]*(?:code|phrase|hash)|pwd|credential|authorization|api[_\s-]*key|auth[_\s-]*(?:key|token)|access[_\s-]*(?:key|token)|refresh[_\s-]*token|private[_\s-]*key|session[_\s-]*(?:id|key)|recovery[_\s-]*code|otp|mfa[_\s-]*code|salt|secret|token|cookie|cvv|cvc|card[_\s-]*number|bank[_\s-]*(?:account|balance)|account[_\s-]*balance|routing[_\s-]*number|iban|swift|ssn|aadhaar|aadhar|pan|passport|government[_\s-]*id|national[_\s-]*id|voter[_\s-]*id|driver[_\s-]*license|diagnosis|treatment|medical[_\s-]*(?:record|number)|patient[_\s-]*id|date[_\s-]*of[_\s-]*birth|birth[_\s-]*date|dob|ip[_\s-]*address|device[_\s-]*id|imei|imsi)\b\s*[:=\-]\s*[^\r\n,;|]{1,200}/gi,
+      (_match, field) => `${field}: [VALUE SUPPRESSED]`,
+    );
 
     const targetQuery = data.target_query || data.username || "UNKNOWN";
     const consolidated = data.consolidated_identity || {};
@@ -108,7 +195,7 @@ window.LeaPdfExporter = {
           <table class="card-table">
             <tr><td style="width:25%;">Full Name</td><td><strong>${esc(li.full_name || li.basic_info?.fullName || "N/A")}</strong></td></tr>
             <tr><td>Headline</td><td>${esc(li.headline || li.basic_info?.headline || "N/A")}</td></tr>
-            <tr><td>Profile URL</td><td><a href="${esc(li.profile_url)}" target="_blank">${esc(li.profile_url || "N/A")}</a></td></tr>
+            <tr><td>Profile URL</td><td>${safeAnchor(li.profile_url, li.profile_url || "Profile", "N/A")}</td></tr>
             <tr><td>Location</td><td>${esc(li.location || li.basic_info?.location || "N/A")}</td></tr>
             <tr><td>Discovered Emails</td><td>${(li.emails || []).map(e => `<span class="badge badge-info">${esc(e)}</span>`).join(" ") || "None"}</td></tr>
             <tr><td>Discovered Phones</td><td>${(li.phone_numbers || li.phones || []).map(p => `<span class="badge badge-success">${esc(p)}</span>`).join(" ") || "None"}</td></tr>
@@ -151,6 +238,7 @@ window.LeaPdfExporter = {
     // Instagram Card
     if (scrapedData.instagram && scrapedData.instagram.success) {
       const ig = scrapedData.instagram;
+      const safeInstagramExternalURL = this.safeAbsoluteHttpURL(ig.external_url);
       platformCardsHTML += `
       <div class="card-box">
         <div class="card-header">
@@ -164,7 +252,7 @@ window.LeaPdfExporter = {
             <tr><td>Bio / Description</td><td>${esc(ig.bio || "N/A")}</td></tr>
             <tr><td>Metrics</td><td>${esc(ig.follower_count || 0)} Followers | ${esc(ig.following_count || 0)} Following | ${esc(ig.post_count || 0)} Posts</td></tr>
             <tr><td>Badges</td><td>Verified: ${ig.is_verified ? "YES" : "NO"} | Business: ${ig.is_business ? "YES" : "NO"}</td></tr>
-            ${ig.external_url ? `<tr><td>External Link</td><td><a href="${esc(ig.external_url)}" target="_blank">${esc(ig.external_url)}</a></td></tr>` : ""}
+            ${safeInstagramExternalURL ? `<tr><td>External Link</td><td>${safeAnchor(safeInstagramExternalURL, safeInstagramExternalURL)}</td></tr>` : ""}
           </table>
         </div>
       </div>`;
@@ -182,7 +270,7 @@ window.LeaPdfExporter = {
         <div class="card-body">
           <table class="card-table">
             <tr><td style="width:25%;">Title / Name</td><td><strong>${esc(fb.title || fb.page_name || fb.full_name || "N/A")}</strong></td></tr>
-            <tr><td>Page URL</td><td><a href="${esc(fb.url)}" target="_blank">${esc(fb.url || "N/A")}</a></td></tr>
+            <tr><td>Page URL</td><td>${safeAnchor(fb.url, fb.url || "Page", "N/A")}</td></tr>
             <tr><td>Address / Location</td><td>${esc(fb.address || "N/A")}</td></tr>
             <tr><td>Category / Website</td><td>${esc(fb.categories?.join(", ") || fb.website || "N/A")}</td></tr>
             <tr><td>Likes / Followers</td><td>${esc(fb.likes_count || fb.likes || 0)} Likes | ${esc(fb.follower_count || 0)} Followers</td></tr>
@@ -217,13 +305,20 @@ window.LeaPdfExporter = {
     let ctiRowsHTML = "";
     if (ctiResults.length > 0) {
       ctiResults.forEach(r => {
-        const dbName = esc(r.database || r.query || "Leak Database");
-        const infoLeak = esc(r.info_leak || r.infoLeak || "Breached Records Set");
+        const dbName = esc(redactSensitiveText(r.database || r.query || "Leak Database"));
+        const infoLeak = esc(redactSensitiveText(r.info_leak || r.infoLeak || "Breached Records Set"));
         const rows = r.rows || r.data || [];
 
         rows.slice(0, 10).forEach(row => {
           let rowDetails = Object.entries(row)
-            .map(([k, v]) => `<strong>${esc(k)}:</strong> ${esc(v)}`)
+            .map(([k, v]) => {
+              const displayValue = isSensitiveFieldName(k)
+                ? "[VALUE SUPPRESSED]"
+                : v !== null && typeof v === "object"
+                ? "[STRUCTURED VALUE SUPPRESSED]"
+                : redactSensitiveText(v);
+              return `<strong>${esc(k)}:</strong> ${esc(displayValue)}`;
+            })
             .join(" | ");
 
           ctiRowsHTML += `
@@ -245,8 +340,8 @@ window.LeaPdfExporter = {
       <tr>
         <td><strong>${esc(a.platform)}</strong></td>
         <td>${esc(a.username)}</td>
-        <td><a href="${esc(a.url)}" target="_blank">${esc(a.url)}</a></td>
-        <td><strong>${a.confidence}%</strong></td>
+        <td>${safeAnchor(a.url, a.url || "Profile")}</td>
+        <td><strong>${boundedInteger(a.confidence, 0, 0, 100)}%</strong></td>
         <td><span class="badge badge-success">${esc(a.match_status || "VERIFIED")}</span></td>
       </tr>
     `).join("");
@@ -275,8 +370,8 @@ window.LeaPdfExporter = {
       <tr>
         <td>${esc(h.site)}</td>
         <td>${esc(h.handle || targetQuery)}</td>
-        <td style="color:#2E9E5B; font-weight:bold;">FOUND (${h.ms}ms)</td>
-        <td><a href="${esc(h.url)}" target="_blank">${esc(h.url)}</a></td>
+        <td style="color:#2E9E5B; font-weight:bold;">FOUND (${boundedInteger(h.ms)}ms)</td>
+        <td>${safeAnchor(h.url, h.url || "Profile")}</td>
       </tr>
     `).join("");
 
@@ -288,7 +383,7 @@ window.LeaPdfExporter = {
     let dorkingRows = dorkHits.map(r => `
       <tr>
         <td><strong>${esc(r.category || "Web Search")}</strong></td>
-        <td><a href="${esc(r.url)}" target="_blank">${esc(r.title || "Hit")}</a><br><small>${esc(r.domain || "")}</small></td>
+        <td>${safeAnchor(r.url, r.title || "Hit", r.title || "Unavailable")}<br><small>${esc(r.domain || "")}</small></td>
         <td>${esc(r.snippet || "")}</td>
         <td><small>${esc(r.query || "")}</small></td>
       </tr>
@@ -369,15 +464,19 @@ window.LeaPdfExporter = {
     }
 
     let mediaGalleryHTML = "";
-    if (mediaItems.length > 0) {
-      const gridItems = mediaItems.map(item => `
+    const gridItems = mediaItems.map(item => {
+      const proxiedImageURL = proxyImageURL(item.url);
+      if (!proxiedImageURL) return "";
+      return `
         <div style="border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: #f9f9f9; padding: 6px; text-align: center; page-break-inside: avoid;">
-          <img src="${esc(item.url)}" referrerpolicy="no-referrer" style="width: 100%; height: 110px; object-fit: cover; border-radius: 3px; display: block; margin-bottom: 4px;" onerror="if(!this.dataset.proxied){this.dataset.proxied='true';this.src='${(typeof API_BASE !== 'undefined' ? API_BASE : 'http://127.0.0.1:8010')}/api/v1/investigation/proxy_image?url='+encodeURIComponent('${esc(item.url)}');}else{this.style.display='none';}">
+          <img src="${esc(proxiedImageURL)}" crossorigin="use-credentials" referrerpolicy="no-referrer" style="width: 100%; height: 110px; object-fit: cover; border-radius: 3px; display: block; margin-bottom: 4px;">
           <div style="font-size: 8pt; font-weight: bold; color: #006699; margin-bottom: 2px;">${esc(item.source)}</div>
           <div style="font-size: 7.5pt; color: #555; height: 26px; overflow: hidden; text-overflow: ellipsis;">${esc(item.caption)}</div>
         </div>
-      `).join("");
-      mediaGalleryHTML = `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 10px;">${gridItems}</div>`;
+      `;
+    }).filter(Boolean);
+    if (gridItems.length > 0) {
+      mediaGalleryHTML = `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 10px;">${gridItems.join("")}</div>`;
     } else {
       mediaGalleryHTML = `<p><small style="color: #666;">No media files or post images extracted for this target.</small></p>`;
     }
@@ -448,7 +547,7 @@ window.LeaPdfExporter = {
         <tr><td style="width:30%; background:#eee;"><strong>Likely Full Name</strong></td><td><strong>${esc(consolidated.likely_name || "N/A")}</strong></td></tr>
         <tr><td style="background:#eee;"><strong>Location / Clues</strong></td><td>${esc(consolidated.location || "N/A")}</td></tr>
         <tr><td style="background:#eee;"><strong>Behavioral Classification</strong></td><td><strong>${esc(consolidated.profession || aiPersonality.primaryCategory || "N/A")}</strong></td></tr>
-        <tr><td style="background:#eee;"><strong>Identity Confidence Score</strong></td><td><strong style="font-size:12pt; color:#2E9E5B;">${consolidated.confidence_percentage || 0}%</strong> (${esc((consolidated.overall_confidence || "low").toUpperCase())})</td></tr>
+        <tr><td style="background:#eee;"><strong>Identity Confidence Score</strong></td><td><strong style="font-size:12pt; color:#2E9E5B;">${boundedInteger(consolidated.confidence_percentage, 0, 0, 100)}%</strong> (${esc((consolidated.overall_confidence || "low").toUpperCase())})</td></tr>
     </table>
 
     <h4 style="margin-top:14px; margin-bottom:6px;">Discovered &amp; Verified Email Addresses</h4>

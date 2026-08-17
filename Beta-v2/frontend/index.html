@@ -222,7 +222,7 @@
             <div id="login-error"
                  class="login-error-msg"
                  style="display:none;">
-                Invalid credentials. Access denied.
+                Authentication failed. Check the server configuration and credentials.
             </div>
 
             <div style="margin-bottom:14px;">
@@ -235,8 +235,7 @@
                     type="text"
                     id="login-user"
                     class="form-input"
-                    placeholder="uppolice"
-                    value="uppolice"
+                    placeholder="Analyst username"
                     autocomplete="username">
 
             </div>
@@ -252,13 +251,13 @@
                     id="login-pass"
                     class="form-input"
                     placeholder="••••••••••••••"
-                    value="testingaccount"
                     autocomplete="current-password"
                     onkeydown="if(event.key==='Enter') handleLogin()">
 
             </div>
 
             <button
+                id="login-submit"
                 class="btn-execute"
                 onclick="handleLogin()">
 
@@ -421,8 +420,11 @@
 
         <div class="soc-actions">
 
+            <span id="soc-authenticated-user" class="soc-authenticated-user mono" style="display:none;"></span>
+
             <button
-                class="btn-lea"
+                id="nav-username-investigation"
+                class="btn-lea is-active"
                 onclick="resetToHeroView()">
 
                 <svg
@@ -450,6 +452,31 @@
 
 
             <button
+                id="nav-email-investigation"
+                class="btn-lea"
+                onclick="openEmailInvestigation()">
+
+                <svg
+                    class="icon-svg cyan"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2">
+
+                    <path d="M4 4h16v16H4z"></path>
+                    <polyline points="4,6 12,13 20,6"></polyline>
+
+                </svg>
+
+                <span>
+                    Email Investigation
+                </span>
+
+            </button>
+
+
+            <button
+                id="nav-lea-export"
                 class="btn-lea"
                 onclick="triggerLeaPdfExport()">
 
@@ -714,6 +741,244 @@
         </div>
 
     </div>
+
+
+    <!-- ========================================================
+         EMAIL INVESTIGATION MODULE
+    ========================================================= -->
+
+    <section
+        id="email-investigation-view"
+        class="email-investigation-view"
+        aria-labelledby="email-module-title"
+        style="display:none;">
+
+        <div class="email-module-heading">
+            <div>
+                <div class="email-module-kicker mono">AUTHORIZED PUBLIC-DATA WORKFLOW</div>
+                <h1 id="email-module-title">Email Investigation</h1>
+                <p>
+                    Validate an address, inspect its mail domain, review breach exposure,
+                    and collect attributable public-web findings under a documented case.
+                </p>
+            </div>
+            <div class="email-governance-badge mono">
+                GOVERNANCE GATE ACTIVE
+            </div>
+        </div>
+
+        <div class="email-module-grid">
+            <form id="email-investigation-form" class="soc-card email-investigation-form" novalidate>
+                <div class="soc-card-header">
+                    <span class="card-title-text">Investigation Parameters</span>
+                    <span class="mono email-form-state" id="email-form-state">AWAITING INPUT</span>
+                </div>
+
+                <div class="email-field-block">
+                    <label class="form-label" for="email-target-input">
+                        <span>Target Email Address</span>
+                        <span id="email-syntax-badge" class="email-syntax-badge neutral">NOT CHECKED</span>
+                    </label>
+                    <input
+                        type="email"
+                        id="email-target-input"
+                        class="form-input"
+                        maxlength="254"
+                        autocomplete="off"
+                        autocapitalize="none"
+                        spellcheck="false"
+                        inputmode="email"
+                        placeholder="subject@example.com"
+                        aria-describedby="email-validation-message"
+                        required>
+                    <div id="email-validation-message" class="email-validation-message" role="status" aria-live="polite">
+                        Enter one complete email address. Bulk input is intentionally disabled in this workflow.
+                    </div>
+                </div>
+
+                <div class="email-two-column-fields">
+                    <div>
+                        <label class="form-label" for="email-case-id">Case ID / Reference</label>
+                        <input
+                            type="text"
+                            id="email-case-id"
+                            class="form-input mono"
+                            maxlength="64"
+                            placeholder="UPP-CASE-2026-001"
+                            autocomplete="off"
+                            required>
+                    </div>
+
+                    <div>
+                        <label class="form-label" for="email-reason-code">Authorization Reason Code</label>
+                        <select id="email-reason-code" class="form-input" required>
+                            <option value="">Select documented authority...</option>
+                            <option value="active_investigation">Active investigation</option>
+                            <option value="victim_consent">Victim / data-subject consent</option>
+                            <option value="incident_response">Authorized incident response</option>
+                            <option value="court_or_legal_order">Court or lawful written order</option>
+                            <option value="official_duty">Other documented official duty</option>
+                        </select>
+                    </div>
+                </div>
+
+                <label class="email-authorization-check" for="email-authorization-confirmed">
+                    <input type="checkbox" id="email-authorization-confirmed" required>
+                    <span>
+                        I confirm this lookup is authorized, necessary for the case above,
+                        and limited to lawful investigative purposes.
+                    </span>
+                </label>
+
+                <fieldset class="email-options-fieldset">
+                    <legend>Bounded Collection Options</legend>
+
+                    <label class="email-option-row" for="email-option-breaches">
+                        <span>
+                            <strong>Breach intelligence</strong>
+                            <small>Metadata and exposed data types only; credential values are never displayed.</small>
+                        </span>
+                        <input type="checkbox" id="email-option-breaches" checked>
+                    </label>
+
+                    <label id="email-restricted-option-row" class="email-option-row email-restricted-option" for="email-option-restricted-records" style="display:none;">
+                        <span>
+                            <strong>Restricted breach contact records</strong>
+                            <small>Requires breach_pii_viewer. Every disclosure is server-audited and excluded from exports.</small>
+                        </span>
+                        <input type="checkbox" id="email-option-restricted-records">
+                    </label>
+
+                    <label class="email-option-row" for="email-option-dorking">
+                        <span>
+                            <strong>Public-web dork discovery</strong>
+                            <small>Exact, document, platform, forum, paste, and archive categories through the configured provider.</small>
+                        </span>
+                        <input type="checkbox" id="email-option-dorking" checked>
+                    </label>
+
+                    <label class="email-option-row" for="email-option-gravatar">
+                        <span>
+                            <strong>Gravatar identity lookup</strong>
+                            <small>Checks the public email hash profile and verified account links.</small>
+                        </span>
+                        <input type="checkbox" id="email-option-gravatar" checked>
+                    </label>
+
+                    <div class="email-limit-row">
+                        <label for="email-dork-query-limit">Maximum discovery queries</label>
+                        <select id="email-dork-query-limit" class="form-input mono">
+                            <option value="0">0 — disabled</option>
+                            <option value="1">1 query</option>
+                            <option value="2">2 queries</option>
+                            <option value="3" selected>3 queries</option>
+                        </select>
+                    </div>
+                </fieldset>
+
+                <div id="email-form-error" class="email-form-error" role="alert" style="display:none;"></div>
+
+                <div class="email-form-actions">
+                    <button id="email-investigate-button" type="submit" class="btn-execute email-investigate-button">
+                        INVESTIGATE EMAIL
+                    </button>
+                    <button id="email-cancel-button" type="button" class="btn-lea" style="display:none;" onclick="cancelEmailInvestigation()">
+                        Cancel Request
+                    </button>
+                </div>
+            </form>
+
+            <aside class="soc-card email-scope-card">
+                <div class="soc-card-header">
+                    <span class="card-title-text">Collection Guardrails</span>
+                </div>
+                <ul class="email-guardrail-list">
+                    <li>One target email per request.</li>
+                    <li>Case reference, reason code, and explicit authorization are mandatory.</li>
+                    <li>Discovery queries and returned evidence are server-bounded.</li>
+                    <li>Raw passwords, hashes, payment data, and secret tokens are suppressed.</li>
+                    <li>Restricted contact records require a backend role and a successful audit write.</li>
+                    <li>Results are investigative leads and require human verification.</li>
+                </ul>
+                <div class="email-scope-note mono">
+                    AUTHENTICATED / ROLE-GATED / AUDITED DISCLOSURE / NO LOGIN ATTEMPTS
+                </div>
+            </aside>
+        </div>
+
+        <div id="email-investigation-loading" class="soc-card email-investigation-loading" style="display:none;" role="status" aria-live="polite">
+            <span class="email-loading-spinner" aria-hidden="true"></span>
+            <div>
+                <strong>EMAIL INVESTIGATION IN PROGRESS</strong>
+                <div id="email-loading-message" class="mono">Validating target and domain infrastructure...</div>
+            </div>
+        </div>
+
+        <div id="email-investigation-results" class="email-investigation-results" style="display:none;">
+            <div class="soc-card email-result-summary-card">
+                <div class="email-result-summary-main">
+                    <div class="email-module-kicker mono">CASE RESULT</div>
+                    <h2 id="email-result-target">—</h2>
+                    <div id="email-result-meta" class="email-result-meta mono"></div>
+                </div>
+                <div class="email-export-actions" aria-label="Email investigation exports">
+                    <button type="button" class="btn-lea" onclick="exportEmailInvestigation('csv')">Export CSV</button>
+                    <button type="button" class="btn-lea" onclick="exportEmailInvestigation('txt')">Export TXT</button>
+                    <button type="button" class="btn-lea" onclick="exportEmailInvestigation('json')">Export JSON</button>
+                </div>
+            </div>
+
+            <div class="email-results-grid">
+                <section class="soc-card email-result-section" aria-labelledby="email-validation-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="email-validation-title">Validation &amp; Domain Intelligence</span>
+                        <span id="email-validation-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="email-validation-domain-body"></div>
+                </section>
+
+                <section class="soc-card email-result-section" aria-labelledby="email-breach-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="email-breach-title">Breach Intelligence</span>
+                        <span id="email-breach-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="email-breach-summary-body"></div>
+                    <div id="email-breach-list-body"></div>
+                </section>
+
+                <section class="soc-card email-result-section email-result-wide" aria-labelledby="email-discovery-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="email-discovery-title">Categorized Public-Web Discovery</span>
+                        <span id="email-discovery-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="email-discovery-results-body"></div>
+                </section>
+
+                <section class="soc-card email-result-section" aria-labelledby="email-harvest-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="email-harvest-title">Domain Email Harvest</span>
+                        <span id="email-harvest-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="email-harvest-results-body"></div>
+                </section>
+
+                <section class="soc-card email-result-section" aria-labelledby="email-gravatar-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="email-gravatar-title">Gravatar / Associated Identity</span>
+                        <span id="email-gravatar-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="email-gravatar-results-body"></div>
+                </section>
+
+                <section class="soc-card email-result-section email-result-wide email-limitations-card" aria-labelledby="email-limitations-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="email-limitations-title">Limitations &amp; Analyst Handling</span>
+                    </div>
+                    <div id="email-limitations-body"></div>
+                </section>
+            </div>
+        </div>
+    </section>
 
 
     <!-- ========================================================
@@ -1494,7 +1759,9 @@
 ============================================================= -->
 
 <script src="js/lea_pdf_exporter.js"></script>
+<script src="js/auth.js"></script>
 <script src="js/app.js"></script>
+<script src="js/email_investigation.js"></script>
 
 </body>
 </html>

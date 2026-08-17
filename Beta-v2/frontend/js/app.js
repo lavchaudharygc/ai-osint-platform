@@ -5,37 +5,37 @@
 const API_BASE = window.API_BASE || (window.location.hostname ? `${window.location.protocol}//${window.location.hostname}:8010` : "http://127.0.0.1:8010");
 let currentInvestigationData = null;
 let progressInterval = null;
-
-// Auth credentials check
-window.addEventListener("DOMContentLoaded", () => {
-    const isAuth = sessionStorage.getItem("upp_soc_auth");
-    if (isAuth === "true") {
-        document.getElementById("login-screen").style.display = "none";
-        document.getElementById("main-dashboard").style.display = "block";
-    }
-    fetchApiKeysStatus();
-});
+let activeLegacyController = null;
+let legacyRequestSerial = 0;
 
 function handleLogin() {
-    const u = document.getElementById("login-user").value.trim();
-    const p = document.getElementById("login-pass").value.trim();
-    const err = document.getElementById("login-error");
+    return window.SocAuth.login();
+}
 
-    if (u === "uppolice" && p === "testingaccount") {
-        sessionStorage.setItem("upp_soc_auth", "true");
-        err.style.display = "none";
-        document.getElementById("login-screen").style.display = "none";
-        document.getElementById("main-dashboard").style.display = "block";
-    } else {
-        err.style.display = "block";
+async function handleLogout() {
+    if (typeof window.clearEmailInvestigationState === "function") {
+        window.clearEmailInvestigationState();
     }
+    clearLegacyInvestigationState();
+    return window.SocAuth.logout();
 }
 
-function handleLogout() {
-    sessionStorage.removeItem("upp_soc_auth");
-    document.getElementById("main-dashboard").style.display = "none";
-    document.getElementById("login-screen").style.display = "flex";
+function hasLegacyContactAccess() {
+    return Boolean(
+        window.SocAuth?.hasRole("investigator")
+        && window.SocAuth?.hasRole("breach_pii_viewer")
+    );
 }
+
+window.addEventListener("soc:authenticated", () => {
+    fetchApiKeysStatus();
+    const usernameNav = document.getElementById("nav-username-investigation");
+    if (usernameNav) usernameNav.style.display = hasLegacyContactAccess() ? "inline-flex" : "none";
+    if (!hasLegacyContactAccess() && typeof window.openEmailInvestigation === "function") {
+        window.openEmailInvestigation();
+    }
+});
+window.addEventListener("soc:unauthenticated", clearLegacyInvestigationState);
 
 /* ---------- Smart Input Classifier ---------- */
 function classifyInput(raw) {
@@ -78,7 +78,93 @@ function escapeHTML(val) {
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function boundedInteger(value, fallback = 0, minimum = 0, maximum = Number.MAX_SAFE_INTEGER) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(minimum, Math.min(maximum, Math.trunc(parsed)));
+}
+
+function formattedCount(value, fallback = 0) {
+    return boundedInteger(value, fallback).toLocaleString();
+}
+
+function hostnameIsClearlyNonPublic(value) {
+    const hostname = String(value || "").toLowerCase().replace(/^\[|\]$/g, "");
+    if (!hostname || hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".home.arpa")) return true;
+    if (hostname.includes(":")) {
+        return hostname === "::" || hostname === "::1" || hostname.startsWith("::ffff:") || /^(?:fc|fd|fe[89ab]|ff)/i.test(hostname);
+    }
+    if (!/^\d+(?:\.\d+){3}$/.test(hostname)) return false;
+    const octets = hostname.split(".").map(Number);
+    if (octets.some(octet => !Number.isInteger(octet) || octet < 0 || octet > 255)) return true;
+    const [a, b] = octets;
+    return a === 0 || a === 10 || a === 127 || a >= 224
+        || (a === 100 && b >= 64 && b <= 127)
+        || (a === 169 && b === 254)
+        || (a === 172 && b >= 16 && b <= 31)
+        || (a === 192 && (b === 0 || b === 168))
+        || (a === 198 && (b === 18 || b === 19 || b === 51))
+        || (a === 203 && b === 0);
+}
+
+function safeAbsoluteHttpURL(value) {
+    try {
+        const parsed = new URL(String(value || ""));
+        if (!["http:", "https:"].includes(parsed.protocol)) return "";
+        if (parsed.username || parsed.password) return "";
+        if (hostnameIsClearlyNonPublic(parsed.hostname)) return "";
+        return parsed.href;
+    } catch (_error) {
+        return "";
+    }
+}
+
+function proxiedImageURL(value) {
+    const safeSource = safeAbsoluteHttpURL(value);
+    if (!safeSource) return "";
+    try {
+        const apiBase = new URL(String(API_BASE || ""));
+        if (!["http:", "https:"].includes(apiBase.protocol) || apiBase.username || apiBase.password) return "";
+        const endpoint = new URL("/api/v1/investigation/proxy_image", apiBase);
+        endpoint.searchParams.set("url", safeSource);
+        return endpoint.href;
+    } catch (_error) {
+        return "";
+    }
+}
+
+function redactSensitiveText(value) {
+    return String(value ?? "").replace(
+        /\b(password|passwd|pass|pass[_\s-]*(?:code|phrase|hash)|pwd|credential|authorization|api[_\s-]*key|auth[_\s-]*(?:key|token)|access[_\s-]*(?:key|token)|refresh[_\s-]*token|private[_\s-]*key|session[_\s-]*(?:id|key)|recovery[_\s-]*code|otp|mfa[_\s-]*code|salt|secret|token|cookie|cvv|cvc|card[_\s-]*number|bank[_\s-]*(?:account|balance)|account[_\s-]*balance|routing[_\s-]*number|iban|swift|ssn|aadhaar|aadhar|pan|passport|government[_\s-]*id|national[_\s-]*id|voter[_\s-]*id|driver[_\s-]*license|diagnosis|treatment|medical[_\s-]*(?:record|number)|patient[_\s-]*id|date[_\s-]*of[_\s-]*birth|birth[_\s-]*date|dob|ip[_\s-]*address|device[_\s-]*id|imei|imsi)\b\s*[:=\-]\s*[^\r\n,;|]{1,200}/gi,
+        (_match, label) => `${label}: [REDACTED]`,
+    );
+}
+
+function isSensitiveFieldName(value) {
+    const normalized = String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const exact = new Set([
+        "pass", "hash", "pin", "otp", "salt", "ssn", "pan", "vin", "tin",
+        "cvv", "cvc", "iban", "swift", "balance", "ip", "ipv4", "ipv6",
+        "mac", "imei", "imsi", "dob",
+    ]);
+    const fragments = [
+        "password", "passwd", "passcode", "passphrase", "pwd", "credential",
+        "authorization", "secret", "token", "cookie", "securityanswer",
+        "securityquestion", "apikey", "authkey", "accesskey", "privatekey",
+        "sessionid", "sessionkey", "recoverycode", "mfacode", "cardnumber",
+        "creditcard", "debitcard", "bankaccount", "routingnumber", "payment",
+        "cryptowallet", "walletaddress", "aadhaar", "aadhar", "passport",
+        "governmentid", "nationalid", "voterid", "driverlicense", "medical",
+        "diagnosis", "treatment", "patient", "clinical", "medication",
+        "dateofbirth", "birthdate", "birthyear", "ipaddress", "lastip",
+        "loginip", "registrationip", "deviceid", "deviceidentifier",
+        "devicefingerprint", "macaddress", "useragent", "browserfingerprint",
+    ];
+    return exact.has(normalized) || fragments.some(fragment => normalized.includes(fragment));
 }
 
 function logConsole(text) {
@@ -93,7 +179,7 @@ function logConsole(text) {
 }
 
 function triggerLeaPdfExport() {
-    if (!currentInvestigationData) {
+    if (!hasLegacyContactAccess() || !currentInvestigationData) {
         alert("Please execute an OSINT investigation scan first before exporting the official report.");
         return;
     }
@@ -168,13 +254,87 @@ function stopScanLoader() {
 }
 
 function resetToHeroView() {
+    if (!hasLegacyContactAccess()) {
+        if (typeof window.openEmailInvestigation === "function") window.openEmailInvestigation();
+        return;
+    }
+    if (typeof window.cancelEmailInvestigation === "function") {
+        window.cancelEmailInvestigation();
+    }
     document.getElementById("hero-search-view").style.display = "block";
     document.getElementById("results-workspace").style.display = "none";
+    const emailView = document.getElementById("email-investigation-view");
+    if (emailView) emailView.style.display = "none";
+    document.getElementById("nav-username-investigation")?.classList.add("is-active");
+    document.getElementById("nav-email-investigation")?.classList.remove("is-active");
+    const leaExport = document.getElementById("nav-lea-export");
+    if (leaExport) leaExport.style.display = "inline-flex";
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+function clearLegacyInvestigationState() {
+    legacyRequestSerial += 1;
+    if (activeLegacyController) activeLegacyController.abort("session_cleared");
+    activeLegacyController = null;
+    currentInvestigationData = null;
+    cachedGroqData = null;
+    cachedGeminiData = null;
+    clearInterval(progressInterval);
+    progressInterval = null;
+    const overlay = document.getElementById("scan-loader-overlay");
+    const results = document.getElementById("results-workspace");
+    const hero = document.getElementById("hero-search-view");
+    const mediaCard = document.getElementById("card-media-gallery");
+    if (overlay) overlay.style.display = "none";
+    if (results) results.style.display = "none";
+    if (hero) hero.style.display = "block";
+    if (mediaCard) mediaCard.style.display = "none";
+    [
+        "hero-target-username",
+        "target-username",
+        "provider-email",
+        "provider-phone",
+    ].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) input.value = "";
+    });
+    [
+        "consolidated-confidence-badge",
+        "ai-category-badge",
+        "associated-accounts-badge",
+        "media-gallery-badge",
+        "dorking-count-badge",
+        "cti-records-badge",
+        "diagnostics-summary-badge",
+    ].forEach(id => {
+        const badge = document.getElementById(id);
+        if (badge) badge.textContent = "";
+    });
+    [
+        "consolidated-identity-body",
+        "ai-personality-body",
+        "associated-accounts-body",
+        "media-gallery-body",
+        "dorking-results-body",
+        "telegram-cti-body",
+        "platform-dossiers-body",
+        "diagnostics-body",
+        "console-stream",
+    ].forEach(id => {
+        const node = document.getElementById(id);
+        if (node?.replaceChildren) node.replaceChildren();
+        else if (node) node.innerHTML = "";
+    });
+}
+
+window.clearLegacyInvestigationState = clearLegacyInvestigationState;
+
 /* ---------- Main Investigation Execution ---------- */
 async function executeScan(fromHero = false) {
+    if (!hasLegacyContactAccess()) {
+        alert("This contact-bearing investigation requires investigator and breach_pii_viewer roles.");
+        return;
+    }
     const heroInput = document.getElementById("hero-target-username");
     const sidebarInput = document.getElementById("target-username");
 
@@ -204,23 +364,33 @@ async function executeScan(fromHero = false) {
         cache_mode: "use",
     };
 
+    legacyRequestSerial += 1;
+    const serial = legacyRequestSerial;
+    if (activeLegacyController) activeLegacyController.abort("superseded");
+    const controller = new AbortController();
+    activeLegacyController = controller;
+
     // Show loader fillup animation
     startScanLoader(queryVal);
 
     logConsole(`[SYS] OSINT DISPATCH — TARGET: ${queryVal} (${kind.toUpperCase()})`);
 
     try {
-        const res = await fetch(`${API_BASE}/api/v1/investigation/username`, {
+        const res = await window.SocAuth.fetch(`${API_BASE}/api/v1/investigation/username`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: controller.signal,
         });
+
+        if (serial !== legacyRequestSerial || controller.signal.aborted) return;
 
         if (!res.ok) {
             throw new Error(`API Error HTTP ${res.status}`);
         }
 
         const data = await res.json();
+        if (serial !== legacyRequestSerial || controller.signal.aborted) return;
         currentInvestigationData = data;
 
         stopScanLoader();
@@ -236,9 +406,12 @@ async function executeScan(fromHero = false) {
         window.scrollTo({ top: 0, behavior: "smooth" });
 
     } catch (err) {
+        if (serial !== legacyRequestSerial || controller.signal.aborted || err?.name === "AbortError") return;
         stopScanLoader();
         logConsole(`[ERR] SCAN INTERRUPTED: ${err.message}`);
         alert(`OSINT Scan Interrupted: ${err.message}`);
+    } finally {
+        if (serial === legacyRequestSerial) activeLegacyController = null;
     }
 }
 
@@ -261,23 +434,34 @@ function renderConsolidatedIdentity(ci) {
     if (!body) return;
     if (!ci) { body.innerHTML = "<div style='color:var(--text-muted);'>No consolidated identity generated.</div>"; return; }
 
-    const pct = ci.confidence_percentage || 0;
+    const pct = boundedInteger(ci.confidence_percentage, 0, 0, 100);
     if (badge) {
         badge.textContent = `${pct}% CONFIDENCE (${(ci.overall_confidence || "low").toUpperCase()})`;
         badge.style.color = pct >= 70 ? "var(--status-success)" : (pct >= 45 ? "var(--risk-medium)" : "var(--risk-high)");
     }
 
-    const emailsHTML = (ci.emails || []).map(e => `
-        <span class="tag-chip mono ${e.deliverable ? 'interest' : ''}">${escapeHTML(e.email)} <small>(${e.status})</small></span>
-    `).join("");
+    const emailsHTML = (ci.emails || []).map(e => {
+        const statusCandidate = String(e?.status || "unknown").trim().toLowerCase();
+        const emailStatus = ["verified", "invalid", "likely", "unknown", "resolved"].includes(statusCandidate)
+            ? statusCandidate
+            : "unknown";
+        return `
+        <span class="tag-chip mono ${e?.deliverable ? 'interest' : ''}">${escapeHTML(e?.email)} <small>(${escapeHTML(emailStatus)})</small></span>
+    `;
+    }).join("");
 
-    const linksHTML = (ci.links || []).map(l => `
-        <a href="${escapeHTML(l)}" target="_blank" class="tag-chip mono" style="text-decoration:none;">${escapeHTML(l.replace(/^https?:\/\//, '').slice(0, 35))} ↗</a>
-    `).join("");
+    const linksHTML = (ci.links || []).map(value => {
+        const safeURL = safeAbsoluteHttpURL(value);
+        if (!safeURL) return "";
+        return `
+        <a href="${escapeHTML(safeURL)}" target="_blank" rel="noopener noreferrer" class="tag-chip mono" style="text-decoration:none;">${escapeHTML(safeURL.replace(/^https?:\/\//, '').slice(0, 35))} ↗</a>
+    `;
+    }).join("");
 
-    const photoHTML = ci.profile_pic ? `
+    const profileImageURL = proxiedImageURL(ci.profile_pic);
+    const photoHTML = profileImageURL ? `
         <div style="flex-shrink:0; text-align:center;">
-            <img src="${ci.profile_pic}" alt="Profile" referrerpolicy="no-referrer" style="width:90px; height:90px; border-radius:50%; border:2px solid var(--accent-cyan); object-fit:cover; background:var(--bg-panel); display:block; margin:0 auto;" onerror="this.style.display='none';">
+            <img src="${escapeHTML(profileImageURL)}" crossorigin="use-credentials" alt="Profile" referrerpolicy="no-referrer" style="width:90px; height:90px; border-radius:50%; border:2px solid var(--accent-cyan); object-fit:cover; background:var(--bg-panel); display:block; margin:0 auto;" onerror="this.style.display='none';">
         </div>
     ` : `
         <div style="flex-shrink:0; text-align:center;">
@@ -371,9 +555,15 @@ function renderGroqView(ap) {
     if (!ap || !ap.summary) return "<div style='color:var(--text-muted); font-size:12px;'>AI profiling data unavailable.</div>";
     const traitsHTML = (ap.traits || []).map(t => `<span class="tag-chip">${escapeHTML(t)}</span>`).join("");
     const interestsHTML = (ap.interests || []).map(i => `<span class="tag-chip interest">${escapeHTML(i)}</span>`).join("");
-    const riskFlagsHTML = (ap.riskFlags || []).map(f => `
-        <span class="risk-badge ${f.severity || 'low'}">${f.severity ? f.severity.toUpperCase() : 'LOW'}: ${escapeHTML(f.label)}</span>
-    `).join("");
+    const riskFlagsHTML = (ap.riskFlags || []).map(f => {
+        const candidate = String(f?.severity || "low").toLowerCase();
+        const severity = ["low", "medium", "high", "critical"].includes(candidate)
+            ? candidate
+            : "low";
+        return `
+        <span class="risk-badge ${severity}">${severity.toUpperCase()}: ${escapeHTML(f?.label)}</span>
+    `;
+    }).join("");
 
     return `
         <div style="font-size:12px; color:var(--text-primary); margin-bottom:12px; line-height:1.6;">${escapeHTML(ap.summary)}</div>
@@ -406,14 +596,20 @@ function renderGoogleDorking(dorking) {
         return;
     }
 
-    const rows = results.map(r => `
+    const rows = results.map(r => {
+        const safeURL = safeAbsoluteHttpURL(r.url);
+        const titleHTML = safeURL
+            ? `<a href="${escapeHTML(safeURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--text-primary); font-weight:600; text-decoration:none;">${escapeHTML(r.title)} &#x2197;</a>`
+            : `<span style="color:var(--text-primary); font-weight:600;">${escapeHTML(r.title)}</span>`;
+        return `
         <tr>
             <td style="white-space:nowrap;"><span class="tag-chip interest">${escapeHTML(r.category || "Public Records")}</span></td>
-            <td><a href="${escapeHTML(r.url)}" target="_blank" style="color:var(--text-primary); font-weight:600; text-decoration:none;">${escapeHTML(r.title)} &#x2197;</a><br><span class="mono" style="font-size:10px; color:var(--text-muted);">${escapeHTML(r.domain)}</span></td>
+            <td>${titleHTML}<br><span class="mono" style="font-size:10px; color:var(--text-muted);">${escapeHTML(r.domain)}</span></td>
             <td style="color:var(--text-secondary); font-size:11px; max-width:260px;">${escapeHTML(r.snippet)}</td>
             <td class="mono" style="font-size:10px; color:var(--accent-cyan); white-space:nowrap;">${escapeHTML(r.query)}</td>
         </tr>
-    `).join("");
+    `;
+    }).join("");
 
     body.innerHTML = `<div class="table-scroll">
         <table class="soc-table">
@@ -434,15 +630,20 @@ function renderAssociatedAccounts(accounts) {
         return;
     }
     const rows = list.map(a => {
-        const confColor = a.confidence >= 75 ? 'var(--status-success)' : (a.confidence >= 50 ? 'var(--risk-medium)' : 'var(--text-muted)');
+        const confidence = boundedInteger(a.confidence, 0, 0, 100);
+        const confColor = confidence >= 75 ? 'var(--status-success)' : (confidence >= 50 ? 'var(--risk-medium)' : 'var(--text-muted)');
         const reasonsHTML = (a.reasons || []).map(r => `<div style="font-size:10px; color:var(--text-secondary); margin-top:2px;">&#x2022; ${escapeHTML(r)}</div>`).join('');
+        const safeURL = safeAbsoluteHttpURL(a.url);
+        const accountLinkHTML = safeURL
+            ? `<a href="${escapeHTML(safeURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none; font-size:11px;">${escapeHTML(safeURL.slice(0,45))} &#x2197;</a>`
+            : '<span style="color:var(--text-muted);">Unavailable</span>';
         return `
             <tr>
                 <td style="font-weight:600; color:var(--accent-cyan);">${escapeHTML(a.platform)}</td>
                 <td><span class="tag-chip">${escapeHTML(a.category || 'general')}</span></td>
                 <td class="mono">@${escapeHTML(a.username)}</td>
-                <td><a href="${escapeHTML(a.url)}" target="_blank" style="color:var(--accent-cyan); text-decoration:none; font-size:11px;">${escapeHTML((a.url||'').slice(0,45))} &#x2197;</a></td>
-                <td><span style="color:${confColor}; font-weight:700; font-size:13px;">${a.confidence}%</span><br><span style="font-size:9px; color:var(--text-muted);">${escapeHTML(a.match_status||'')}</span></td>
+                <td>${accountLinkHTML}</td>
+                <td><span style="color:${confColor}; font-weight:700; font-size:13px;">${confidence}%</span><br><span style="font-size:9px; color:var(--text-muted);">${escapeHTML(a.match_status||'')}</span></td>
                 <td>${reasonsHTML}</td>
             </tr>`;
     }).join('');
@@ -473,23 +674,25 @@ function renderTelegramCTI(cti) {
         Username: 'Username', IP: 'IP Address', Country: 'Country',
         Address: 'Address', DOB: 'Date of Birth', Login: 'Login',
     };
-
     const results = cti?.results || [];
     let cardsHTML = '';
     results.forEach(res => {
-        const dbName = res.database || 'Leak DB';
-        const infoLeak = res.info_leak || '';
+        const dbName = redactSensitiveText(res.database || 'Leak DB');
+        const infoLeak = redactSensitiveText(res.info_leak || '');
         const entries = res.data || [];
         entries.forEach(item => {
             const fieldRows = Object.entries(item).map(([k, v]) => {
                 if (!v || v === '-') return '';
                 const label = FIELD_LABELS[k] || k;
-                const isPass = k.toLowerCase().includes('pass');
+                const isSensitive = isSensitiveFieldName(k);
                 const isUrl = k === 'Url' || k === 'url';
-                const valStr = String(v);
-                const display = isUrl
-                    ? `<a href="${escapeHTML(valStr)}" target="_blank" style="color:var(--accent-cyan); word-break:break-all;">${escapeHTML(valStr)}</a>`
-                    : `<span class="mono" style="color:${isPass ? 'var(--risk-critical)' : 'var(--text-primary)'}">${escapeHTML(valStr)}</span>`;
+                const valStr = redactSensitiveText(v);
+                const safeURL = isUrl ? safeAbsoluteHttpURL(valStr) : "";
+                const display = isSensitive
+                    ? '<span class="mono" style="color:var(--risk-medium)">[VALUE SUPPRESSED]</span>'
+                    : safeURL
+                    ? `<a href="${escapeHTML(safeURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); word-break:break-all;">${escapeHTML(safeURL)}</a>`
+                    : `<span class="mono" style="color:var(--text-primary)">${escapeHTML(valStr)}</span>`;
                 return `<tr><td style="color:var(--text-muted); font-size:10px; width:100px; white-space:nowrap;">${escapeHTML(label)}</td><td>${display}</td></tr>`;
             }).filter(Boolean).join('');
 
@@ -525,6 +728,10 @@ function renderPlatformDossiers(scraped) {
         const postsCount = (ig.posts || []).length;
         const verifiedBadge = ig.is_verified ? '<span style="color:var(--status-success); font-size:10px; margin-left:6px;">&#x2714; VERIFIED</span>' : '';
         const privateBadge = ig.is_private ? '<span style="color:var(--risk-medium); font-size:10px; margin-left:6px;">PRIVATE</span>' : '';
+        const safeExternalURL = safeAbsoluteHttpURL(ig.external_url);
+        const externalLinkRow = safeExternalURL
+            ? `<tr><td style="color:var(--text-muted);">Website</td><td><a href="${escapeHTML(safeExternalURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan);">${escapeHTML(safeExternalURL)}</a></td></tr>`
+            : '';
         cardsHTML += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -533,11 +740,11 @@ function renderPlatformDossiers(scraped) {
                 </div>
                 <table class="soc-table" style="margin-bottom:8px;">
                     <tr><td style="color:var(--text-muted); width:120px;">Full Name</td><td><strong>${escapeHTML(ig.full_name || 'N/A')}</strong></td></tr>
-                    <tr><td style="color:var(--text-muted);">Followers</td><td>${(ig.follower_count || 0).toLocaleString()}</td></tr>
-                    <tr><td style="color:var(--text-muted);">Following</td><td>${(ig.following_count || 0).toLocaleString()}</td></tr>
-                    <tr><td style="color:var(--text-muted);">Posts</td><td>${ig.post_count || postsCount || 0} (${postsCount} scraped)</td></tr>
+                    <tr><td style="color:var(--text-muted);">Followers</td><td>${formattedCount(ig.follower_count)}</td></tr>
+                    <tr><td style="color:var(--text-muted);">Following</td><td>${formattedCount(ig.following_count)}</td></tr>
+                    <tr><td style="color:var(--text-muted);">Posts</td><td>${formattedCount(ig.post_count, postsCount)} (${postsCount} scraped)</td></tr>
                     ${ig.business_category ? `<tr><td style="color:var(--text-muted);">Category</td><td><span class="tag-chip">${escapeHTML(ig.business_category)}</span></td></tr>` : ''}
-                    ${ig.external_url ? `<tr><td style="color:var(--text-muted);">Website</td><td><a href="${escapeHTML(ig.external_url)}" target="_blank" style="color:var(--accent-cyan);">${escapeHTML(ig.external_url)}</a></td></tr>` : ''}
+                    ${externalLinkRow}
                 </table>
                 <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; padding:8px; background:var(--bg-panel); border-radius:4px;">${escapeHTML(ig.bio || 'No bio.')}</div>
                 <div>
@@ -552,6 +759,10 @@ function renderPlatformDossiers(scraped) {
     if (scraped.tiktok && scraped.tiktok.success !== false) {
         const tt = scraped.tiktok;
         const tagsHTML = (tt.hashtags || []).slice(0, 40).map(t => `<span class="tag-chip interest">#${escapeHTML(t)}</span>`).join("");
+        const safeProfileURL = safeAbsoluteHttpURL(tt.url);
+        const profileLinkRow = safeProfileURL
+            ? `<tr><td style="color:var(--text-muted);">Profile URL</td><td><a href="${escapeHTML(safeProfileURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan);">${escapeHTML(safeProfileURL)}</a></td></tr>`
+            : '';
         cardsHTML += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -560,10 +771,10 @@ function renderPlatformDossiers(scraped) {
                 </div>
                 <table class="soc-table" style="margin-bottom:8px;">
                     <tr><td style="color:var(--text-muted); width:120px;">Full Name</td><td><strong>${escapeHTML(tt.full_name || 'N/A')}</strong></td></tr>
-                    <tr><td style="color:var(--text-muted);">Followers / Fans</td><td>${(tt.follower_count || 0).toLocaleString()}</td></tr>
-                    <tr><td style="color:var(--text-muted);">Total Hearts / Likes</td><td>${(tt.heart_count || 0).toLocaleString()}</td></tr>
-                    <tr><td style="color:var(--text-muted);">Videos Count</td><td>${tt.video_count || (tt.videos || []).length}</td></tr>
-                    ${tt.url ? `<tr><td style="color:var(--text-muted);">Profile URL</td><td><a href="${escapeHTML(tt.url)}" target="_blank" style="color:var(--accent-cyan);">${escapeHTML(tt.url)}</a></td></tr>` : ''}
+                    <tr><td style="color:var(--text-muted);">Followers / Fans</td><td>${formattedCount(tt.follower_count)}</td></tr>
+                    <tr><td style="color:var(--text-muted);">Total Hearts / Likes</td><td>${formattedCount(tt.heart_count)}</td></tr>
+                    <tr><td style="color:var(--text-muted);">Videos Count</td><td>${formattedCount(tt.video_count, (tt.videos || []).length)}</td></tr>
+                    ${profileLinkRow}
                 </table>
                 <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; padding:8px; background:var(--bg-panel); border-radius:4px;">${escapeHTML(tt.bio || 'No TikTok bio.')}</div>
                 <div>
@@ -583,8 +794,15 @@ function renderPlatformDossiers(scraped) {
         const companyName = info.current_company || li.current_company || li.company || "N/A";
         const locationText = (info.location && typeof info.location === 'object') ? (info.location.full || info.location.city || "N/A") : (info.location || "N/A");
         const profileUrl = info.profile_url || li.profile_url || li.url || "";
-        const followers = info.follower_count ? info.follower_count.toLocaleString() : "N/A";
+        const followers = info.follower_count == null || info.follower_count === ""
+            ? "N/A"
+            : formattedCount(info.follower_count);
         const picUrl = info.profile_picture_url || info.profile_pic_url || "";
+        const safeProfileUrl = safeAbsoluteHttpURL(profileUrl);
+        const safeProfileImageUrl = proxiedImageURL(picUrl);
+        const profileLinkHTML = safeProfileUrl
+            ? `<a href="${escapeHTML(safeProfileUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(safeProfileUrl)} &#x2197;</a>`
+            : '<span style="color:var(--text-muted);">Profile URL unavailable</span>';
         const label = li.source ? `LINKEDIN (${escapeHTML(String(li.source).toUpperCase())})` : "LINKEDIN DOSSIER";
 
         let expHTML = "";
@@ -630,15 +848,20 @@ function renderPlatformDossiers(scraped) {
                 <div style="margin-top:12px;">
                     <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">FEATURED PUBLICATIONS & LINKS</div>
                     <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                        ${featured.map(f => `
-                            <a href="${escapeHTML(f.url)}" target="_blank" style="display:flex; align-items:center; gap:8px; background:var(--bg-panel); border:1px solid var(--border-divider); border-radius:4px; padding:6px 10px; text-decoration:none; color:var(--text-primary); font-size:11px; max-width:320px;">
-                                ${f.image_url ? `<img src="${f.image_url}" referrerpolicy="no-referrer" style="width:24px; height:24px; object-fit:cover; border-radius:2px;" onerror="this.style.display='none';">` : ''}
+                        ${featured.map(f => {
+                            const safeFeaturedUrl = safeAbsoluteHttpURL(f.url);
+                            if (!safeFeaturedUrl) return '';
+                            const safeFeaturedImageUrl = proxiedImageURL(f.image_url);
+                            return `
+                            <a href="${escapeHTML(safeFeaturedUrl)}" target="_blank" rel="noopener noreferrer" style="display:flex; align-items:center; gap:8px; background:var(--bg-panel); border:1px solid var(--border-divider); border-radius:4px; padding:6px 10px; text-decoration:none; color:var(--text-primary); font-size:11px; max-width:320px;">
+                                ${safeFeaturedImageUrl ? `<img src="${escapeHTML(safeFeaturedImageUrl)}" crossorigin="use-credentials" referrerpolicy="no-referrer" style="width:24px; height:24px; object-fit:cover; border-radius:2px;" onerror="this.style.display='none';">` : ''}
                                 <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                                     <strong style="color:var(--accent-cyan);">${escapeHTML(f.title || 'Featured Link')}</strong>
                                     <div style="font-size:9px; color:var(--text-muted);">${escapeHTML(f.description || '')}</div>
                                 </div>
                             </a>
-                        `).join("")}
+                        `;
+                        }).join("")}
                     </div>
                 </div>
             `;
@@ -681,10 +904,10 @@ function renderPlatformDossiers(scraped) {
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <span style="font-weight:600; color:var(--accent-cyan);">${label}</span>
-                    <span class="mono" style="font-size:11px;"><a href="${escapeHTML(profileUrl)}" target="_blank" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(profileUrl)} &#x2197;</a></span>
+                    <span class="mono" style="font-size:11px;">${profileLinkHTML}</span>
                 </div>
                 <div style="display:flex; gap:16px; align-items:flex-start; margin-bottom:10px; flex-wrap:wrap;">
-                    ${picUrl ? `<img src="${picUrl}" referrerpolicy="no-referrer" style="width:64px; height:64px; border-radius:50%; border:2px solid var(--accent-cyan); object-fit:cover;" onerror="this.style.display='none';">` : ''}
+                    ${safeProfileImageUrl ? `<img src="${escapeHTML(safeProfileImageUrl)}" crossorigin="use-credentials" referrerpolicy="no-referrer" style="width:64px; height:64px; border-radius:50%; border:2px solid var(--accent-cyan); object-fit:cover;" onerror="this.style.display='none';">` : ''}
                     <div style="flex:1;">
                         <div style="font-size:14px; font-weight:700; color:var(--text-primary);">${escapeHTML(fullname)}</div>
                         <div style="font-size:12px; color:var(--text-secondary); margin-top:2px;">${escapeHTML(headline)}</div>
@@ -701,6 +924,7 @@ function renderPlatformDossiers(scraped) {
                 ${rrHTML}
                 ${expHTML}
                 ${eduHTML}
+                ${featHTML}
             </div>
         `;
     }
@@ -761,12 +985,13 @@ function renderPlatformDossiers(scraped) {
     // Twitter / X Dossier
     if (scraped.twitter && scraped.twitter.success !== false) {
         const tw = scraped.twitter;
+        const safeTwitterImageUrl = proxiedImageURL(tw.profile_pic_url);
         const tweetsHTML = (tw.tweets || []).map(t => `
             <div style="background:var(--bg-panel); border:1px solid var(--border-divider); border-radius:4px; padding:8px 10px; margin-bottom:6px; font-size:11px; line-height:1.4;">
                 <div style="color:var(--text-primary);">${escapeHTML(t.text)}</div>
                 <div style="font-size:9px; color:var(--text-muted); margin-top:4px; display:flex; gap:10px;">
-                    <span>❤️ ${t.like_count}</span>
-                    <span>🔁 ${t.retweet_count}</span>
+                    <span>❤️ ${formattedCount(t.like_count)}</span>
+                    <span>🔁 ${formattedCount(t.retweet_count)}</span>
                     <span>${t.created_at ? escapeHTML(new Date(t.created_at).toLocaleDateString()) : ''}</span>
                 </div>
             </div>
@@ -779,11 +1004,11 @@ function renderPlatformDossiers(scraped) {
                     <span class="mono" style="font-size:11px;">@${escapeHTML(tw.username || '')}</span>
                 </div>
                 <div style="display:flex; gap:16px; align-items:flex-start; margin-bottom:10px; flex-wrap:wrap;">
-                    ${tw.profile_pic_url ? `<img src="${tw.profile_pic_url}" referrerpolicy="no-referrer" style="width:64px; height:64px; border-radius:50%; border:2px solid var(--accent-cyan); object-fit:cover;" onerror="this.style.display='none';">` : ''}
+                    ${safeTwitterImageUrl ? `<img src="${escapeHTML(safeTwitterImageUrl)}" crossorigin="use-credentials" referrerpolicy="no-referrer" style="width:64px; height:64px; border-radius:50%; border:2px solid var(--accent-cyan); object-fit:cover;" onerror="this.style.display='none';">` : ''}
                     <div style="flex:1;">
                         <div style="font-size:14px; font-weight:700; color:var(--text-primary);">${escapeHTML(tw.full_name || 'N/A')}</div>
                         <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">
-                            <strong>Followers:</strong> ${(tw.follower_count || 0).toLocaleString()} | <strong>Following:</strong> ${(tw.following_count || 0).toLocaleString()} | <strong>Total Tweets:</strong> ${(tw.post_count || 0).toLocaleString()}
+                            <strong>Followers:</strong> ${formattedCount(tw.follower_count)} | <strong>Following:</strong> ${formattedCount(tw.following_count)} | <strong>Total Tweets:</strong> ${formattedCount(tw.post_count)}
                         </div>
                     </div>
                 </div>
@@ -824,7 +1049,7 @@ async function fetchApiKeysStatus() {
     if (!listContainer) return;
 
     try {
-        const res = await fetch(`${API_BASE}/api/v1/investigation/diagnostics/keys`);
+        const res = await window.SocAuth.fetch(`${API_BASE}/api/v1/investigation/diagnostics/keys`);
         if (!res.ok) throw new Error("Diagnostics API unreachable");
         const keys = await res.json();
 
@@ -832,8 +1057,9 @@ async function fetchApiKeysStatus() {
         let missingCount = 0;
         let activeCount = 0;
 
-        for (const [keyName, details] of Object.entries(keys)) {
-            const isOK = details.configured;
+        for (const [keyName, rawDetails] of Object.entries(keys)) {
+            const details = rawDetails && typeof rawDetails === "object" ? rawDetails : {};
+            const isOK = details.configured === true;
             const badgeColor = isOK ? "var(--status-success)" : "var(--text-muted)";
             const badgeBg = isOK ? "rgba(40,167,69,0.15)" : "rgba(255,255,255,0.05)";
             
@@ -847,14 +1073,18 @@ async function fetchApiKeysStatus() {
                 "hunter": "ASSOCIATED MAIL LOOKUP",
                 "rocketreach": "CONTACT ENRICHMENT"
             };
-            const label = labelMap[keyName] || keyName.toUpperCase().replace("_", " ");
+            const label = labelMap[keyName] || String(keyName).toUpperCase().replaceAll("_", " ");
+            const statusCandidate = String(details.status || "").trim().toLowerCase();
+            const diagnosticStatus = ["active", "missing", "disabled"].includes(statusCandidate)
+                ? statusCandidate.toUpperCase()
+                : (isOK ? "ACTIVE" : "MISSING");
 
             if (isOK) activeCount++; else missingCount++;
 
             html += `
                 <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-panel); border:1px solid var(--border-divider); padding:6px 10px; border-radius:4px; margin-bottom:4px;">
-                    <span style="font-weight:600; color:var(--text-secondary);">${label}</span>
-                    <span style="color:${badgeColor}; background:${badgeBg}; padding:1px 5px; border-radius:3px; font-weight:700; font-size:8px; border:1px solid ${badgeColor};">${details.status.toUpperCase()}</span>
+                    <span style="font-weight:600; color:var(--text-secondary);">${escapeHTML(label)}</span>
+                    <span style="color:${badgeColor}; background:${badgeBg}; padding:1px 5px; border-radius:3px; font-weight:700; font-size:8px; border:1px solid ${badgeColor};">${escapeHTML(diagnosticStatus)}</span>
                 </div>
             `;
         }
@@ -1162,14 +1392,19 @@ function renderMediaGallery(data) {
     `;
 
     mediaItems.forEach(item => {
-        const likesHTML = (item.likes != null && !isNaN(item.likes)) ? `❤️ ${Number(item.likes).toLocaleString()} ` : '';
-        const commentsHTML = (item.comments != null && !isNaN(item.comments)) ? `💬 ${Number(item.comments).toLocaleString()}` : '';
-        const proxyUrl = `${API_BASE}/api/v1/investigation/proxy_image?url=${encodeURIComponent(item.url)}`;
+        const safeItemUrl = safeAbsoluteHttpURL(item.url);
+        if (!safeItemUrl) return;
+        const safeLinkUrl = safeAbsoluteHttpURL(item.link) || "#";
+        const likesValue = Number(item.likes);
+        const commentsValue = Number(item.comments);
+        const likesHTML = item.likes != null && Number.isFinite(likesValue) ? `❤️ ${boundedInteger(likesValue).toLocaleString()} ` : '';
+        const commentsHTML = item.comments != null && Number.isFinite(commentsValue) ? `💬 ${boundedInteger(commentsValue).toLocaleString()}` : '';
+        const proxyUrl = `${API_BASE}/api/v1/investigation/proxy_image?url=${encodeURIComponent(safeItemUrl)}`;
         
         html += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; overflow:hidden; display:flex; flex-direction:column; position:relative;">
-                <a href="${item.url}" target="_blank" rel="noopener" style="display:block; height:120px; width:100%; background:var(--bg-panel); overflow:hidden;">
-                    <img src="${item.url}" referrerpolicy="no-referrer" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="if(!this.dataset.triedProxy){this.dataset.triedProxy='true';this.src='${proxyUrl}';}else{this.style.display='none';this.parentElement.style.display='flex';this.parentElement.style.alignItems='center';this.parentElement.style.justifyContent='center';this.parentElement.innerHTML='<span style=\\'color:var(--text-muted); font-size:9px; text-align:center;\\'>Image<br>unavailable</span>';}">
+                <a href="${escapeHTML(safeLinkUrl)}" target="_blank" rel="noopener noreferrer" style="display:block; height:120px; width:100%; background:var(--bg-panel); overflow:hidden;">
+                    <img src="${escapeHTML(proxyUrl)}" crossorigin="use-credentials" referrerpolicy="no-referrer" data-proxied-media style="width:100%; height:100%; object-fit:cover; display:block;">
                 </a>
                 <div style="position:absolute; top:6px; left:6px; background:rgba(0,0,0,0.75); border:1px solid var(--accent-cyan); border-radius:3px; padding:2px 5px; font-size:7px; font-weight:700; color:var(--accent-cyan); font-family:monospace; letter-spacing:0.05em;">
                     ${escapeHTML(item.source)}
@@ -1189,6 +1424,22 @@ function renderMediaGallery(data) {
 
     html += `</div>`;
     body.innerHTML = html;
+    body.querySelectorAll("img[data-proxied-media]").forEach(image => {
+        image.addEventListener("error", () => {
+            const container = image.parentElement;
+            image.remove();
+            if (!container) return;
+            container.style.display = "flex";
+            container.style.alignItems = "center";
+            container.style.justifyContent = "center";
+            const message = document.createElement("span");
+            message.textContent = "Image unavailable";
+            message.style.color = "var(--text-muted)";
+            message.style.fontSize = "9px";
+            message.style.textAlign = "center";
+            container.appendChild(message);
+        }, { once: true });
+    });
 }
 
 

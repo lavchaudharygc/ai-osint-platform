@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 import logging
 from typing import Any
 from uuid import uuid4
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Response as FastAPIResponse, status
+from fastapi.responses import JSONResponse, Response
 
 from app.schemas.investigation import (
     ConsolidatedIdentity,
@@ -28,12 +29,96 @@ from app.services.hitek_service import HiTekService
 from app.services.ai_analyzer import AIAnalyzer
 from app.services.twitter_service import TwitterService
 from app.services.rocketreach_service import RocketReachService
+from app.services.email_investigation_service import _redact_sensitive_payload
+from app.services.image_proxy_service import ImageProxyError, ImageProxyService
+from app.security.audit import AuditEvent, AuditUnavailable, get_audit_logger
+from app.security.auth import AuthenticatedUser, require_csrf, require_roles
 
 from app.config import settings
-from app.services.ai_analyzer import AIAnalyzer
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
+require_image_proxy_investigator = require_roles("investigator")
+require_contact_investigator = require_roles("investigator")
+
+_CONTACT_AUDIT_FIELD_MAP = {
+    "email": "email",
+    "emails": "email",
+    "rawemails": "email",
+    "phone": "phone",
+    "phones": "phone",
+    "phonenumber": "phone",
+    "phonenumbers": "phone",
+    "rawphones": "phone",
+    "address": "address",
+    "location": "location",
+    "fullname": "full_name",
+    "likelyname": "full_name",
+    "username": "username",
+    "handle": "username",
+    "company": "company",
+    "employer": "company",
+    "currentemployer": "company",
+    "jobtitle": "job_title",
+    "currenttitle": "job_title",
+}
+
+
+def _contact_field_labels(value: Any, *, depth: int = 0) -> tuple[str, ...]:
+    """Return canonical labels for contact-bearing fields without retaining values."""
+
+    if depth >= 6:
+        return ()
+    labels: set[str] = set()
+    if isinstance(value, dict):
+        for raw_key, child in list(value.items())[:200]:
+            normalized = "".join(character for character in str(raw_key).casefold() if character.isalnum())
+            label = _CONTACT_AUDIT_FIELD_MAP.get(normalized)
+            if label and child not in (None, "", [], {}):
+                labels.add(label)
+            labels.update(_contact_field_labels(child, depth=depth + 1))
+    elif isinstance(value, (list, tuple)):
+        for child in value[:100]:
+            labels.update(_contact_field_labels(child, depth=depth + 1))
+    return tuple(sorted(labels))
+
+
+async def _record_contact_investigation_access(
+    *,
+    user: AuthenticatedUser,
+    investigation_id: str,
+    target: str,
+    outcome: str,
+    field_labels: tuple[str, ...] = (),
+) -> None:
+    """Fail closed unless a contact-investigation access event is durable."""
+
+    try:
+        event = AuditEvent(
+            analyst=user.username,
+            action="investigation.contact_view",
+            outcome=outcome,
+            case_id=investigation_id,
+            reason_code="username_investigation",
+            target=target,
+            field_labels=field_labels,
+        )
+        await asyncio.to_thread(
+            get_audit_logger().record,
+            event,
+        )
+    except AuditUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Investigation audit is unavailable",
+            headers={"Cache-Control": "no-store"},
+        ) from exc
+
+
+def get_image_proxy_service() -> ImageProxyService:
+    """Construct the isolated image proxy service for dependency injection."""
+
+    return ImageProxyService()
 
 
 @router.get("/diagnostics/keys")
@@ -43,6 +128,19 @@ async def get_keys_diagnostics():
         "groq": {"configured": bool(settings.groq_api_key), "status": "Active" if settings.groq_api_key else "Missing"},
         "gemini": {"configured": bool(settings.gemini_api_key), "status": "Active" if settings.gemini_api_key else "Missing"},
         "serpapi": {"configured": bool(settings.serpapi_key), "status": "Active" if settings.serpapi_key else "Missing"},
+        "email_breach": {
+            "configured": bool(
+                settings.email_investigation_breach_enabled
+                and settings.email_investigation_breach_api_key
+            ),
+            "status": (
+                "Disabled"
+                if not settings.email_investigation_breach_enabled
+                else "Active"
+                if settings.email_investigation_breach_api_key
+                else "Missing"
+            ),
+        },
         "zerobounce": {"configured": bool(settings.zerobounce_api_key), "status": "Active" if settings.zerobounce_api_key else "Missing"},
         "telegram_cti": {"configured": bool(settings.telegram_cti_api_key), "status": "Active" if settings.telegram_cti_api_key else "Missing"},
         "hunter": {"configured": bool(settings.hunter_api_key), "status": "Active" if settings.hunter_api_key else "Missing"},
@@ -51,27 +149,48 @@ async def get_keys_diagnostics():
 
 
 @router.get("/proxy_image")
-async def proxy_image(url: str):
-    """Proxy image requests to bypass CDN hotlinking and CORS restrictions."""
-    import httpx
-    from fastapi.responses import Response
-    
-    if not url or not url.startswith("http"):
-        return Response(status_code=400)
-        
+async def proxy_image(
+    url: str,
+    _user: AuthenticatedUser = Depends(require_image_proxy_investigator),
+    service: ImageProxyService = Depends(get_image_proxy_service),
+) -> Response:
+    """Return one bounded allowlisted image to an authenticated investigator.
+
+    This is a read-only GET, so the signed session cookie and investigator role
+    are required while CSRF proof is intentionally not required.
+    """
+
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        image = await service.fetch(url)
+    except ImageProxyError as exc:
+        details = {
+            400: "Image URL is not permitted",
+            413: "Image exceeds the proxy size limit",
+            415: "Upstream response is not a supported image",
+            502: "Image could not be retrieved",
+            503: "Image proxy is temporarily busy",
         }
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                content_type = resp.headers.get("content-type", "image/jpeg")
-                return Response(content=resp.content, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
-    except Exception as exc:
-        logger.warning("Image proxy error for %s: %s", url, exc)
-    return Response(status_code=404)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": details.get(exc.status_code, "Image could not be retrieved")},
+            headers={"Cache-Control": "no-store"},
+        )
+    except Exception:
+        # Never log or return the target URL, exception text, or upstream body.
+        logger.warning("Image proxy failed unexpectedly")
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "Image could not be retrieved"},
+            headers={"Cache-Control": "no-store"},
+        )
+    return Response(
+        content=image.content,
+        media_type=image.media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 def _format_string_clue(val: Any) -> str | None:
@@ -119,9 +238,32 @@ async def _safe(coro):
 
 
 @router.post("/username", response_model=InvestigationResponse)
-async def run_investigation(request: InvestigationRequest):
+async def run_investigation(
+    request: InvestigationRequest,
+    response: FastAPIResponse,
+    user: AuthenticatedUser = Depends(require_contact_investigator),
+    _csrf_user: AuthenticatedUser = Depends(require_csrf),
+) -> InvestigationResponse:
     investigation_id = f"UPP-{uuid4().hex[:8].upper()}"
     raw_query = request.username.strip()
+    if "breach_pii_viewer" not in user.roles:
+        await _record_contact_investigation_access(
+            user=user,
+            investigation_id=investigation_id,
+            target=raw_query,
+            outcome="denied",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient role permissions for contact-bearing investigation",
+            headers={"Cache-Control": "no-store"},
+        )
+    await _record_contact_investigation_access(
+        user=user,
+        investigation_id=investigation_id,
+        target=raw_query,
+        outcome="requested",
+    )
     kind = classify_input(raw_query)
     clean_handle = raw_query.lstrip("@").split("/")[-1].split("?")[0]
 
@@ -352,6 +494,10 @@ async def run_investigation(request: InvestigationRequest):
     associated_accounts = AssociatedAccountsService.verify_account_matches(
         clean_handle, wmn_hits, scraped_data, dorking_results, telegram_cti,
     )
+    # Legacy CTI correlation may use contact identifiers internally, but secret,
+    # financial, government-ID, medical, DOB, IP, and device values must never
+    # cross the public response boundary.
+    public_telegram_cti = _redact_sensitive_payload(telegram_cti)
 
     # ── STEP 6: AI Behavioral Profiling ──
     ai_personality_dict = await _safe(
@@ -419,7 +565,7 @@ async def run_investigation(request: InvestigationRequest):
         confidence_percentage=min(100, cp_pct),
     )
 
-    return InvestigationResponse(
+    result = InvestigationResponse(
         investigation_id=investigation_id,
         status="completed",
         classified_kind=kind,
@@ -427,7 +573,7 @@ async def run_investigation(request: InvestigationRequest):
         wmn_results=wmn_data,
         scraped_data=scraped_data,
         dorking_results=dorking_results,
-        telegram_cti=telegram_cti,
+        telegram_cti=public_telegram_cti,
         internal_database_matches=internal_db_matches,
         associated_accounts=associated_accounts,
         consolidated_identity=consolidated_identity,
@@ -435,3 +581,13 @@ async def run_investigation(request: InvestigationRequest):
         gemini_reasoning=ai_personality_dict.get("gemini_reasoning"),
         timestamp=datetime.now(UTC),
     )
+    await _record_contact_investigation_access(
+        user=user,
+        investigation_id=investigation_id,
+        target=raw_query,
+        outcome="success",
+        field_labels=_contact_field_labels(result.model_dump(mode="python")),
+    )
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
+    return result

@@ -2,8 +2,10 @@
 __pycache__/
 *.py[cod]
 venv/
+.venv/
 env/
 .env
+Beta-v2/backend/runtime/
 
 # IDE
 .vscode/

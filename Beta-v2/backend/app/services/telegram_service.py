@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class TelegramService:
     def __init__(self):
-        self.cti_key = settings.telegram_cti_api_key or "5427848880:nygoiqPY"
+        self.cti_key = settings.telegram_cti_api_key
 
     async def search_cti_breaches(self, queries: List[str]) -> Dict[str, Any]:
         """Query leakosintapi.com for breach databases matching target identifiers with depth-2 search."""

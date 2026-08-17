@@ -17,7 +17,6 @@ from pydantic import BaseModel, Field
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-_LEGACY_FALLBACK_TOKEN = "8978542043:3e22t6sI"
 
 
 # ============================================================
