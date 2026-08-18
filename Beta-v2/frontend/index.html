@@ -865,6 +865,15 @@
                         <input type="checkbox" id="email-option-gravatar" checked>
                     </label>
 
+                    <label class="email-option-row" for="email-option-holehe">
+                        <span>
+                            <strong>Account registration footprint (Holehe)</strong>
+                            <small>Checks 120+ platforms for account presence via recovery endpoints.</small>
+                        </span>
+                        <input type="checkbox" id="email-option-holehe" checked>
+                    </label>
+
+
                     <div class="email-limit-row">
                         <label for="email-dork-query-limit">Maximum discovery queries</label>
                         <select id="email-dork-query-limit" class="form-input mono">
@@ -970,7 +979,16 @@
                     <div id="email-gravatar-results-body"></div>
                 </section>
 
+                <section class="soc-card email-result-section email-result-wide" aria-labelledby="email-holehe-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="email-holehe-title">Platform Registrations (Holehe)</span>
+                        <span id="email-holehe-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="email-holehe-results-body"></div>
+                </section>
+
                 <section class="soc-card email-result-section email-result-wide email-limitations-card" aria-labelledby="email-limitations-title">
+
                     <div class="soc-card-header">
                         <span class="card-title-text" id="email-limitations-title">Limitations &amp; Analyst Handling</span>
                     </div>

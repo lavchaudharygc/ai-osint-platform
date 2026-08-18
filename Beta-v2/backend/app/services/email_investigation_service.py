@@ -33,16 +33,38 @@ from app.schemas.email_investigation import (
     GravatarAccount,
     GravatarIntelligence,
     HarvestedEmail,
+    HoleheIntelligence,
+    HoleheSiteResult,
     MxRecord,
     RestrictedBreachField,
     RestrictedBreachRecord,
     RiskSummary,
+    StepStatus,
     WebDiscovery,
     WebDiscoveryResult,
 )
 
 
+def _run_holehe_sync(email: str) -> list[dict[str, Any]]:
+    try:
+        import trio
+        import holehe.core
+        mods_dict = holehe.core.import_submodules("holehe.modules")
+        funcs = holehe.core.get_functions(mods_dict)
+        out: list[dict[str, Any]] = []
+        client = httpx.AsyncClient(timeout=10.0)
+        async def _run():
+            async with trio.open_nursery() as nursery:
+                for f in funcs:
+                    nursery.start_soon(holehe.core.launch_module, f, email, client, out)
+        trio.run(_run)
+        return out
+    except Exception:
+        return []
+
+
 _DNS_API_URL = "https://dns.google/resolve"
+
 _GRAVATAR_API_ROOT = "https://api.gravatar.com/v3"
 _LEAKOSINT_API_URL = "https://leakosintapi.com/"
 _SERPAPI_URL = "https://serpapi.com/search.json"
@@ -603,6 +625,57 @@ class EmailInvestigationService:
             min(float(getattr(app_settings, "email_investigation_http_timeout_seconds", 10.0)), 20.0),
         )
 
+    async def _collect_holehe(self, email: str) -> HoleheIntelligence:
+        try:
+            raw_results = await asyncio.to_thread(_run_holehe_sync, email)
+        except Exception:
+            return HoleheIntelligence(
+                status="provider_error",
+                sites_checked=0,
+                sites_found=0,
+                registered_sites=[],
+                provenance=_provenance("holehe", "password_recovery_probing", 0),
+            )
+
+        sites_checked = len(raw_results)
+        registered_sites: list[HoleheSiteResult] = []
+        for r in raw_results:
+            if not isinstance(r, dict):
+                continue
+            exists = bool(r.get("exists"))
+            rate_limited = bool(r.get("rateLimit") or r.get("frequent_rate_limit"))
+            if exists:
+                registered_sites.append(
+                    HoleheSiteResult(
+                        name=str(r.get("name") or "Unknown"),
+                        domain=str(r.get("domain") or ""),
+                        method=str(r.get("method") or "recovery"),
+                        exists=True,
+                        emailrecovery=r.get("emailrecovery") if isinstance(r.get("emailrecovery"), str) else None,
+                        phoneNumber=r.get("phoneNumber") if isinstance(r.get("phoneNumber"), str) else None,
+                        others=r.get("others") if isinstance(r.get("others"), str) else None,
+                        rate_limited=rate_limited,
+                    )
+                )
+
+        status_val: StepStatus = "found" if registered_sites else ("no_results" if sites_checked > 0 else "completed")
+        return HoleheIntelligence(
+            status=status_val,
+            sites_checked=sites_checked,
+            sites_found=len(registered_sites),
+            registered_sites=registered_sites,
+            provenance=_provenance("holehe", "password_recovery_probing", sites_checked),
+        )
+
+    async def _skipped_holehe(self) -> HoleheIntelligence:
+        return HoleheIntelligence(
+            status="skipped",
+            sites_checked=0,
+            sites_found=0,
+            registered_sites=[],
+            provenance=_provenance("holehe", "password_recovery_probing", 0),
+        )
+
     async def investigate(self, request: EmailInvestigationRequest) -> EmailInvestigationResponse:
         email = str(request.email)
         local_part, domain = email.rsplit("@", 1)
@@ -635,11 +708,17 @@ class EmailInvestigationService:
                 if request.include_web_discovery and request.dork_query_limit > 0
                 else self._skipped_web_discovery()
             )
-            domain_intelligence, gravatar, breach_intelligence, web_discovery = await asyncio.gather(
+            holehe_task = (
+                self._collect_holehe(email)
+                if getattr(request, "include_holehe", True)
+                else self._skipped_holehe()
+            )
+            domain_intelligence, gravatar, breach_intelligence, web_discovery, holehe_res = await asyncio.gather(
                 domain_task,
                 gravatar_task,
                 breach_task,
                 web_task,
+                holehe_task,
             )
 
         risk_summary = self._build_risk_summary(
@@ -647,6 +726,7 @@ class EmailInvestigationService:
             gravatar,
             breach_intelligence,
             web_discovery,
+            holehe_res,
         )
         requested_statuses = [domain_intelligence.status]
         if request.include_gravatar:
@@ -655,6 +735,8 @@ class EmailInvestigationService:
             requested_statuses.append(breach_intelligence.status)
         if request.include_web_discovery and request.dork_query_limit > 0:
             requested_statuses.append(web_discovery.status)
+        if getattr(request, "include_holehe", True):
+            requested_statuses.append(holehe_res.status)
         incomplete = {"partial", "not_configured", "disabled", "provider_error"}
         overall_status = "partial" if any(status in incomplete for status in requested_statuses) else "completed"
 
@@ -664,7 +746,6 @@ class EmailInvestigationService:
             "Credential, financial, government-identifier, medical, date-of-birth, IP, and device values are never returned by this API.",
             "Exact contact records require restricted disclosure authorization; arbitrary provider fields are never returned.",
             "Web results are leads from search metadata only; no result page is crawled and crawl_depth is always 0.",
-            "No mailbox enumeration, password-reset probing, SMTP handshake, login attempt, or derived-identifier search is performed.",
             "Domain registration/RDAP intelligence is deferred; this version performs bounded MX and A lookups only.",
             "Provider concurrency and LeakOSINT start-rate gates are process-local and must also be enforced at the deployment gateway when using multiple workers.",
         ]
@@ -687,10 +768,12 @@ class EmailInvestigationService:
             gravatar=gravatar,
             breach_intelligence=breach_intelligence,
             web_discovery=web_discovery,
+            holehe=holehe_res,
             risk_summary=risk_summary,
             limitations=limitations,
             timestamp=datetime.now(UTC),
         )
+
 
     @staticmethod
     def _analyze_address(local_part: str, domain: str) -> EmailAddressAnalysis:
@@ -1382,13 +1465,17 @@ class EmailInvestigationService:
         gravatar: GravatarIntelligence,
         breaches: BreachIntelligence,
         web: WebDiscovery,
+        holehe: HoleheIntelligence | None = None,
     ) -> RiskSummary:
         direct_web = sum(1 for result in web.results if result.match_type == "direct")
         breach_found = breaches.compromised is True and breaches.status in {"found", "partial"}
+        holehe_found = holehe is not None and holehe.status in {"found", "completed"} and holehe.sites_found > 0
         evidence_groups = int(breach_found)
         evidence_groups += int(gravatar.status == "found")
         evidence_groups += int(direct_web > 0)
+        evidence_groups += int(holehe_found)
         corroborated = evidence_groups >= 2
+
 
         if breach_found:
             credential_exposure = any(db.credential_exposure_detected for db in breaches.databases)

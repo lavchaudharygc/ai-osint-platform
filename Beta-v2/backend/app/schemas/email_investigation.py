@@ -37,7 +37,9 @@ class EmailInvestigationRequest(BaseModel):
     include_breach_lookup: bool = True
     include_restricted_breach_details: bool = False
     include_web_discovery: bool = True
+    include_holehe: bool = True
     dork_query_limit: int = Field(default=3, ge=0, le=3)
+
 
     @field_validator("email", mode="before")
     @classmethod
@@ -281,6 +283,25 @@ class WebDiscovery(BaseModel):
     provenance: CollectionProvenance
 
 
+class HoleheSiteResult(BaseModel):
+    name: str
+    domain: str
+    method: str
+    exists: bool
+    emailrecovery: str | None = None
+    phoneNumber: str | None = None
+    others: str | None = None
+    rate_limited: bool = False
+
+
+class HoleheIntelligence(BaseModel):
+    status: StepStatus
+    sites_checked: int = Field(default=0, ge=0)
+    sites_found: int = Field(default=0, ge=0)
+    registered_sites: list[HoleheSiteResult] = Field(default_factory=list)
+    provenance: CollectionProvenance
+
+
 class RiskSummary(BaseModel):
     overall_status: Literal["compromised", "not_found", "unknown"]
     score: int | None = Field(default=None, ge=0, le=100)
@@ -302,6 +323,8 @@ class EmailInvestigationResponse(BaseModel):
     gravatar: GravatarIntelligence
     breach_intelligence: BreachIntelligence
     web_discovery: WebDiscovery
+    holehe: HoleheIntelligence | None = None
     risk_summary: RiskSummary
     limitations: list[str] = Field(default_factory=list)
     timestamp: datetime
+

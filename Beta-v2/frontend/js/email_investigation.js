@@ -499,6 +499,22 @@
         const discoveryStatus = normalizeStatus(discoveryRaw.status, discoveryResults.length ? "completed" : "not_run");
         const gravatarStatus = normalizeStatus(gravatarRaw.status, booleanValue(gravatarRaw.profile_found) ? "found" : "not_run");
 
+        const holeheRaw = objectValue(raw.holehe);
+        const holeheSites = arrayValue(holeheRaw.registered_sites).map(s => {
+            if (!s || typeof s !== "object") return null;
+            return {
+                name: redactSensitiveText(s.name),
+                domain: redactSensitiveText(s.domain),
+                method: redactSensitiveText(s.method),
+                exists: booleanValue(s.exists),
+                emailrecovery: redactSensitiveText(s.emailrecovery),
+                phoneNumber: redactSensitiveText(s.phoneNumber),
+                others: redactSensitiveText(s.others),
+                rateLimited: booleanValue(s.rate_limited),
+            };
+        }).filter(Boolean);
+        const holeheStatus = normalizeStatus(holeheRaw.status, holeheSites.length ? "found" : "not_run");
+
         return {
             schemaVersion: "email-investigation-ui-v1",
             investigationId: stringValue(raw.investigation_id),
@@ -582,7 +598,15 @@
                 verifiedAccounts,
                 provenance: normalizeProvenance(gravatarRaw.provenance),
             },
+            holehe: {
+                status: holeheStatus,
+                sitesChecked: integerValue(holeheRaw.sites_checked, 0, 0, 10000),
+                sitesFound: integerValue(holeheRaw.sites_found, holeheSites.length, 0, 10000),
+                registeredSites: holeheSites,
+                provenance: normalizeProvenance(holeheRaw.provenance),
+            },
             limitations,
+
         };
     }
 
@@ -897,6 +921,68 @@
         setSectionBadge("email-gravatar-result-badge", gravatar.profileFound ? "PROFILE FOUND" : statusLabel(gravatar.status), gravatar.status);
     }
 
+    function renderHolehe(result) {
+        const body = el("email-holehe-results-body");
+        if (!body) return;
+        const holehe = result.holehe || { status: "not_run", sitesChecked: 0, sitesFound: 0, registeredSites: [] };
+        const sites = arrayValue(holehe.registeredSites);
+        const sitesFoundCount = holehe.sitesFound || sites.length;
+        const sitesCheckedCount = holehe.sitesChecked || 0;
+
+        let contentHtml = "";
+        if (holehe.status === "skipped" || holehe.status === "disabled") {
+            contentHtml = '<div class="email-not-run-state">Account registration probing (Holehe) was skipped or disabled.</div>';
+        } else if (sitesFoundCount === 0) {
+            contentHtml = `
+                <div class="email-empty-state">
+                    No active account registrations were detected across ${sitesCheckedCount || 120} probed platforms.
+                </div>
+            `;
+        } else {
+            const siteCardsHtml = sites.map(site => {
+                const name = escapeEmailHTML(site.name || "Platform");
+                const domain = escapeEmailHTML(site.domain || "");
+                const method = escapeEmailHTML(site.method || "recovery");
+                const recoveryInfo = site.emailrecovery ? `Recovery Email: ${escapeEmailHTML(site.emailrecovery)}` : "";
+                const phoneInfo = site.phoneNumber ? `Masked Phone: ${escapeEmailHTML(site.phoneNumber)}` : "";
+                const extraInfo = [recoveryInfo, phoneInfo].filter(Boolean).join(" • ");
+
+                return `
+                    <div class="email-holehe-card">
+                        <div class="email-holehe-header">
+                            <span class="email-holehe-name">${name}</span>
+                            <span class="email-holehe-badge positive">EXISTS</span>
+                        </div>
+                        <div class="email-holehe-meta mono">${domain} ${method ? `• ${method}` : ""}</div>
+                        ${extraInfo ? `<div class="email-holehe-extra mono">${extraInfo}</div>` : ""}
+                    </div>
+                `;
+            }).join("");
+
+            contentHtml = `
+                <div class="email-holehe-summary">
+                    <span class="email-holehe-stat mono">PROBED: <strong>${sitesCheckedCount}</strong></span>
+                    <span class="email-holehe-stat mono positive">REGISTERED: <strong>${sitesFoundCount}</strong></span>
+                </div>
+                <div class="email-holehe-grid">
+                    ${siteCardsHtml}
+                </div>
+            `;
+        }
+
+        body.innerHTML = `
+            ${renderStatusNotice(holehe.status, "Holehe platform probing")}
+            ${contentHtml}
+            ${renderProvenance(holehe.provenance || { provider: "holehe", method: "password_recovery_probing", callsMade: sitesCheckedCount })}
+        `;
+
+        setSectionBadge(
+            "email-holehe-result-badge",
+            sitesFoundCount > 0 ? `${sitesFoundCount} REGISTERED` : statusLabel(holehe.status),
+            holehe.status
+        );
+    }
+
     function renderLimitations(result) {
         const body = el("email-limitations-body");
         if (!body) return;
@@ -924,10 +1010,12 @@
         renderDiscovery(result);
         renderHarvest(result);
         renderGravatar(result);
+        renderHolehe(result);
         renderLimitations(result);
         el("email-investigation-results").style.display = "block";
         el("email-investigation-results").scrollIntoView({ behavior: "smooth", block: "start" });
     }
+
 
     function setSyntaxIndicator(inspection) {
         const badge = el("email-syntax-badge");
@@ -1029,8 +1117,10 @@
             include_breach_lookup: Boolean(el("email-option-breaches")?.checked),
             include_restricted_breach_details: includeRestricted,
             include_web_discovery: includeWebDiscovery,
+            include_holehe: Boolean(el("email-option-holehe")?.checked),
             dork_query_limit: includeWebDiscovery ? requestedDorkLimit : 0,
         };
+
 
         const controller = new AbortController();
         const serial = ++requestSerial;
