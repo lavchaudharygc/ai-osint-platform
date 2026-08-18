@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     apify_linkedin_profile_actor_id: str = "apimaestro/linkedin-profile-detail"
     apify_linkedin_posts_actor_id: str = "bebity/linkedin-post-search-scraper"
     signalhire_api_key: str | None = Field(default_factory=lambda: os.getenv("SIGNALHIRE_API_KEY"))
+    leakosint_api_key: str | None = Field(default_factory=lambda: os.getenv("LEAKOSINT_API_KEY"))
     serpapi_key: str | None = Field(default_factory=lambda: os.getenv("SERPAPI_KEY"))
     email_investigation_dork_enabled: bool = True
     email_investigation_max_dork_queries: int = Field(default=3, ge=0, le=3)

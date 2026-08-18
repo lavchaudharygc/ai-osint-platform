@@ -1,4 +1,4 @@
-"""Schemas for the isolated, authorized phone-investigation API."""
+"""Schemas for the comprehensive Phone OSINT Module."""
 
 from __future__ import annotations
 
@@ -24,9 +24,10 @@ class PhoneInvestigationRequest(BaseModel):
     )
     reason_code: str = Field(..., min_length=2, max_length=64)
     case_id: str = Field(..., min_length=3, max_length=64)
-    include_messaging_checks: bool = True
-    include_spam_check: bool = True
-    include_truecaller: bool = True
+    include_breaches: bool = True
+    include_web_dorks: bool = True
+    include_social: bool = True
+    dork_query_limit: int = Field(default=10, ge=1, le=25)
 
     @field_validator("phone_number")
     @classmethod
@@ -66,37 +67,105 @@ class PhoneInvestigationRequest(BaseModel):
 class PhoneParsingResult(BaseModel):
     valid: bool
     possible: bool
+    original_format: str
     e164_format: str | None = None
     national_format: str | None = None
     international_format: str | None = None
     country_code: int | None = None
+    country_name: str | None = None
     region_code: str | None = None
     carrier: str | None = None
     number_type: str = "UNKNOWN"
     is_voip: bool = False
+    is_disposable: bool = False
+    roaming_indicator: str = "UNKNOWN / NOT APPLICABLE"
 
 
-class MessagingPresenceResult(BaseModel):
+class PhoneBreachRecord(BaseModel):
+    database_name: str
+    breach_date: str | None = None
+    incident_summary: str | None = None
+    record_count: int = 1
+    associated_names: list[str] = Field(default_factory=list)
+    associated_emails: list[str] = Field(default_factory=list)
+    associated_usernames: list[str] = Field(default_factory=list)
+    associated_addresses: list[str] = Field(default_factory=list)
+    exposed_data_types: list[str] = Field(default_factory=list)
+    confidence_score: int = 80
+
+
+class PhoneBreachIntelligence(BaseModel):
     status: StepStatus = "completed"
-    whatsapp_url: str
-    telegram_url: str
+    compromised: bool | None = None
+    database_count: int = 0
+    record_count: int = 0
+    confidence_score: int = 0
+    associated_names: list[str] = Field(default_factory=list)
+    associated_emails: list[str] = Field(default_factory=list)
+    associated_usernames: list[str] = Field(default_factory=list)
+    associated_addresses: list[str] = Field(default_factory=list)
+    data_exposure_summary: list[str] = Field(default_factory=list)
+    databases: list[PhoneBreachRecord] = Field(default_factory=list)
 
 
-class SpamRegistryResult(BaseModel):
-    status: StepStatus = "completed"
-    spamcalls_search_url: str
-    tellows_search_url: str
-
-
-class TruecallerLeadResult(BaseModel):
-    status: StepStatus = "completed"
+class DorkItem(BaseModel):
+    title: str
+    query: str
     search_url: str
+
+
+class PhoneDorkGroup(BaseModel):
+    category: str
+    description: str
+    dorks: list[DorkItem] = Field(default_factory=list)
+
+
+class PhoneWebHit(BaseModel):
+    title: str
+    url: str
+    snippet: str
+    source_engine: str = "google"
+
+
+class PhoneWebDiscovery(BaseModel):
+    status: StepStatus = "completed"
+    queries_run: int = 0
+    result_count: int = 0
+    disposable_check: str = "Clean (Not listed in known virtual/disposable databases)"
+    dork_groups: list[PhoneDorkGroup] = Field(default_factory=list)
+    web_hits: list[PhoneWebHit] = Field(default_factory=list)
+
+
+class PhoneSocialCheck(BaseModel):
+    platform: str
+    status: Literal["found", "search_lead", "not_found"]
+    details: str
+    action_url: str
+
+
+class PhoneSocialDiscovery(BaseModel):
+    status: StepStatus = "completed"
+    checked_count: int = 0
+    leads_count: int = 0
+    checks: list[PhoneSocialCheck] = Field(default_factory=list)
+
+
+class PhoneExtractedProfile(BaseModel):
+    names: list[str] = Field(default_factory=list)
+    emails: list[str] = Field(default_factory=list)
+    usernames: list[str] = Field(default_factory=list)
+    addresses: list[str] = Field(default_factory=list)
+    dob: list[str] = Field(default_factory=list)
+    government_ids: list[str] = Field(default_factory=list)
+    social_profiles: list[str] = Field(default_factory=list)
+    data_exposure_types: list[str] = Field(default_factory=list)
 
 
 class PhoneRiskSummary(BaseModel):
     risk_score: int = Field(ge=0, le=100)
     risk_label: Literal["low", "moderate", "high", "critical"]
     is_voip_risk: bool = False
+    is_breach_risk: bool = False
     reasons: list[str] = Field(default_factory=list)
 
 
@@ -108,9 +177,10 @@ class PhoneInvestigationResponse(BaseModel):
     target_phone: str
     authorization: AuthorizationAttestation
     parsing: PhoneParsingResult
-    messaging: MessagingPresenceResult
-    spam: SpamRegistryResult
-    truecaller: TruecallerLeadResult
+    breach_discovery: PhoneBreachIntelligence
+    web_discovery: PhoneWebDiscovery
+    social_discovery: PhoneSocialDiscovery
+    extracted_profile: PhoneExtractedProfile
     risk_summary: PhoneRiskSummary
     provenance: CollectionProvenance
     timestamp: datetime

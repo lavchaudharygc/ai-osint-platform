@@ -1,5 +1,5 @@
 /**
- * Phone Investigation UI Module for Beta-v2.
+ * Comprehensive 4-Layer Phone OSINT UI Module for Beta-v2.
  */
 (function () {
     "use strict";
@@ -37,13 +37,48 @@
     }
 
     function inspectPhoneSyntax(value) {
-        const raw = stringValue(value).strip ? stringValue(value).strip() : stringValue(value).trim();
-        if (!raw) return { empty: True, valid: False, message: "Enter a target phone number." };
+        const raw = stringValue(value).trim();
+        if (!raw) return { empty: true, valid: false, message: "Enter a target phone number." };
         const cleaned = raw.replace(/[^\d+]/g, "");
         if (cleaned.length < 5 || cleaned.length > 20) {
-            return { empty: False, valid: False, message: "Phone number must contain 5 to 20 digits." };
+            return { empty: false, valid: false, message: "Phone number must contain 5 to 20 digits." };
         }
-        return { empty: False, valid: True, message: "Phone syntax format valid." };
+        return { empty: false, valid: true, message: "Phone format valid." };
+    }
+
+    function setSyntaxIndicator(inspection) {
+        const badge = el("phone-syntax-badge");
+        const message = el("phone-validation-message");
+        if (!badge || !message) return;
+        const state = inspection.empty ? "neutral" : (inspection.valid ? "valid" : "invalid");
+        badge.className = `email-syntax-badge ${state}`;
+        badge.textContent = inspection.empty ? "NOT CHECKED" : (inspection.valid ? "VALID" : "INVALID");
+        message.className = `email-validation-message${inspection.empty ? "" : ` ${state}`}`;
+        message.textContent = inspection.message;
+    }
+
+    function showFormError(message) {
+        const box = el("phone-form-error");
+        if (!box) return;
+        box.textContent = message;
+        box.style.display = message ? "block" : "none";
+    }
+
+    function setPhoneLoading(isLoading, message = "Executing 4-layer Phone OSINT pipeline...") {
+        const loading = el("phone-investigation-loading");
+        const button = el("phone-investigate-button");
+        const state = el("phone-form-state");
+        if (loading) loading.style.display = isLoading ? "flex" : "none";
+        if (button) {
+            button.disabled = isLoading;
+            button.textContent = isLoading ? "RUNNING OSINT SCAN..." : "INVESTIGATE PHONE";
+        }
+        if (state) {
+            state.textContent = isLoading ? "RUNNING SCAN" : "READY";
+            state.style.color = isLoading ? "var(--accent-cyan)" : "var(--text-muted)";
+        }
+        const loadingMessage = el("phone-loading-message");
+        if (loadingMessage) loadingMessage.textContent = message;
     }
 
     function renderKeyValueGrid(items) {
@@ -61,54 +96,20 @@
         `;
     }
 
-    function setSyntaxIndicator(inspection) {
-        const badge = el("phone-syntax-badge");
-        const message = el("phone-validation-message");
-        if (!badge || !message) return;
-        const state = inspection.empty ? "neutral" : (inspection.valid ? "valid" : "invalid");
-        badge.className = `email-syntax-badge ${state}`;
-        badge.textContent = inspection.empty ? "NOT CHECKED" : (inspection.valid ? "SYNTAX VALID" : "INVALID");
-        message.className = `email-validation-message${inspection.empty ? "" : ` ${state}`}`;
-        message.textContent = inspection.message;
-    }
-
-    function showFormError(message) {
-        const box = el("phone-form-error");
-        if (!box) return;
-        box.textContent = message;
-        box.style.display = message ? "block" : "none";
-    }
-
-    function setPhoneLoading(isLoading, message = "Parsing E.164 structure and telecom carrier data...") {
-        const loading = el("phone-investigation-loading");
-        const button = el("phone-investigate-button");
-        const state = el("phone-form-state");
-        if (loading) loading.style.display = isLoading ? "flex" : "none";
-        if (button) {
-            button.disabled = isLoading;
-            button.textContent = isLoading ? "INVESTIGATION RUNNING..." : "INVESTIGATE PHONE";
-        }
-        if (state) {
-            state.textContent = isLoading ? "REQUEST ACTIVE" : "READY";
-            state.style.color = isLoading ? "var(--accent-cyan)" : "var(--text-muted)";
-        }
-        const loadingMessage = el("phone-loading-message");
-        if (loadingMessage) loadingMessage.textContent = message;
-    }
-
     function renderParsing(result) {
         const body = el("phone-parsing-body");
         if (!body) return;
         const p = result.parsing;
         body.innerHTML = renderKeyValueGrid([
-            { label: "Parsing Status", value: p.valid ? "Valid E.164 Number" : "Unparseable Number" },
-            { label: "E.164 Standard", value: p.e164_format || "N/A" },
-            { label: "International Format", value: p.international_format || "N/A" },
+            { label: "Number Validity", value: p.valid ? "Valid (E.164 Recognized)" : "Invalid Format" },
+            { label: "Original Format", value: p.original_format || result.target_phone },
+            { label: "Country of Origin", value: p.country_name ? `${p.country_name} (${p.region_code || "ISO"})` : (p.region_code || "N/A") },
+            { label: "International Format (E.164)", value: p.e164_format || "N/A" },
             { label: "National Format", value: p.national_format || "N/A" },
-            { label: "Country Code", value: p.country_code ? `+${p.country_code}` : "N/A" },
-            { label: "Region Code", value: p.region_code || "N/A" },
-            { label: "Telecom Carrier", value: p.carrier || "Not Assigned / Private" },
+            { label: "Carrier Name", value: p.carrier || "Not Assigned / Unlisted Operator" },
             { label: "Line Type", value: p.number_type || "UNKNOWN" },
+            { label: "Roaming / Network Status", value: p.roaming_indicator || "Standard" },
+            { label: "Virtual / Disposable Check", value: p.is_disposable ? "WARNING: Disposable / Virtual Line" : "Standard Carrier SIM" },
         ]);
         const badge = el("phone-parsing-result-badge");
         if (badge) {
@@ -117,139 +118,176 @@
         }
     }
 
-    function renderRisk(result) {
-        const body = el("phone-risk-body");
+    function renderBreaches(result) {
+        const body = el("phone-breaches-body");
         if (!body) return;
-        const r = result.risk_summary;
-        const score = r.risk_score;
-        const label = (r.risk_label || "low").toUpperCase();
-        
-        let scoreClass = "low";
-        if (score >= 80) scoreClass = "critical";
-        else if (score >= 60) scoreClass = "high";
-        else if (score >= 30) scoreClass = "medium";
+        const b = result.breach_discovery;
 
-        const reasonsHtml = (r.reasons || []).map(item => `<li>${escapeHTML(item)}</li>`).join("");
-
-        body.innerHTML = `
-            <div class="email-risk-overview">
-                <div class="email-risk-score">
-                    <span class="email-risk-number ${scoreClass}">${score}</span>
-                    <span class="email-risk-label">${label} RISK</span>
-                </div>
-                <div style="flex:1; min-width:0;">
-                    ${renderKeyValueGrid([
-                        { label: "Line Classification", value: result.parsing.number_type },
-                        { label: "VoIP Fraud Risk", value: r.is_voip_risk ? "YES — Virtual VoIP Line" : "NO — Standard Line" },
-                    ])}
-                </div>
-            </div>
-            <div class="email-subsection-title">Risk Factors &amp; Analyst Handling</div>
-            <ul class="email-limitations-list">${reasonsHtml}</ul>
-        `;
-
-        const badge = el("phone-risk-result-badge");
-        if (badge) {
-            badge.textContent = `${score}/100 ${label}`;
-            badge.className = `mono email-section-badge ${score >= 60 ? "no_results" : "completed"}`;
-        }
-    }
-
-    function renderMessaging(result) {
-        const body = el("phone-messaging-body");
-        if (!body) return;
-        const m = result.messaging;
-        if (m.status === "skipped") {
-            body.innerHTML = '<div class="email-not-run-state">Messaging presence checks were skipped.</div>';
+        if (b.status === "disabled" || b.status === "not_configured") {
+            body.innerHTML = '<div class="email-not-run-state">Breach lookup by phone number is not configured or disabled.</div>';
             return;
         }
 
-        body.innerHTML = `
-            <div class="email-holehe-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
-                <div class="email-holehe-card">
-                    <div class="email-holehe-header">
-                        <span class="email-holehe-name">WhatsApp Direct Chat</span>
-                        <span class="email-holehe-badge positive">DIRECT DEEP LINK</span>
-                    </div>
-                    <div class="email-holehe-meta mono">${escapeHTML(m.whatsapp_url)}</div>
-                    <div style="margin-top:8px;">
-                        <a class="email-safe-link" href="${escapeHTML(m.whatsapp_url)}" target="_blank" rel="noopener noreferrer">
-                            Open WhatsApp Chat (${escapeHTML(result.target_phone)}) ↗
-                        </a>
-                    </div>
-                </div>
+        if (b.status === "no_results" || !b.compromised) {
+            body.innerHTML = '<div class="email-empty-state">No known breach records found associated with this phone number.</div>';
+            const badge = el("phone-breaches-result-badge");
+            if (badge) {
+                badge.textContent = "CLEAN / NO BREACHES";
+                badge.className = "mono email-section-badge completed";
+            }
+            return;
+        }
 
-                <div class="email-holehe-card">
-                    <div class="email-holehe-header">
-                        <span class="email-holehe-name">Telegram Direct Search</span>
-                        <span class="email-holehe-badge positive">DIRECT DEEP LINK</span>
-                    </div>
-                    <div class="email-holehe-meta mono">${escapeHTML(m.telegram_url)}</div>
-                    <div style="margin-top:8px;">
-                        <a class="email-safe-link" href="${escapeHTML(m.telegram_url)}" target="_blank" rel="noopener noreferrer">
-                            Open Telegram Search (${escapeHTML(result.target_phone)}) ↗
-                        </a>
-                    </div>
+        const dbRows = (b.databases || []).map(db => `
+            <tr>
+                <td class="mono"><strong>${escapeHTML(db.database_name)}</strong></td>
+                <td>${escapeHTML(db.incident_summary || "Discovered in breach dump")}</td>
+                <td class="mono">${db.record_count}</td>
+                <td>${(db.exposed_data_types || []).map(t => `<span class="email-holehe-badge positive">${escapeHTML(t)}</span>`).join(" ")}</td>
+            </tr>
+        `).join("");
+
+        body.innerHTML = `
+            <div class="email-risk-overview" style="margin-bottom:12px;">
+                <div class="email-risk-score">
+                    <span class="email-risk-number ${b.confidence_score >= 80 ? "critical" : "medium"}">${b.confidence_score}%</span>
+                    <span class="email-risk-label">CONFIDENCE SCORE</span>
                 </div>
+                <div style="flex:1; min-width:0;">
+                    ${renderKeyValueGrid([
+                        { label: "Breach Databases Hit", value: b.database_count },
+                        { label: "Total Exposure Records", value: b.record_count },
+                        { label: "Associated Emails Found", value: (b.associated_emails || []).join(", ") || "None" },
+                        { label: "Associated Usernames Found", value: (b.associated_usernames || []).join(", ") || "None" },
+                        { label: "Associated Names Found", value: (b.associated_names || []).join(", ") || "None" },
+                        { label: "Physical Addresses Found", value: (b.associated_addresses || []).join(", ") || "None" },
+                    ])}
+                </div>
+            </div>
+
+            <div class="email-subsection-title">Discovered Breach Databases</div>
+            <div style="overflow-x:auto;">
+                <table class="email-restricted-table" style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th>Database / Breach</th>
+                            <th>Summary / Exposure</th>
+                            <th>Records</th>
+                            <th>Exposed Data Types</th>
+                        </tr>
+                    </thead>
+                    <tbody>${dbRows}</tbody>
+                </table>
             </div>
         `;
 
-        const badge = el("phone-messaging-result-badge");
+        const badge = el("phone-breaches-result-badge");
         if (badge) {
-            badge.textContent = "LEADS GENERATED";
+            badge.textContent = `${b.database_count} BREACHES (${b.confidence_score}% CONFIDENCE)`;
+            badge.className = "mono email-section-badge no_results";
+        }
+    }
+
+    function renderWebDiscovery(result) {
+        const body = el("phone-web-body");
+        if (!body) return;
+        const w = result.web_discovery;
+
+        const dorkGroupsHtml = (w.dork_groups || []).map(group => `
+            <div style="margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05);">
+                <div class="mono" style="color: var(--accent-cyan); font-weight: 600; margin-bottom: 6px;">${escapeHTML(group.category)}</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px;">
+                    ${(group.dorks || []).map(d => `
+                        <div style="background: rgba(255,255,255,0.03); padding: 8px; border-radius: 4px;">
+                            <div style="font-size: 0.85rem; font-weight: 600;">${escapeHTML(d.title)}</div>
+                            <div class="mono" style="font-size: 0.75rem; color: var(--text-muted); word-break: break-all; margin: 4px 0;">${escapeHTML(d.query)}</div>
+                            <a class="email-safe-link" href="${escapeHTML(d.search_url)}" target="_blank" rel="noopener noreferrer" style="font-size: 0.75rem;">Run Dork Search ↗</a>
+                        </div>
+                    `).join("")}
+                </div>
+            </div>
+        `).join("");
+
+        const hitsHtml = (w.web_hits || []).length
+            ? w.web_hits.map(h => `
+                <div class="email-holehe-card" style="margin-bottom:8px;">
+                    <div class="email-holehe-header">
+                        <a href="${escapeHTML(h.url)}" target="_blank" class="email-safe-link" style="font-weight:600;">${escapeHTML(h.title)} ↗</a>
+                    </div>
+                    <div class="mono" style="font-size:0.8rem; color:var(--text-muted);">${escapeHTML(h.url)}</div>
+                    <div style="font-size:0.85rem; margin-top:4px;">${escapeHTML(h.snippet)}</div>
+                </div>
+            `).join("")
+            : '<div class="email-empty-state">No live SerpAPI hits parsed; click any Google Dork above to open search.</div>';
+
+        body.innerHTML = `
+            <div style="margin-bottom:12px;">
+                <strong>Disposable Provider Status:</strong> <span class="mono">${escapeHTML(w.disposable_check)}</span>
+            </div>
+
+            <div class="email-subsection-title">Google Dorks Engine (Targeted OSINT Search Queries)</div>
+            ${dorkGroupsHtml}
+
+            <div class="email-subsection-title" style="margin-top:16px;">Search Engine Hits &amp; Mentions</div>
+            <div>${hitsHtml}</div>
+        `;
+
+        const badge = el("phone-web-result-badge");
+        if (badge) {
+            badge.textContent = `${(w.dork_groups || []).length} DORK CATEGORIES`;
             badge.className = "mono email-section-badge completed";
         }
     }
 
-    function renderRegistries(result) {
-        const body = el("phone-registries-body");
+    function renderSocialDiscovery(result) {
+        const body = el("phone-social-body");
         if (!body) return;
-        const spam = result.spam;
-        const tc = result.truecaller;
+        const s = result.social_discovery;
+
+        const cards = (s.checks || []).map(c => `
+            <div class="email-holehe-card">
+                <div class="email-holehe-header">
+                    <span class="email-holehe-name">${escapeHTML(c.platform)}</span>
+                    <span class="email-holehe-badge positive">${escapeHTML(c.status.toUpperCase())}</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin: 4px 0;">${escapeHTML(c.details)}</div>
+                <div>
+                    <a class="email-safe-link" href="${escapeHTML(c.action_url)}" target="_blank" rel="noopener noreferrer">
+                        Open ${escapeHTML(c.platform)} Lead ↗
+                    </a>
+                </div>
+            </div>
+        `).join("");
 
         body.innerHTML = `
-            <div class="email-holehe-grid" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));">
-                <div class="email-holehe-card">
-                    <div class="email-holehe-header">
-                        <span class="email-holehe-name">SpamCalls.net Search</span>
-                    </div>
-                    <div class="email-holehe-meta mono">${escapeHTML(spam.spamcalls_search_url)}</div>
-                    <div style="margin-top:8px;">
-                        <a class="email-safe-link" href="${escapeHTML(spam.spamcalls_search_url)}" target="_blank" rel="noopener noreferrer">
-                            Search Spam Calls Registry ↗
-                        </a>
-                    </div>
-                </div>
-
-                <div class="email-holehe-card">
-                    <div class="email-holehe-header">
-                        <span class="email-holehe-name">Tellows Spam Registry</span>
-                    </div>
-                    <div class="email-holehe-meta mono">${escapeHTML(spam.tellows_search_url)}</div>
-                    <div style="margin-top:8px;">
-                        <a class="email-safe-link" href="${escapeHTML(spam.tellows_search_url)}" target="_blank" rel="noopener noreferrer">
-                            Search Tellows Registry ↗
-                        </a>
-                    </div>
-                </div>
-
-                <div class="email-holehe-card">
-                    <div class="email-holehe-header">
-                        <span class="email-holehe-name">Truecaller Search Lead</span>
-                    </div>
-                    <div class="email-holehe-meta mono">${escapeHTML(tc.search_url)}</div>
-                    <div style="margin-top:8px;">
-                        <a class="email-safe-link" href="${escapeHTML(tc.search_url)}" target="_blank" rel="noopener noreferrer">
-                            Search Truecaller Public Directory ↗
-                        </a>
-                    </div>
-                </div>
+            <div class="email-holehe-grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));">
+                ${cards}
             </div>
         `;
 
-        const badge = el("phone-registries-result-badge");
+        const badge = el("phone-social-result-badge");
         if (badge) {
-            badge.textContent = "SEARCH LEADS READY";
+            badge.textContent = `${s.checked_count} PLATFORMS CHECKED`;
+            badge.className = "mono email-section-badge completed";
+        }
+    }
+
+    function renderExtractedProfile(result) {
+        const body = el("phone-extracted-body");
+        if (!body) return;
+        const ep = result.extracted_profile;
+
+        body.innerHTML = renderKeyValueGrid([
+            { label: "Discovered Full Names", value: (ep.names || []).join(" | ") || "None discovered" },
+            { label: "Linked Email Addresses", value: (ep.emails || []).join(" | ") || "None discovered" },
+            { label: "Linked Usernames", value: (ep.usernames || []).join(" | ") || "None discovered" },
+            { label: "Physical Addresses", value: (ep.addresses || []).join(" | ") || "None discovered" },
+            { label: "Exposed Data Types", value: (ep.data_exposure_types || []).join(", ") || "Standard Phone & Carrier" },
+        ]);
+
+        const badge = el("phone-extracted-result-badge");
+        if (badge) {
+            badge.textContent = "PROFILE CONSOLIDATED";
             badge.className = "mono email-section-badge completed";
         }
     }
@@ -266,9 +304,10 @@
         ].filter(Boolean).join(" · ");
 
         renderParsing(result);
-        renderRisk(result);
-        renderMessaging(result);
-        renderRegistries(result);
+        renderBreaches(result);
+        renderWebDiscovery(result);
+        renderSocialDiscovery(result);
+        renderExtractedProfile(result);
 
         el("phone-investigation-results").style.display = "block";
         el("phone-investigation-results").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -314,9 +353,9 @@
             authorized: true,
             reason_code: reasonCode,
             case_id: caseId,
-            include_messaging_checks: Boolean(el("phone-option-messaging")?.checked),
-            include_spam_check: Boolean(el("phone-option-spam")?.checked),
-            include_truecaller: Boolean(el("phone-option-truecaller")?.checked),
+            include_breaches: Boolean(el("phone-option-breaches")?.checked),
+            include_web_dorks: Boolean(el("phone-option-dorks")?.checked),
+            include_social: Boolean(el("phone-option-social")?.checked),
         };
 
         const controller = new AbortController();
@@ -334,7 +373,7 @@
             });
             if (!response.ok) {
                 const errText = await response.text();
-                throw new Error(errText || "Phone investigation request failed");
+                throw new Error(errText || "Phone OSINT request failed");
             }
             const responseData = await response.json();
             if (serial !== requestSerial) return;
@@ -342,7 +381,7 @@
             renderPhoneResult(currentPhoneResult);
         } catch (error) {
             if (serial !== requestSerial) return;
-            showFormError(`Phone investigation failed: ${stringValue(error?.message, "Unknown error")}`);
+            showFormError(`Phone OSINT failed: ${stringValue(error?.message, "Unknown error")}`);
         } finally {
             window.clearTimeout(timeoutId);
             if (serial === requestSerial) {
@@ -369,13 +408,74 @@
             showFormError("Run a phone investigation before exporting evidence.");
             return;
         }
-        const jsonContent = JSON.stringify(currentPhoneResult, null, 2);
+
         const safeCase = (currentPhoneResult.case_id || "phone-case").replace(/[^A-Za-z0-9_.-]/g, "_");
-        const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8" });
+
+        if (format === "json") {
+            const content = JSON.stringify(currentPhoneResult, null, 2);
+            downloadFile(content, `${safeCase}_phone_osint.json`, "application/json;charset=utf-8");
+        } else if (format === "csv") {
+            const rows = [
+                ["Field", "Value"],
+                ["Target Phone", currentPhoneResult.target_phone],
+                ["Case ID", currentPhoneResult.case_id],
+                ["Reason Code", currentPhoneResult.reason_code],
+                ["Validity", currentPhoneResult.parsing.valid ? "Valid" : "Invalid"],
+                ["Country", currentPhoneResult.parsing.country_name || currentPhoneResult.parsing.region_code || ""],
+                ["Carrier", currentPhoneResult.parsing.carrier || ""],
+                ["Line Type", currentPhoneResult.parsing.number_type],
+                ["Discovered Names", (currentPhoneResult.extracted_profile?.names || []).join("; ")],
+                ["Discovered Emails", (currentPhoneResult.extracted_profile?.emails || []).join("; ")],
+                ["Discovered Usernames", (currentPhoneResult.extracted_profile?.usernames || []).join("; ")],
+                ["Breach Count", currentPhoneResult.breach_discovery?.database_count || 0],
+            ];
+            const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+            downloadFile(csv, `${safeCase}_phone_osint.csv`, "text/csv;charset=utf-8");
+        } else if (format === "txt" || format === "pdf") {
+            const txt = `PHONE OSINT INVESTIGATION REPORT
+================================
+Target Phone: ${currentPhoneResult.target_phone}
+Case ID: ${currentPhoneResult.case_id}
+Reason Code: ${currentPhoneResult.reason_code}
+Timestamp: ${currentPhoneResult.timestamp}
+
+1. VALIDATION & CARRIER INTELLIGENCE
+-------------------------------------
+Validity: ${currentPhoneResult.parsing.valid ? "Valid E.164 Number" : "Invalid"}
+Country: ${currentPhoneResult.parsing.country_name || currentPhoneResult.parsing.region_code || "N/A"}
+Carrier: ${currentPhoneResult.parsing.carrier || "Not Assigned"}
+Line Type: ${currentPhoneResult.parsing.number_type}
+Disposable / Virtual: ${currentPhoneResult.parsing.is_disposable ? "YES" : "NO"}
+
+2. BREACH DISCOVERY
+-------------------
+Status: ${currentPhoneResult.breach_discovery.status}
+Databases Hit: ${currentPhoneResult.breach_discovery.database_count}
+Associated Emails: ${(currentPhoneResult.extracted_profile?.emails || []).join(", ") || "None"}
+Associated Names: ${(currentPhoneResult.extracted_profile?.names || []).join(", ") || "None"}
+
+3. SOCIAL & MESSENGER LEADS
+---------------------------
+${(currentPhoneResult.social_discovery.checks || []).map(c => `- ${c.platform}: ${c.action_url}`).join("\n")}
+`;
+            if (format === "pdf" && typeof window.print === "function") {
+                const win = window.open("", "_blank");
+                win.document.write(`<pre style="font-family:monospace; padding:20px;">${escapeHTML(txt)}</pre>`);
+                win.document.close();
+                win.focus();
+                win.print();
+            } else {
+                downloadFile(txt, `${safeCase}_phone_osint.txt`, "text/plain;charset=utf-8");
+            }
+        }
+    }
+
+    function downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
-        anchor.download = `${safeCase}_phone_investigation.json`;
+        anchor.download = filename;
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();

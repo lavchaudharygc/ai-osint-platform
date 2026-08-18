@@ -1122,30 +1122,30 @@
                 </label>
 
                 <fieldset class="email-options-fieldset">
-                    <legend>Bounded Collection Options</legend>
+                    <legend>4-Layer Collection Modules</legend>
 
-                    <label class="email-option-row" for="phone-option-messaging">
+                    <label class="email-option-row" for="phone-option-breaches">
                         <span>
-                            <strong>Messaging presence checks</strong>
-                            <small>WhatsApp direct messaging link &amp; Telegram search link.</small>
+                            <strong>Breach-First Discovery</strong>
+                            <small>Query leak databases for associated emails, usernames, names &amp; addresses.</small>
                         </span>
-                        <input type="checkbox" id="phone-option-messaging" checked>
+                        <input type="checkbox" id="phone-option-breaches" checked>
                     </label>
 
-                    <label class="email-option-row" for="phone-option-spam">
+                    <label class="email-option-row" for="phone-option-dorks">
                         <span>
-                            <strong>Spam &amp; scam registry search</strong>
-                            <small>Checks SpamCalls.net and Tellows community report registries.</small>
+                            <strong>Google Dorks &amp; Web Discovery</strong>
+                            <small>Exact, filetype, platform, business directory, and paste site dorks.</small>
                         </span>
-                        <input type="checkbox" id="phone-option-spam" checked>
+                        <input type="checkbox" id="phone-option-dorks" checked>
                     </label>
 
-                    <label class="email-option-row" for="phone-option-truecaller">
+                    <label class="email-option-row" for="phone-option-social">
                         <span>
-                            <strong>Truecaller caller-ID lead check</strong>
-                            <small>Public caller ID search lead link.</small>
+                            <strong>Social &amp; Messenger Discovery</strong>
+                            <small>WhatsApp, Telegram, Truecaller, X, LinkedIn, Facebook, and Spam registries.</small>
                         </span>
-                        <input type="checkbox" id="phone-option-truecaller" checked>
+                        <input type="checkbox" id="phone-option-social" checked>
                     </label>
                 </fieldset>
 
@@ -1153,25 +1153,25 @@
 
                 <div class="email-form-actions">
                     <button id="phone-investigate-button" type="submit" class="btn-execute email-investigate-button">
-                        INVESTIGATE PHONE
+                        RUN OSINT SCAN
                     </button>
                 </div>
             </form>
 
             <aside class="soc-card email-scope-card">
                 <div class="soc-card-header">
-                    <span class="card-title-text">Phone Guardrails</span>
+                    <span class="card-title-text">Phone OSINT Guardrails</span>
                 </div>
                 <ul class="email-guardrail-list">
-                    <li>One target phone number per request.</li>
-                    <li>Case reference, reason code, and explicit authorization are mandatory.</li>
-                    <li>E.164 parsing, carrier detection, and VoIP classification via libphonenumber.</li>
-                    <li>Direct deep links to WhatsApp &amp; Telegram without active login attempts.</li>
-                    <li>Spam call registry and Truecaller public search links.</li>
-                    <li>Results are investigative leads and require analyst verification.</li>
+                    <li>Supports E.164, national, dashed, dotted, spaced, and plain digits.</li>
+                    <li>Automatic real-time format normalization &amp; syntax validation badge.</li>
+                    <li>Local offline validation via libphonenumber (country, carrier, line type, roaming).</li>
+                    <li>Breach-First discovery correlates phone numbers to verified emails &amp; usernames.</li>
+                    <li>8 Google Dork categories (Exact, Filetype, Platform, Directory, Company, Leaks, Forum, Archive).</li>
+                    <li>Social footprint checks across 9 major messaging &amp; community platforms.</li>
                 </ul>
                 <div class="email-scope-note mono">
-                    AUTHENTICATED / AUDITED DISCLOSURE / NO INTERCEPTION
+                    AUTHENTICATED / AUDITED DISCLOSURE / LAWFUL WORKFLOW
                 </div>
             </aside>
         </div>
@@ -1179,8 +1179,8 @@
         <div id="phone-investigation-loading" class="soc-card email-investigation-loading" style="display:none;" role="status" aria-live="polite">
             <span class="email-loading-spinner" aria-hidden="true"></span>
             <div>
-                <strong>PHONE INVESTIGATION IN PROGRESS</strong>
-                <div id="phone-loading-message" class="mono">Parsing E.164 structure and telecom carrier data...</div>
+                <strong>PHONE OSINT SCAN IN PROGRESS</strong>
+                <div id="phone-loading-message" class="mono">Executing 4-layer validation, breach correlation &amp; dork engine...</div>
             </div>
         </div>
 
@@ -1194,45 +1194,55 @@
                 <div class="email-export-actions" aria-label="Phone investigation exports">
                     <button type="button" class="btn-lea" onclick="exportPhoneInvestigation('csv')">Export CSV</button>
                     <button type="button" class="btn-lea" onclick="exportPhoneInvestigation('txt')">Export TXT</button>
+                    <button type="button" class="btn-lea" onclick="exportPhoneInvestigation('pdf')">Export PDF</button>
                     <button type="button" class="btn-lea" onclick="exportPhoneInvestigation('json')">Export JSON</button>
                 </div>
             </div>
 
             <div class="email-results-grid">
-                <section class="soc-card email-result-section" aria-labelledby="phone-parsing-title">
+                <section class="soc-card email-result-section email-result-wide" aria-labelledby="phone-parsing-title">
                     <div class="soc-card-header">
-                        <span class="card-title-text" id="phone-parsing-title">E.164 Validation &amp; Carrier</span>
+                        <span class="card-title-text" id="phone-parsing-title">1. Validation &amp; Carrier Intelligence</span>
                         <span id="phone-parsing-result-badge" class="mono email-section-badge"></span>
                     </div>
                     <div id="phone-parsing-body"></div>
                 </section>
 
-                <section class="soc-card email-result-section" aria-labelledby="phone-risk-title">
+                <section class="soc-card email-result-section email-result-wide" aria-labelledby="phone-breaches-title">
                     <div class="soc-card-header">
-                        <span class="card-title-text" id="phone-risk-title">Line Type &amp; Risk Assessment</span>
-                        <span id="phone-risk-result-badge" class="mono email-section-badge"></span>
+                        <span class="card-title-text" id="phone-breaches-title">2. Breach-First Discovery (Linked Emails, Usernames &amp; Names)</span>
+                        <span id="phone-breaches-result-badge" class="mono email-section-badge"></span>
                     </div>
-                    <div id="phone-risk-body"></div>
+                    <div id="phone-breaches-body"></div>
                 </section>
 
-                <section class="soc-card email-result-section email-result-wide" aria-labelledby="phone-messaging-title">
+                <section class="soc-card email-result-section email-result-wide" aria-labelledby="phone-web-title">
                     <div class="soc-card-header">
-                        <span class="card-title-text" id="phone-messaging-title">Messaging Presence &amp; Direct Leads</span>
-                        <span id="phone-messaging-result-badge" class="mono email-section-badge"></span>
+                        <span class="card-title-text" id="phone-web-title">3. Google Dorks &amp; Web Discovery</span>
+                        <span id="phone-web-result-badge" class="mono email-section-badge"></span>
                     </div>
-                    <div id="phone-messaging-body"></div>
+                    <div id="phone-web-body"></div>
                 </section>
 
-                <section class="soc-card email-result-section email-result-wide" aria-labelledby="phone-registries-title">
+                <section class="soc-card email-result-section email-result-wide" aria-labelledby="phone-social-title">
                     <div class="soc-card-header">
-                        <span class="card-title-text" id="phone-registries-title">Spam Registries &amp; Truecaller Search</span>
-                        <span id="phone-registries-result-badge" class="mono email-section-badge"></span>
+                        <span class="card-title-text" id="phone-social-title">4. Social Media &amp; Messenger Discovery</span>
+                        <span id="phone-social-result-badge" class="mono email-section-badge"></span>
                     </div>
-                    <div id="phone-registries-body"></div>
+                    <div id="phone-social-body"></div>
+                </section>
+
+                <section class="soc-card email-result-section email-result-wide" aria-labelledby="phone-extracted-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="phone-extracted-title">Consolidated Profile &amp; Exposed Data Types</span>
+                        <span id="phone-extracted-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="phone-extracted-body"></div>
                 </section>
             </div>
         </div>
     </section>
+
 
 
 

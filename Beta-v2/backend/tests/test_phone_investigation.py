@@ -1,4 +1,4 @@
-"""Offline unit tests for the phone-investigation module."""
+"""Offline unit tests for the 4-layer phone-investigation module."""
 
 from __future__ import annotations
 
@@ -22,9 +22,15 @@ TEST_USER = AuthenticatedUser(
 )
 
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 def _override_auth() -> None:
     app.dependency_overrides[require_phone_investigator] = lambda: TEST_USER
     app.dependency_overrides[require_csrf] = lambda: TEST_USER
+
 
 
 def test_phone_parsing_valid_indian_mobile() -> None:
@@ -44,7 +50,6 @@ def test_phone_parsing_invalid_number() -> None:
     assert res.number_type == "UNKNOWN"
 
 
-
 @pytest.mark.anyio
 async def test_phone_investigation_service_execution() -> None:
     service = PhoneInvestigationService()
@@ -58,8 +63,8 @@ async def test_phone_investigation_service_execution() -> None:
     assert isinstance(result, PhoneInvestigationResponse)
     assert result.status == "completed"
     assert result.parsing.valid is True
-    assert result.messaging.whatsapp_url == "https://wa.me/919876543210"
-    assert result.messaging.telegram_url == "https://t.me/+919876543210"
+    assert len(result.web_discovery.dork_groups) >= 8
+    assert result.social_discovery.checked_count >= 8
     assert result.risk_summary.risk_label in {"low", "moderate", "high", "critical"}
 
 
@@ -73,15 +78,17 @@ def test_phone_endpoint_via_test_client() -> None:
             "authorized": True,
             "reason_code": "ACTIVE CASE",
             "case_id": "UPP-PHONE-001",
-            "include_messaging_checks": True,
-            "include_spam_check": True,
-            "include_truecaller": True,
+            "include_breaches": True,
+            "include_web_dorks": True,
+            "include_social": True,
         }
         res = client.post("/api/v1/phone-investigation", json=payload)
         assert res.status_code == 200
         data = res.json()
         assert data["status"] == "completed"
         assert data["parsing"]["valid"] is True
-        assert "919876543210" in data["messaging"]["whatsapp_url"]
+        assert "web_discovery" in data
+        assert "social_discovery" in data
+        assert "breach_discovery" in data
     finally:
         app.dependency_overrides.clear()
