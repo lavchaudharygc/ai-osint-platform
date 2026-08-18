@@ -265,12 +265,16 @@ function resetToHeroView() {
     document.getElementById("results-workspace").style.display = "none";
     const emailView = document.getElementById("email-investigation-view");
     if (emailView) emailView.style.display = "none";
+    const phoneView = document.getElementById("phone-investigation-view");
+    if (phoneView) phoneView.style.display = "none";
     document.getElementById("nav-username-investigation")?.classList.add("is-active");
     document.getElementById("nav-email-investigation")?.classList.remove("is-active");
+    document.getElementById("nav-phone-investigation")?.classList.remove("is-active");
     const leaExport = document.getElementById("nav-lea-export");
     if (leaExport) leaExport.style.display = "inline-flex";
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
+
 
 function clearLegacyInvestigationState() {
     legacyRequestSerial += 1;

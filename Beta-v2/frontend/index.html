@@ -476,6 +476,30 @@
 
 
             <button
+                id="nav-phone-investigation"
+                class="btn-lea"
+                onclick="openPhoneInvestigation()">
+
+                <svg
+                    class="icon-svg green"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2">
+
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+
+                </svg>
+
+                <span>
+                    Phone Investigation
+                </span>
+
+            </button>
+
+
+
+            <button
                 id="nav-lea-export"
                 class="btn-lea"
                 onclick="triggerLeaPdfExport()">
@@ -997,6 +1021,219 @@
             </div>
         </div>
     </section>
+
+
+    <!-- ========================================================
+         PHONE INVESTIGATION VIEW (ISOLATED WORKFLOW)
+    ========================================================= -->
+    <section
+        id="phone-investigation-view"
+        class="phone-investigation-view email-investigation-view"
+        aria-labelledby="phone-module-title"
+        style="display:none;">
+
+        <div class="email-module-heading">
+            <div>
+                <div class="email-module-kicker mono">AUTHORIZED PHONE OSINT WORKFLOW</div>
+                <h1 id="phone-module-title">Phone Investigation</h1>
+                <p>
+                    Validate phone numbers, classify line type &amp; carrier, check VoIP fraud risk,
+                    and query messaging presence (WhatsApp &amp; Telegram) and spam registries under a documented case.
+                </p>
+            </div>
+            <div class="email-governance-badge mono">
+                GOVERNANCE GATE ACTIVE
+            </div>
+        </div>
+
+        <div class="email-module-grid">
+            <form id="phone-investigation-form" class="soc-card email-investigation-form" novalidate>
+                <div class="soc-card-header">
+                    <span class="card-title-text">Phone Investigation Parameters</span>
+                    <span class="mono email-form-state" id="phone-form-state">AWAITING INPUT</span>
+                </div>
+
+                <div class="email-field-block">
+                    <label class="form-label" for="phone-target-input">
+                        <span>Target Phone Number</span>
+                        <span id="phone-syntax-badge" class="email-syntax-badge neutral">NOT CHECKED</span>
+                    </label>
+                    <input
+                        type="tel"
+                        id="phone-target-input"
+                        class="form-input"
+                        maxlength="30"
+                        autocomplete="off"
+                        autocapitalize="none"
+                        spellcheck="false"
+                        inputmode="tel"
+                        placeholder="+91 98765 43210 or 9876543210"
+                        aria-describedby="phone-validation-message"
+                        required>
+                    <div id="phone-validation-message" class="email-validation-message" role="status" aria-live="polite">
+                        Enter one phone number with international prefix (e.g. +91) or select default country.
+                    </div>
+                </div>
+
+                <div class="email-two-column-fields">
+                    <div>
+                        <label class="form-label" for="phone-country-code">Default Country Region</label>
+                        <select id="phone-country-code" class="form-input mono" required>
+                            <option value="IN" selected>IN — India (+91)</option>
+                            <option value="US">US — United States (+1)</option>
+                            <option value="GB">GB — United Kingdom (+44)</option>
+                            <option value="AE">AE — UAE (+971)</option>
+                            <option value="CA">CA — Canada (+1)</option>
+                            <option value="AU">AU — Australia (+61)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="form-label" for="phone-case-id">Case ID / Reference</label>
+                        <input
+                            type="text"
+                            id="phone-case-id"
+                            class="form-input mono"
+                            maxlength="64"
+                            placeholder="UPP-PHONE-2026-001"
+                            autocomplete="off"
+                            required>
+                    </div>
+                </div>
+
+                <div class="email-field-block" style="margin-top: 10px;">
+                    <label class="form-label" for="phone-reason-code">Authorization Reason Code</label>
+                    <select id="phone-reason-code" class="form-input" required>
+                        <option value="">Select documented authority...</option>
+                        <option value="active_investigation">Active investigation</option>
+                        <option value="victim_consent">Victim / data-subject consent</option>
+                        <option value="incident_response">Authorized incident response</option>
+                        <option value="court_or_legal_order">Court or lawful written order</option>
+                        <option value="official_duty">Other documented official duty</option>
+                    </select>
+                </div>
+
+                <label class="email-authorization-check" for="phone-authorization-confirmed">
+                    <input type="checkbox" id="phone-authorization-confirmed" required>
+                    <span>
+                        I confirm this lookup is authorized, necessary for the case above,
+                        and limited to lawful investigative purposes.
+                    </span>
+                </label>
+
+                <fieldset class="email-options-fieldset">
+                    <legend>Bounded Collection Options</legend>
+
+                    <label class="email-option-row" for="phone-option-messaging">
+                        <span>
+                            <strong>Messaging presence checks</strong>
+                            <small>WhatsApp direct messaging link &amp; Telegram search link.</small>
+                        </span>
+                        <input type="checkbox" id="phone-option-messaging" checked>
+                    </label>
+
+                    <label class="email-option-row" for="phone-option-spam">
+                        <span>
+                            <strong>Spam &amp; scam registry search</strong>
+                            <small>Checks SpamCalls.net and Tellows community report registries.</small>
+                        </span>
+                        <input type="checkbox" id="phone-option-spam" checked>
+                    </label>
+
+                    <label class="email-option-row" for="phone-option-truecaller">
+                        <span>
+                            <strong>Truecaller caller-ID lead check</strong>
+                            <small>Public caller ID search lead link.</small>
+                        </span>
+                        <input type="checkbox" id="phone-option-truecaller" checked>
+                    </label>
+                </fieldset>
+
+                <div id="phone-form-error" class="email-form-error" role="alert" style="display:none;"></div>
+
+                <div class="email-form-actions">
+                    <button id="phone-investigate-button" type="submit" class="btn-execute email-investigate-button">
+                        INVESTIGATE PHONE
+                    </button>
+                </div>
+            </form>
+
+            <aside class="soc-card email-scope-card">
+                <div class="soc-card-header">
+                    <span class="card-title-text">Phone Guardrails</span>
+                </div>
+                <ul class="email-guardrail-list">
+                    <li>One target phone number per request.</li>
+                    <li>Case reference, reason code, and explicit authorization are mandatory.</li>
+                    <li>E.164 parsing, carrier detection, and VoIP classification via libphonenumber.</li>
+                    <li>Direct deep links to WhatsApp &amp; Telegram without active login attempts.</li>
+                    <li>Spam call registry and Truecaller public search links.</li>
+                    <li>Results are investigative leads and require analyst verification.</li>
+                </ul>
+                <div class="email-scope-note mono">
+                    AUTHENTICATED / AUDITED DISCLOSURE / NO INTERCEPTION
+                </div>
+            </aside>
+        </div>
+
+        <div id="phone-investigation-loading" class="soc-card email-investigation-loading" style="display:none;" role="status" aria-live="polite">
+            <span class="email-loading-spinner" aria-hidden="true"></span>
+            <div>
+                <strong>PHONE INVESTIGATION IN PROGRESS</strong>
+                <div id="phone-loading-message" class="mono">Parsing E.164 structure and telecom carrier data...</div>
+            </div>
+        </div>
+
+        <div id="phone-investigation-results" class="email-investigation-results" style="display:none;">
+            <div class="soc-card email-result-summary-card">
+                <div class="email-result-summary-main">
+                    <div class="email-module-kicker mono">CASE RESULT</div>
+                    <h2 id="phone-result-target">—</h2>
+                    <div id="phone-result-meta" class="email-result-meta mono"></div>
+                </div>
+                <div class="email-export-actions" aria-label="Phone investigation exports">
+                    <button type="button" class="btn-lea" onclick="exportPhoneInvestigation('csv')">Export CSV</button>
+                    <button type="button" class="btn-lea" onclick="exportPhoneInvestigation('txt')">Export TXT</button>
+                    <button type="button" class="btn-lea" onclick="exportPhoneInvestigation('json')">Export JSON</button>
+                </div>
+            </div>
+
+            <div class="email-results-grid">
+                <section class="soc-card email-result-section" aria-labelledby="phone-parsing-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="phone-parsing-title">E.164 Validation &amp; Carrier</span>
+                        <span id="phone-parsing-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="phone-parsing-body"></div>
+                </section>
+
+                <section class="soc-card email-result-section" aria-labelledby="phone-risk-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="phone-risk-title">Line Type &amp; Risk Assessment</span>
+                        <span id="phone-risk-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="phone-risk-body"></div>
+                </section>
+
+                <section class="soc-card email-result-section email-result-wide" aria-labelledby="phone-messaging-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="phone-messaging-title">Messaging Presence &amp; Direct Leads</span>
+                        <span id="phone-messaging-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="phone-messaging-body"></div>
+                </section>
+
+                <section class="soc-card email-result-section email-result-wide" aria-labelledby="phone-registries-title">
+                    <div class="soc-card-header">
+                        <span class="card-title-text" id="phone-registries-title">Spam Registries &amp; Truecaller Search</span>
+                        <span id="phone-registries-result-badge" class="mono email-section-badge"></span>
+                    </div>
+                    <div id="phone-registries-body"></div>
+                </section>
+            </div>
+        </div>
+    </section>
+
 
 
     <!-- ========================================================
@@ -1780,6 +2017,8 @@
 <script src="js/auth.js"></script>
 <script src="js/app.js"></script>
 <script src="js/email_investigation.js"></script>
+<script src="js/phone_investigation.js"></script>
 
 </body>
+
 </html>

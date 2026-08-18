@@ -8,4 +8,6 @@ instaloader>=4.13
 telethon>=1.34,<2.0
 python-dotenv>=1.0.0
 holehe>=1.61
+phonenumbers>=8.13.0
+
 
