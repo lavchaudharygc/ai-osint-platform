@@ -1042,6 +1042,30 @@ function renderPlatformDossiers(scraped) {
         `;
     }
 
+    // Wikidata Dossier
+    if (scraped.wikidata && (scraped.wikidata.found || scraped.wikidata.entity_id)) {
+        const wd = scraped.wikidata;
+        const aliasesHTML = (wd.aliases || []).map(a => `<span class="tag-chip mono">${escapeHTML(a)}</span>`).join("");
+        const handles = wd.social_handles || {};
+        const handlesHTML = Object.entries(handles).map(([key, val]) => `
+            <span class="tag-chip interest"><strong>${escapeHTML(key.replace('_username', '').toUpperCase())}:</strong> ${escapeHTML(val)}</span>
+        `).join("");
+        const safeWdUrl = safeAbsoluteHttpURL(wd.url || `https://www.wikidata.org/wiki/${wd.entity_id}`);
+
+        cardsHTML += `
+            <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-weight:600; color:var(--accent-cyan);">WIKIDATA KNOWLEDGE BASE DOSSIER (${escapeHTML(wd.entity_id || '')})</span>
+                    ${safeWdUrl ? `<span class="mono" style="font-size:11px;"><a href="${escapeHTML(safeWdUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(safeWdUrl)} &#x2197;</a></span>` : ''}
+                </div>
+                <div style="font-size:14px; font-weight:700; color:var(--text-primary);">${escapeHTML(wd.full_name || wd.title || 'N/A')}</div>
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:2px;">${escapeHTML(wd.description || 'No description available.')}</div>
+                ${aliasesHTML ? `<div style="font-size:11px; margin-top:8px;"><strong>Known Aliases / Handles:</strong> ${aliasesHTML}</div>` : ''}
+                ${handlesHTML ? `<div style="font-size:11px; margin-top:8px;"><strong>Linked Handles / Claims:</strong> ${handlesHTML}</div>` : ''}
+            </div>
+        `;
+    }
+
     body.innerHTML = cardsHTML || "<div style='color:var(--text-muted);'>No dossier details.</div>";
 }
 
