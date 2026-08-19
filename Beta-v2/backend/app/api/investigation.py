@@ -29,6 +29,7 @@ from app.services.hitek_service import HiTekService
 from app.services.ai_analyzer import AIAnalyzer
 from app.services.twitter_service import TwitterService
 from app.services.rocketreach_service import RocketReachService
+from app.services.wikidata_service import WikidataService
 from app.services.email_investigation_service import _redact_sensitive_payload
 from app.services.image_proxy_service import ImageProxyError, ImageProxyService
 from app.security.audit import AuditEvent, AuditUnavailable, get_audit_logger
@@ -267,19 +268,21 @@ async def run_investigation(
     kind = classify_input(raw_query)
     clean_handle = raw_query.lstrip("@").split("/")[-1].split("?")[0]
 
-    # ── STEP 1: WMN probe + Instagram + TikTok + Twitter + Dorking — all start simultaneously ──
+    # ── STEP 1: WMN probe + Instagram + TikTok + Twitter + Dorking + Wikidata — all start simultaneously ──
     wmn_service = WhatsMyNameService()
     ig_service = InstagramService()
     tiktok_service = TikTokService()
     twitter_service = TwitterService()
     dork_service = DorkingService()
+    wikidata_service = WikidataService()
 
-    wmn_data, ig_res, tiktok_res, twitter_res, dorking_results = await asyncio.gather(
+    wmn_data, ig_res, tiktok_res, twitter_res, dorking_results, wikidata_res = await asyncio.gather(
         _safe(wmn_service.probe_username(raw_query)),
         _safe(ig_service.fetch_profile_and_posts(clean_handle)),
         _safe(tiktok_service.fetch_profile_and_videos(clean_handle)),
         _safe(twitter_service.fetch_profile_and_tweets(clean_handle)),
         _safe(dork_service.run_dorks(raw_query)),
+        _safe(wikidata_service.search_and_get_profile(raw_query)),
     )
 
     wmn_data = wmn_data or {"status": "error", "scanned": 0, "hits_count": 0, "hits": []}
@@ -383,6 +386,9 @@ async def run_investigation(
     if fb_res and fb_res.get("success"):
         fb_res["status"] = "success"
         scraped_data["facebook"] = fb_res
+    if wikidata_res and wikidata_res.get("found"):
+        wikidata_res["status"] = "success"
+        scraped_data["wikidata"] = wikidata_res
 
     # Inject confirmed scraper profiles into wmn_hits
     wmn_hits = wmn_data.get("hits") or []
@@ -455,6 +461,14 @@ async def run_investigation(
     verified_extras = [r for r in gathered[:len(verify_tasks)] if r]
     telegram_cti = gathered[len(verify_tasks)] or {"searches_performed": 0, "total_records": 0, "results": [], "databases": []}
     internal_db_matches = gathered[-1] or {"status": "not_available", "matches": []}
+
+    # Filter Telegram CTI results for Indian-centric relevance to reduce scammer noise
+    if telegram_cti and telegram_cti.get("results") and getattr(settings, "cti_indian_filtering_enabled", True):
+        cti_items = telegram_cti.get("results") or []
+        filtered_cti = await _safe(AIAnalyzer().filter_indian_centric_cti(cti_items, raw_query))
+        if filtered_cti and isinstance(filtered_cti, list):
+            telegram_cti["results"] = filtered_cti
+            telegram_cti["total_records"] = len(filtered_cti)
 
     # Merge and deduplicate all emails
     seen_emails: set = set()

@@ -451,3 +451,93 @@ class AIAnalyzer:
             "analysis": "Risk assessment unavailable.",
             "parsed": {"risk_level": "UNKNOWN", "risk_score": 0, "indicators": [], "recommendations": []},
         }
+
+    async def filter_indian_centric_cti(
+        self,
+        cti_results: List[Dict[str, Any]],
+        target_query: str,
+    ) -> List[Dict[str, Any]]:
+        """Classify and filter Telegram CTI leak results to isolate Indian-centric records from foreign noise."""
+        if not cti_results or not isinstance(cti_results, list):
+            return []
+
+        # If LLM is not configured, apply deterministic Indian keyword/phone heuristics
+        if not self.is_configured():
+            filtered = []
+            for item in cti_results:
+                text = json.dumps(item, ensure_ascii=False).lower()
+                is_indian = any(
+                    token in text
+                    for token in [
+                        "+91", "india", "delhi", "mumbai", "uttar pradesh", "up police",
+                        "ips", "ias", "aadhaar", "pan", "rupee", ".in", "kumar", "singh", "jha", "sharma"
+                    ]
+                )
+                if is_indian or len(cti_results) <= 2:
+                    item["indian_centric"] = True
+                    item["classification_reason"] = "Matched Indian keyword / phone heuristic"
+                    filtered.append(item)
+            return filtered or cti_results
+
+        items_payload = []
+        for idx, item in enumerate(cti_results[:20]):
+            items_payload.append({
+                "index": idx,
+                "title": item.get("title") or item.get("database_name") or "",
+                "name": item.get("name") or item.get("full_name") or "",
+                "username": item.get("username") or "",
+                "phone": item.get("phone") or item.get("mobile") or "",
+                "snippet": str(item.get("message") or item.get("data") or item.get("raw") or "")[:300],
+            })
+
+        prompt = (
+            f"You are a Cyber Crime CTI Analyst for the Indian Cyber Cell.\n"
+            f"Analyze the following CTI breach records for target '{target_query}'.\n"
+            f"Identify which records are INDIAN-CENTRIC (e.g. Indian names/surnames, +91 phones, Indian locations/cities, Indian organizations/IPS/IAS) "
+            f"versus foreign noise (e.g. Russian, European, American, or non-Indian scammer dumps).\n\n"
+            f"RECORDS JSON:\n{json.dumps(items_payload, ensure_ascii=False)}\n\n"
+            f"Respond ONLY with a valid JSON array of objects with keys:\n"
+            f'["index": int, "is_indian_centric": bool, "confidence": float, "reason": str]\n'
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    self.api_url,
+                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": "You are a precise JSON-only CTI classifier for Indian cyber investigation."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "temperature": 0.1,
+                        "max_tokens": 800,
+                    },
+                )
+            if resp.status_code == 200:
+                raw_content = resp.json()["choices"][0]["message"]["content"].strip()
+                match = re.search(r"\[.*\]", raw_content, re.DOTALL)
+                if match:
+                    parsed_classifications = json.loads(match.group(0))
+                    class_map = {item.get("index"): item for item in parsed_classifications if isinstance(item, dict)}
+
+                    filtered_results = []
+                    for idx, orig_item in enumerate(cti_results):
+                        c_info = class_map.get(idx)
+                        if c_info:
+                            is_indian = bool(c_info.get("is_indian_centric"))
+                            orig_item["indian_centric"] = is_indian
+                            orig_item["classification_reason"] = c_info.get("reason", "")
+                            orig_item["confidence"] = c_info.get("confidence", 0.5)
+                            if is_indian:
+                                filtered_results.append(orig_item)
+                        else:
+                            orig_item["indian_centric"] = True
+                            filtered_results.append(orig_item)
+
+                    return filtered_results or cti_results
+        except Exception as exc:
+            logger.warning("LLM CTI Indian-centric classification failed: %s", exc)
+
+        return cti_results

@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     telegram_api_hash: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_API_HASH"))
     telegram_cti_api_key: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_CTI_API_KEY"))
     telegram_cti_enabled: bool = Field(default_factory=lambda: os.getenv("TELEGRAM_CTI_ENABLED", "true").lower() == "true")
+    cti_indian_filtering_enabled: bool = Field(default_factory=lambda: os.getenv("CTI_INDIAN_FILTERING_ENABLED", "true").lower() == "true")
+
+    wikidata_enabled: bool = Field(default_factory=lambda: os.getenv("WIKIDATA_ENABLED", "true").lower() == "true")
+    wikidata_user_agent: str = Field(default_factory=lambda: os.getenv("WIKIDATA_USER_AGENT", "UPPoliceCyberCell/2.0 (cybercell@uppolice.gov.in)"))
+    wikidata_timeout_seconds: float = Field(default=10.0, ge=2.0, le=30.0)
 
     database_url: str = "sqlite:///./beta_v2_osint.db"
 
