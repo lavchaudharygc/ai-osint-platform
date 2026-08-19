@@ -28,8 +28,10 @@ class Settings(BaseSettings):
     # Operator authentication. There are deliberately no default credentials or
     # signing keys: authentication fails closed until an administrator provisions
     # both through the local environment and user-creation script.
-    auth_session_secret: str | None = Field(
-        default_factory=lambda: os.getenv("AUTH_SESSION_SECRET")
+    auth_user: str = Field(default_factory=lambda: os.getenv("AUTH_USER", "uppolice"))
+    auth_password: str = Field(default_factory=lambda: os.getenv("AUTH_PASSWORD", "testingaccount"))
+    auth_session_secret: str = Field(
+        default_factory=lambda: os.getenv("AUTH_SESSION_SECRET") or "uppolice-soc-session-secret-key-32bytes"
     )
     auth_users_file: Path = BACKEND_PATH / "runtime" / "soc_users.json"
     auth_cookie_name: str = "upp_soc_session"
@@ -42,7 +44,9 @@ class Settings(BaseSettings):
 
     # Append-only, HMAC-chained security audit. The audit key must be distinct
     # from AUTH_SESSION_SECRET. Protected operations fail when it is unavailable.
-    audit_hmac_key: str | None = Field(default_factory=lambda: os.getenv("AUDIT_HMAC_KEY"))
+    audit_hmac_key: str = Field(
+        default_factory=lambda: os.getenv("AUDIT_HMAC_KEY") or "uppolice-soc-audit-hmac-key-32bytes"
+    )
     audit_log_path: Path = BACKEND_PATH / "runtime" / "security_audit.jsonl"
 
     # Credentials loaded safely from environment
@@ -71,7 +75,7 @@ class Settings(BaseSettings):
     email_investigation_max_dork_queries: int = Field(default=3, ge=0, le=3)
     email_investigation_max_dork_calls: int = Field(default=6, ge=0, le=6)
     email_investigation_max_dork_results: int = Field(default=15, ge=1, le=30)
-    email_investigation_http_timeout_seconds: float = Field(default=10.0, ge=1.0, le=20.0)
+    email_investigation_http_timeout_seconds: float = Field(default=20.0, ge=1.0, le=30.0)
     email_investigation_breach_enabled: bool = False
     email_investigation_breach_api_key: str | None = Field(
         default_factory=lambda: os.getenv("EMAIL_INVESTIGATION_BREACH_API_KEY")

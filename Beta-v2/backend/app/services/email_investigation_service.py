@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import html
 import ipaddress
+import logging
 import re
 from datetime import UTC, datetime
 from time import monotonic
@@ -78,6 +79,7 @@ _MAX_HARVESTED_EMAILS = 20
 _LEAKOSINT_GATE = asyncio.Lock()
 _LEAKOSINT_LAST_STARTED = 0.0
 _SERPAPI_GATE = asyncio.Semaphore(2)
+logger = logging.getLogger(__name__)
 
 _FREE_PROVIDERS = {
     "gmail.com": "Google Gmail",
@@ -998,7 +1000,9 @@ class EmailInvestigationService:
                 provenance=_provenance("leakosint", "exact_email_post_json", 0),
             )
         token = str(
-            getattr(self.settings, "email_investigation_breach_api_key", None) or ""
+            getattr(self.settings, "email_investigation_breach_api_key", None)
+            or getattr(self.settings, "leakosint_api_key", None)
+            or ""
         ).strip()
         if not token:
             return BreachIntelligence(
@@ -1370,15 +1374,23 @@ class EmailInvestigationService:
                 response = await client.get(
                     _SERPAPI_URL,
                     params={"engine": engine, "q": query, "num": 5, "api_key": api_key},
+                    timeout=25.0,
                 )
             if response.status_code != 200:
+                logger.warning(
+                    "SerpAPI query for engine '%s' failed with status %d: %s",
+                    engine,
+                    response.status_code,
+                    response.text[:200],
+                )
                 return False, []
             payload = response.json()
             organic_results = payload.get("organic_results") if isinstance(payload, dict) else None
             if not isinstance(organic_results, list):
                 return False, []
             return True, [item for item in organic_results if isinstance(item, dict)][:10]
-        except (httpx.HTTPError, ValueError, TypeError):
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            logger.warning("SerpAPI query error for engine '%s': %s", engine, exc)
             return False, []
 
     @staticmethod
