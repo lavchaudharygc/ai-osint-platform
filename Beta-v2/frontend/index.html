@@ -11,6 +11,38 @@
 
     <link rel="stylesheet" href="css/soc_theme.css">
 
+    <!-- Tailwind CSS v3 CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        matrix: '#10B981',
+                        'matrix-hover': '#059669',
+                        'police-gold': '#F59E0B',
+                        'soc-bg': '#0B0F17',
+                        'soc-panel': '#131C2E',
+                        'soc-elevated': '#1E293B',
+                        'soc-hover': '#24334A',
+                        'soc-border': '#26334D',
+                        'soc-alert': '#F43F5E'
+                    },
+                    fontFamily: {
+                        mono: ['Fira Code', 'JetBrains Mono', 'monospace'],
+                        sans: ['Fira Sans', 'Outfit', 'sans-serif']
+                    },
+                    borderRadius: {
+                        'card': '14px',
+                        'button': '8px',
+                        'input': '8px',
+                        'modal': '16px'
+                    }
+                }
+            }
+        }
+    </script>
+
     <!-- =========================================================
          INLINE AI MODEL TOGGLE
          No changes required in soc_theme.css
@@ -384,16 +416,14 @@
          HEADER
     ========================================================= -->
 
-    <header class="soc-header">
+    <header class="soc-header flex flex-wrap items-center justify-between gap-3 p-3 bg-soc-panel border border-soc-border border-l-4 border-l-police-gold rounded-lg w-full">
 
         <div
-            class="soc-brand"
-            onclick="resetToHeroView()"
-            style="cursor:pointer;">
+            class="soc-brand flex items-center gap-3 cursor-pointer shrink-0"
+            onclick="resetToHeroView()">
 
             <svg
-                class="icon-svg gold"
-                style="width:22px;height:22px;flex-shrink:0;"
+                class="icon-svg gold w-5 h-5 shrink-0 text-police-gold"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -403,13 +433,13 @@
 
             </svg>
 
-            <div style="min-width:0;">
+            <div class="min-w-0">
 
-                <div class="soc-title">
+                <div class="soc-title text-xs sm:text-sm md:text-base font-semibold text-text-primary tracking-wide font-sans">
                     UTTAR PRADESH POLICE — CYBER CRIME OSINT PLATFORM
                 </div>
 
-                <div class="soc-subtitle mono">
+                <div class="soc-subtitle mono text-[10px] text-text-muted uppercase tracking-wider hidden sm:block">
                     Government Security Operations Center · Beta-v2 Engine
                 </div>
 
@@ -418,9 +448,9 @@
         </div>
 
 
-        <div class="soc-actions">
+        <div class="soc-actions flex flex-wrap items-center gap-2">
 
-            <span id="soc-authenticated-user" class="soc-authenticated-user mono" style="display:none;"></span>
+            <span id="soc-authenticated-user" class="soc-authenticated-user mono text-xs text-matrix px-2 py-0.5 border border-matrix/30 rounded-full bg-matrix/10 hidden"></span>
 
             <button
                 id="nav-username-investigation"
