@@ -4,38 +4,42 @@
    Strictly NO purple, NO neon glows, NO glassmorphism, NO 24px+ radii.
    ===================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
-/* ── Design Tokens ─────────────────────────────────────────────────── */
+/* ── Design Tokens (UI/UX Pro Max Cyberpunk Tactical HUD) ─────────────── */
 :root {
-    --bg-base:      #06090D;
-    --bg-panel:     #0C1218;
-    --bg-elevated:  #131A22;
-    --bg-hover:     #1A232D;
-    --bg-input:     #0A0F14;
+    --bg-base:      #020406;
+    --bg-panel:     #0C130E;
+    --bg-elevated:  #111A13;
+    --bg-hover:     #17241A;
+    --bg-input:     #060B08;
 
-    --border-subtle:  #243140;
-    --border-divider: #2B3949;
+    --border-subtle:  #1F3323;
+    --border-divider: #28442D;
 
-    --text-primary:   #E7EDF4;
-    --text-secondary: #B0BAC7;
-    --text-muted:     #7E8B99;
-    --text-disabled:  #5C6673;
+    --text-primary:   #E0F2E3;
+    --text-secondary: #A3C9A8;
+    --text-muted:     #6D9473;
+    --text-disabled:  #445E49;
 
-    --accent-cyan:       #14A3C7;
-    --accent-cyan-hover: #1F8FB3;
+    --accent-cyan:       #00FF41;
+    --accent-cyan-hover: #26FF5B;
     --police-gold:       #C7A74B;
 
     --risk-low:      #5B7288;
     --risk-medium:   #D6A43A;
     --risk-high:     #E26D34;
-    --risk-critical: #D43B44;
-    --status-success:#2E9E5B;
+    --risk-critical: #EF4444;
+    --status-success:#00FF41;
 
-    --radius-card:   8px;
-    --radius-button: 6px;
-    --radius-input:  6px;
+    --radius-card:   6px;
+    --radius-button: 4px;
+    --radius-input:  4px;
     --radius-badge:  999px;
+
+    /* Focus & Motion */
+    --color-ring:    #00FF41;
+    --transition-fast: 150ms ease;
 
     /* Layout */
     --sidebar-w:    360px;
@@ -60,7 +64,7 @@ body {
     min-height: 100vh;
     background: var(--bg-base);
     color: var(--text-primary);
-    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Fira Sans', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 14px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
@@ -69,7 +73,7 @@ body {
 
 /* ── Typography Utilities ──────────────────────────────────────────── */
 .mono {
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-family: 'Fira Code', 'JetBrains Mono', 'Courier New', monospace;
 }
 
 /* ── Icons ─────────────────────────────────────────────────────────── */
