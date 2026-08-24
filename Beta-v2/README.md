@@ -108,6 +108,24 @@ Older Beta-v2 revisions contained embedded provider-key fallbacks. They have bee
 removed. Revoke and replace any live provider credential that matched a committed
 fallback, then keep the replacement only in `backend/.env`.
 
+## People Search provider
+
+The standalone **People Search** view performs bounded exact-full-name discovery
+across selected public social platforms. It uses SerpAPI only and never falls
+back to another provider or launches the full Target Scan pipeline.
+
+Configure the existing search credential in `backend/.env`:
+
+```dotenv
+SERPAPI_KEY=<complete SerpAPI key>
+PERSON_SEARCH_ENABLED=true
+```
+
+Optional server-owned ceilings are documented in `backend/.env.example`. The
+browser can lower the candidate count, but cannot raise the query, result, or
+timeout ceilings. Returned profiles, usernames, and images are unverified leads;
+the workflow performs no contact, breach, background-check, or AI enrichment.
+
 ## Run both servers
 
 ```powershell
@@ -122,14 +140,22 @@ Open:
 - Protected-workflow readiness: `http://127.0.0.1:8010/ready`
 - Swagger: `http://127.0.0.1:8010/docs`
 
-Sign in with the provisioned analyst, select **Email Investigation**, complete the
-case/reason/authorization fields, and explicitly select **Restricted breach
-contact records** when the case requires that view. Stop both servers with
-`Ctrl+C`. The supplied launchers suppress backend access logs so signed upstream
-image URLs are not written to the console; security audit events are still
-written to the HMAC-chained audit file. The launcher reports success only after
-the backend confirms that the session secret, an active user store, and the
-audit key/chain are ready, and after the frontend answers its HTTP check.
+Sign in with the provisioned analyst. Select **People Search** for exact-name
+public-profile discovery, or **Email Intel** for the governed email workflow.
+For People Search, enter the exact full name, optionally add a state/location,
+organization, and two-letter country code, select the platforms, then run the
+search. Each platform initially shows five candidates; **Show more profiles**
+expands the already-returned rows inline and **Show less** collapses them without
+another provider call.
+
+For Email Intel, complete the case/reason/authorization fields and explicitly
+select **Restricted breach contact records** when the case requires that view.
+Stop both servers with `Ctrl+C`. The supplied launchers suppress backend access
+logs so signed upstream image URLs are not written to the console; security audit
+events are still written to the HMAC-chained audit file. The launcher reports
+success only after the backend confirms that the session secret, an active user
+store, and the audit key/chain are ready, and after the frontend answers its HTTP
+check.
 
 If the launcher reports that port `3000` or `8010` is already in use, do not start
 a second copy. Find the existing listener and stop it from the terminal that
@@ -171,6 +197,22 @@ audit write:
 }
 ```
 
+## People Search API request
+
+`POST /api/v1/person-search` requires an authenticated `investigator` session
+and the session CSRF header. `GET /api/v1/person-search/status` reports readiness
+and non-secret server ceilings.
+
+```json
+{
+  "full_name": "Shubham Jha",
+  "location": "Lucknow, Uttar Pradesh",
+  "country_code": "IN",
+  "platforms": ["instagram", "twitter", "facebook", "linkedin"],
+  "max_profiles": 20
+}
+```
+
 ## Tests
 
 All provider transports are mocked; the tests spend no provider quota:
@@ -186,6 +228,8 @@ node .\frontend\tests\email_investigation_ui.test.cjs
 node .\frontend\tests\image_proxy_ui.test.cjs
 node .\frontend\tests\legacy_render_security.test.cjs
 node .\frontend\tests\legacy_scan_lifecycle.test.cjs
+node .\frontend\tests\people_search_ui.test.cjs
+node .\frontend\tests\phone_investigation_ui.test.cjs
 ```
 
 ## Deployment boundary

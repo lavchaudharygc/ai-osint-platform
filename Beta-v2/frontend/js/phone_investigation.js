@@ -392,15 +392,21 @@
     }
 
     function openPhoneInvestigation() {
-        el("hero-search-view").style.display = "none";
-        el("results-workspace").style.display = "none";
-        el("email-investigation-view").style.display = "none";
-        el("phone-investigation-view").style.display = "block";
-        el("nav-username-investigation")?.classList.remove("is-active");
-        el("nav-email-investigation")?.classList.remove("is-active");
-        el("nav-phone-investigation")?.classList.add("is-active");
-        const leaExport = el("nav-lea-export");
-        if (leaExport) leaExport.style.display = "none";
+        if (typeof window.activateDashboardView === "function") {
+            window.activateDashboardView("phone");
+        } else {
+            el("hero-search-view").style.display = "none";
+            el("results-workspace").style.display = "none";
+            el("email-investigation-view").style.display = "none";
+            if (el("people-search-view")) el("people-search-view").style.display = "none";
+            el("phone-investigation-view").style.display = "block";
+            el("nav-username-investigation")?.classList.remove("is-active");
+            el("nav-people-search")?.classList.remove("is-active");
+            el("nav-email-investigation")?.classList.remove("is-active");
+            el("nav-phone-investigation")?.classList.add("is-active");
+            const leaExport = el("nav-lea-export");
+            if (leaExport) leaExport.style.display = "none";
+        }
     }
 
     function exportPhoneInvestigation(format) {

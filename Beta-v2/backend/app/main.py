@@ -9,6 +9,7 @@ from app.api.auth import router as auth_router
 from app.api.investigation import router as investigation_router
 from app.api.email_investigation import router as email_investigation_router
 from app.api.phone_investigation import router as phone_investigation_router
+from app.api.person_search import router as person_search_router
 from app.security.audit import AuditUnavailable, get_audit_logger
 from app.security.auth import (
     AuthConfigurationError,
@@ -34,6 +35,7 @@ app.include_router(auth_router)
 app.include_router(investigation_router)
 app.include_router(email_investigation_router)
 app.include_router(phone_investigation_router)
+app.include_router(person_search_router)
 
 
 

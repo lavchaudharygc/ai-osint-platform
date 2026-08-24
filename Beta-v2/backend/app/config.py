@@ -71,6 +71,15 @@ class Settings(BaseSettings):
     signalhire_api_key: str | None = Field(default_factory=lambda: os.getenv("SIGNALHIRE_API_KEY"))
     leakosint_api_key: str | None = Field(default_factory=lambda: os.getenv("LEAKOSINT_API_KEY"))
     serpapi_key: str | None = Field(default_factory=lambda: os.getenv("SERPAPI_KEY"))
+
+    # Isolated full-name public-profile discovery. Request values may only lower
+    # these ceilings, and this capability never falls back to another provider.
+    person_search_enabled: bool = True
+    person_search_timeout_seconds: float = Field(default=15.0, ge=2.0, le=30.0)
+    person_search_results_per_query: int = Field(default=5, ge=1, le=10)
+    person_search_max_queries: int = Field(default=5, ge=1, le=8)
+    person_search_max_profiles: int = Field(default=20, ge=1, le=50)
+
     email_investigation_dork_enabled: bool = True
     email_investigation_max_dork_queries: int = Field(default=3, ge=0, le=3)
     email_investigation_max_dork_calls: int = Field(default=6, ge=0, le=6)

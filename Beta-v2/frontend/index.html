@@ -470,6 +470,19 @@
             </button>
 
             <button
+                id="nav-people-search"
+                class="btn-lea flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-800/80 text-slate-300 border border-slate-700 hover:text-violet-300 hover:border-violet-500/40 transition-all"
+                onclick="openPeopleSearch()">
+                <svg class="w-4 h-4 text-violet-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="10" cy="8" r="4"></circle>
+                    <path d="M3 20c.8-4 3.1-6 7-6 2.1 0 3.8.6 5 1.7"></path>
+                    <circle cx="18" cy="18" r="3"></circle>
+                    <line x1="20.2" y1="20.2" x2="22" y2="22"></line>
+                </svg>
+                <span>People Search</span>
+            </button>
+
+            <button
                 id="nav-email-investigation"
                 class="btn-lea flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-slate-800/80 text-slate-300 border border-slate-700 hover:text-cyan-400 hover:border-cyan-500/40 transition-all"
                 onclick="openEmailInvestigation()">
@@ -665,6 +678,149 @@
         </div>
 
     </div>
+
+
+    <!-- ========================================================
+         PEOPLE SEARCH (ISOLATED PUBLIC-PROFILE WORKFLOW)
+    ========================================================= -->
+
+    <section
+        id="people-search-view"
+        class="people-search-view"
+        aria-labelledby="people-search-module-title"
+        style="display:none;">
+
+        <div class="email-module-heading people-search-heading">
+            <div>
+                <div class="email-module-kicker mono">EXACT-NAME PUBLIC PROFILE DISCOVERY</div>
+                <h1 id="people-search-module-title">People Search</h1>
+                <p>
+                    Search selected public platforms by exact full name and optional location or organization clues.
+                    Results are investigative leads and must be independently corroborated.
+                </p>
+            </div>
+            <div class="people-search-governance-badge mono">PUBLIC SOURCES ONLY</div>
+        </div>
+
+        <div class="people-search-control-grid">
+            <form id="people-search-form" class="soc-card people-search-form" novalidate>
+                <div class="soc-card-header">
+                    <span class="card-title-text">Search Parameters</span>
+                    <span id="people-search-form-state" class="mono email-form-state">AWAITING INPUT</span>
+                </div>
+
+                <div id="people-search-readiness" class="people-search-readiness is-checking" role="status" aria-live="polite">
+                    <span class="people-search-readiness-dot" aria-hidden="true"></span>
+                    <div>
+                        <strong id="people-search-readiness-title">Checking search service</strong>
+                        <small id="people-search-readiness-detail">Reading provider readiness and safe server limits...</small>
+                    </div>
+                    <button id="people-search-status-refresh" type="button" class="people-search-text-button">Retry</button>
+                </div>
+
+                <div class="email-field-block">
+                    <label class="form-label" for="people-full-name">
+                        <span>Exact Full Name</span>
+                        <span class="people-search-required">REQUIRED</span>
+                    </label>
+                    <input
+                        id="people-full-name"
+                        class="form-input"
+                        type="text"
+                        minlength="2"
+                        maxlength="200"
+                        autocomplete="off"
+                        placeholder="e.g. Ada Lovelace"
+                        required>
+                </div>
+
+                <div class="email-two-column-fields">
+                    <div>
+                        <label class="form-label" for="people-location">State / Location</label>
+                        <input id="people-location" class="form-input" type="text" maxlength="200" autocomplete="off" placeholder="City, state, or region">
+                    </div>
+                    <div>
+                        <label class="form-label" for="people-country-code">Country</label>
+                        <input id="people-country-code" class="form-input mono" type="text" minlength="2" maxlength="2" autocomplete="off" placeholder="IN">
+                    </div>
+                </div>
+
+                <div class="email-field-block">
+                    <label class="form-label" for="people-organization">Organization</label>
+                    <input id="people-organization" class="form-input" type="text" maxlength="200" autocomplete="off" placeholder="Employer, university, or organization">
+                </div>
+
+                <fieldset class="people-search-platform-fieldset">
+                    <legend>
+                        <span>Platforms</span>
+                        <span class="people-search-platform-actions">
+                            <button id="people-platform-select-all" type="button" class="people-search-text-button">Select all</button>
+                            <span aria-hidden="true">·</span>
+                            <button id="people-platform-clear" type="button" class="people-search-text-button">Clear</button>
+                        </span>
+                    </legend>
+                    <div class="people-search-platform-grid">
+                        <label><input type="checkbox" value="instagram" data-people-platform checked><span>Instagram</span></label>
+                        <label><input type="checkbox" value="twitter" data-people-platform checked><span>Twitter / X</span></label>
+                        <label><input type="checkbox" value="facebook" data-people-platform checked><span>Facebook</span></label>
+                        <label><input type="checkbox" value="linkedin" data-people-platform checked><span>LinkedIn</span></label>
+                        <label><input type="checkbox" value="tiktok" data-people-platform checked><span>TikTok</span></label>
+                        <label><input type="checkbox" value="reddit" data-people-platform checked><span>Reddit</span></label>
+                        <label><input type="checkbox" value="github" data-people-platform checked><span>GitHub</span></label>
+                        <label><input type="checkbox" value="youtube" data-people-platform checked><span>YouTube</span></label>
+                        <label><input type="checkbox" value="telegram" data-people-platform checked><span>Telegram</span></label>
+                    </div>
+                </fieldset>
+
+                <div class="people-search-limit-row">
+                    <div>
+                        <label class="form-label" for="people-candidate-limit">Candidate Limit</label>
+                        <input id="people-candidate-limit" class="form-input mono" type="number" min="1" max="50" step="1" value="20">
+                    </div>
+                    <p>Sets a ceiling only. Server-owned provider and query budgets remain authoritative.</p>
+                </div>
+
+                <div id="people-search-error" class="email-form-error" role="alert" style="display:none;"></div>
+
+                <div class="email-form-actions">
+                    <button id="people-search-submit" type="submit" class="btn-execute people-search-submit" disabled>
+                        Search Public Profiles
+                    </button>
+                    <button id="people-search-cancel" type="button" class="btn-lea" style="display:none;">
+                        Cancel Search
+                    </button>
+                </div>
+            </form>
+
+            <aside class="soc-card people-search-scope-card">
+                <div class="soc-card-header">
+                    <span class="card-title-text">Analyst Handling</span>
+                    <span class="mono people-search-scope-status">LEAD-ONLY</span>
+                </div>
+                <div class="people-search-lead-notice">
+                    <strong>Unverified public-data leads</strong>
+                    <p>A matching name or username does not establish that profiles belong to the same person.</p>
+                </div>
+                <ul class="people-search-scope-list">
+                    <li>Use exact legal or commonly documented names where possible.</li>
+                    <li>Add location and organization only when already lawfully known.</li>
+                    <li>Corroborate candidates using multiple independent public attributes.</li>
+                    <li>External profiles open only after an analyst selects a link.</li>
+                </ul>
+            </aside>
+        </div>
+
+        <div id="people-search-loading" class="soc-card people-search-loading" style="display:none;" role="status" aria-live="polite">
+            <span class="email-loading-spinner" aria-hidden="true"></span>
+            <div>
+                <strong>Searching selected public platforms</strong>
+                <div id="people-search-loading-message" class="mono">Resolving exact-name profile candidates...</div>
+            </div>
+        </div>
+
+        <div id="people-search-result-announcement" class="people-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div id="people-search-results" class="people-search-results" style="display:none;"></div>
+    </section>
 
 
     <!-- ========================================================
@@ -1926,6 +2082,7 @@
 <script src="js/lea_pdf_exporter.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/app.js"></script>
+<script src="js/person_search.js"></script>
 <script src="js/email_investigation.js"></script>
 <script src="js/phone_investigation.js"></script>
 

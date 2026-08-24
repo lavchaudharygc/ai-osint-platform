@@ -16,6 +16,9 @@ async function handleLogout() {
     if (typeof window.clearEmailInvestigationState === "function") {
         window.clearEmailInvestigationState();
     }
+    if (typeof window.clearPeopleSearchState === "function") {
+        window.clearPeopleSearchState();
+    }
     clearLegacyInvestigationState();
     return window.SocAuth.logout();
 }
@@ -27,10 +30,22 @@ function hasLegacyContactAccess() {
     );
 }
 
+function hasInvestigatorAccess() {
+    return Boolean(window.SocAuth?.hasRole("investigator"));
+}
+
+function syncRoleBasedNavigation() {
+    const usernameNav = document.getElementById("nav-username-investigation");
+    const peopleNav = document.getElementById("nav-people-search");
+    if (usernameNav) usernameNav.style.display = hasLegacyContactAccess() ? "inline-flex" : "none";
+    if (peopleNav) peopleNav.style.display = hasInvestigatorAccess() ? "inline-flex" : "none";
+}
+
+window.syncRoleBasedNavigation = syncRoleBasedNavigation;
+
 window.addEventListener("soc:authenticated", () => {
     fetchApiKeysStatus();
-    const usernameNav = document.getElementById("nav-username-investigation");
-    if (usernameNav) usernameNav.style.display = hasLegacyContactAccess() ? "inline-flex" : "none";
+    syncRoleBasedNavigation();
     if (!hasLegacyContactAccess() && typeof window.openEmailInvestigation === "function") {
         window.openEmailInvestigation();
     }
@@ -253,6 +268,45 @@ function stopScanLoader() {
     }, 400);
 }
 
+/* ---------- Exclusive Dashboard View Navigation ---------- */
+function activateDashboardView(viewName) {
+    const requested = String(viewName || "target").toLowerCase();
+    const viewIds = {
+        target: "hero-search-view",
+        people: "people-search-view",
+        email: "email-investigation-view",
+        phone: "phone-investigation-view",
+        results: "results-workspace",
+    };
+    const selected = Object.hasOwn(viewIds, requested) ? requested : "target";
+
+    if (selected !== "people" && typeof window.deactivatePeopleSearch === "function") {
+        window.deactivatePeopleSearch();
+    }
+
+    Object.entries(viewIds).forEach(([key, id]) => {
+        const node = document.getElementById(id);
+        if (node) node.style.display = key === selected ? "block" : "none";
+    });
+
+    const selectedNav = selected === "results" ? "target" : selected;
+    const navIds = {
+        target: "nav-username-investigation",
+        people: "nav-people-search",
+        email: "nav-email-investigation",
+        phone: "nav-phone-investigation",
+    };
+    Object.entries(navIds).forEach(([key, id]) => {
+        document.getElementById(id)?.classList.toggle("is-active", key === selectedNav);
+    });
+
+    const leaExport = document.getElementById("nav-lea-export");
+    if (leaExport) leaExport.style.display = ["target", "results"].includes(selected) ? "inline-flex" : "none";
+    return selected;
+}
+
+window.activateDashboardView = activateDashboardView;
+
 function resetToHeroView() {
     if (!hasLegacyContactAccess()) {
         if (typeof window.openEmailInvestigation === "function") window.openEmailInvestigation();
@@ -261,17 +315,7 @@ function resetToHeroView() {
     if (typeof window.cancelEmailInvestigation === "function") {
         window.cancelEmailInvestigation();
     }
-    document.getElementById("hero-search-view").style.display = "block";
-    document.getElementById("results-workspace").style.display = "none";
-    const emailView = document.getElementById("email-investigation-view");
-    if (emailView) emailView.style.display = "none";
-    const phoneView = document.getElementById("phone-investigation-view");
-    if (phoneView) phoneView.style.display = "none";
-    document.getElementById("nav-username-investigation")?.classList.add("is-active");
-    document.getElementById("nav-email-investigation")?.classList.remove("is-active");
-    document.getElementById("nav-phone-investigation")?.classList.remove("is-active");
-    const leaExport = document.getElementById("nav-lea-export");
-    if (leaExport) leaExport.style.display = "inline-flex";
+    activateDashboardView("target");
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -400,8 +444,7 @@ async function executeScan(fromHero = false) {
         stopScanLoader();
 
         // Transition from Hero to Results Workspace
-        document.getElementById("hero-search-view").style.display = "none";
-        document.getElementById("results-workspace").style.display = "block";
+        activateDashboardView("results");
 
         logConsole(`[SYS] ENVELOPE RECEIVED — CASE ID: ${data.investigation_id}`);
         logConsole("[SYS] RENDERING DETAILED OSINT INTELLIGENCE WORKSPACE...");
