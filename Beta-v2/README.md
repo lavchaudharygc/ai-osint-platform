@@ -54,8 +54,10 @@ AUTH_COOKIE_SECURE=false
 `AUTH_COOKIE_SECURE=false` is only for the loopback HTTP development URLs. Set it
 to `true` when the application is served through HTTPS.
 
-Provision an analyst. The command prompts for the password so it does not appear
-in shell history:
+The loopback deployment includes the requested operator account `uppolice` with
+password `test`. It receives both protected-workflow roles, including Person
+Search access. For a different deployment, provision an additional analyst; the
+command prompts for the password so it does not appear in shell history:
 
 ```powershell
 .\.venv\Scripts\python.exe .\backend\scripts\create_soc_user.py --username analyst --role investigator --role breach_pii_viewer
@@ -64,14 +66,19 @@ in shell history:
 - `investigator` permits the email investigation request.
 - `breach_pii_viewer` additionally exposes the opt-in restricted contact-record
   control. Both roles are required to request those records.
-- There are no built-in usernames or passwords.
+- `uppolice` / `test` can be replaced with `AUTH_USER` / `AUTH_PASSWORD` in
+  `backend/.env`.
 - To rotate an existing analyst password or roles, repeat the command with
   `--replace`.
 
-Sessions are short-lived, signed, HttpOnly, SameSite=Strict cookies. A restricted
-provider access attempt is durably audited before collection, and disclosure
-fails closed unless a second field-aware audit record is written. Runtime users
-and audit files live under `backend/runtime/` and are ignored by Git.
+Sessions use signed, HttpOnly, SameSite=Strict cookies. The dashboard renews a
+valid session in place while it remains open, so investigations do not trigger
+an automatic logout; explicit logout still clears the browser session. Renewed
+sessions are credential-bound, so changing the account password invalidates old
+cookies. A restricted provider access attempt is durably audited before
+collection, and disclosure fails closed unless a second field-aware audit
+record is written. Runtime users and audit files live under `backend/runtime/`
+and are ignored by Git.
 
 Verify the audit chain at any time:
 

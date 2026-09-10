@@ -13,14 +13,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.api.auth import router as auth_router
 from app.api.person_search import (
     get_person_search_service,
     require_person_search_investigator,
     router as person_search_router,
 )
+from app.config import settings
 from app.schemas.person_search import PersonSearchRequest
 from app.security.audit import AuditLogger
-from app.security.auth import AuthenticatedUser, require_csrf
+from app.security.auth import AuthenticatedUser, require_csrf, reset_security_caches
 from app.services.person_search.normalizer import PersonSearchNormalizer
 from app.services.person_search.query_builder import PersonSearchQueryBuilder
 from app.services.person_search.service import PersonSearchService
@@ -413,6 +415,93 @@ def test_endpoint_is_authenticated_audited_and_no_store(
         "username",
     ]
     assert "shubham jha" not in audit_path.read_text(encoding="utf-8").casefold()
+
+
+def test_uppolice_login_grants_person_search_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The deployment login must use the same session and role gate as Person Search."""
+
+    audit_logger = AuditLogger(
+        tmp_path / "uppolice-person-search-audit.jsonl",
+        "person-search-auth-test-audit-key-longer-than-32-bytes",
+    )
+    monkeypatch.setattr(settings, "auth_user", "uppolice")
+    monkeypatch.setattr(settings, "auth_password", "test")
+    monkeypatch.setattr(
+        settings,
+        "auth_session_secret",
+        "person-search-auth-test-session-key-longer-than-32-bytes",
+    )
+    monkeypatch.setattr(settings, "auth_session_ttl_seconds", 43_200)
+    monkeypatch.setattr(settings, "auth_cookie_name", "upp_person_search_test_session")
+    monkeypatch.setattr(settings, "auth_cookie_path", "/api/v1")
+    monkeypatch.setattr(settings, "auth_cookie_secure", False)
+    monkeypatch.setattr("app.api.auth.get_audit_logger", lambda: audit_logger)
+    monkeypatch.setattr("app.api.person_search.get_audit_logger", lambda: audit_logger)
+    reset_security_caches()
+
+    provider_requests: list[httpx.Request] = []
+
+    def provider_handler(request: httpx.Request) -> httpx.Response:
+        provider_requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "organic_results": [
+                    {
+                        "title": "Shubham Jha on Instagram",
+                        "link": "https://www.instagram.com/shubham.jha/",
+                        "snippet": "Public profile candidate",
+                    }
+                ]
+            },
+        )
+
+    service = PersonSearchService(
+        api_key="person-search-test-key",
+        enabled=True,
+        max_queries=1,
+        transport=httpx.MockTransport(provider_handler),
+    )
+    test_app = FastAPI()
+    test_app.include_router(auth_router)
+    test_app.include_router(person_search_router)
+    test_app.dependency_overrides[get_person_search_service] = lambda: service
+
+    try:
+        with TestClient(test_app) as client:
+            old_password = client.post(
+                "/api/v1/auth/login",
+                json={"username": "uppolice", "password": "testingaccount"},
+            )
+            assert old_password.status_code == 401
+
+            login = client.post(
+                "/api/v1/auth/login",
+                json={"username": "uppolice", "password": "test"},
+            )
+            assert login.status_code == 200
+            assert set(login.json()["roles"]) == {"investigator", "breach_pii_viewer"}
+
+            readiness = client.get("/api/v1/person-search/status")
+            assert readiness.status_code == 200
+
+            search = client.post(
+                "/api/v1/person-search",
+                headers={"X-CSRF-Token": login.json()["csrf_token"]},
+                json=_request().model_dump(mode="json"),
+            )
+            assert search.status_code == 200
+            assert search.json()["status"] == "completed"
+            assert len(search.json()["profiles"]) == 1
+            assert len(provider_requests) == 1
+
+            monkeypatch.setattr(settings, "auth_password", "rotated-after-login")
+            assert client.get("/api/v1/auth/me").status_code == 401
+    finally:
+        reset_security_caches()
 
 
 def test_unauthenticated_request_is_blocked_before_provider_call() -> None:

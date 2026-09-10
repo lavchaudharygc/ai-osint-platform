@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
+from email.utils import parsedate_to_datetime
+from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Iterator
 
@@ -11,7 +14,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.auth import router as auth_router
-from app.config import settings
+from app.config import Settings, settings
 from app.security.audit import (
     AuditEvent,
     AuditLogger,
@@ -21,6 +24,7 @@ from app.security.audit import (
 from app.security.auth import (
     AuthConfigurationError,
     AuthenticatedUser,
+    SessionManager,
     UserStore,
     create_password_record,
     require_csrf,
@@ -32,6 +36,20 @@ from app.security.auth import (
 TEST_SESSION_KEY = "session-test-key-which-is-longer-than-thirty-two-bytes"
 TEST_AUDIT_KEY = "audit-test-key-which-is-different-and-longer-than-32"
 TEST_PASSWORD = "A-valid-local-password!42"
+
+
+def test_loopback_operator_defaults_match_deployment_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AUTH_USER", raising=False)
+    monkeypatch.delenv("AUTH_PASSWORD", raising=False)
+    monkeypatch.delenv("AUTH_SESSION_TTL_SECONDS", raising=False)
+
+    defaults = Settings(_env_file=None)
+
+    assert defaults.auth_user == "uppolice"
+    assert defaults.auth_password == "test"
+    assert defaults.auth_session_ttl_seconds == 43_200
 
 
 def _write_users(
@@ -56,6 +74,12 @@ def _write_users(
         ),
         encoding="utf-8",
     )
+
+
+def _replace_roles(path: Path, roles: tuple[str, ...]) -> None:
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["users"][0]["roles"] = list(roles)
+    path.write_text(json.dumps(document), encoding="utf-8")
 
 
 @pytest.fixture()
@@ -119,10 +143,18 @@ def test_login_me_csrf_and_logout_are_cookie_gated(configured_security: Path) ->
         assert "httponly" in cookie
         assert "samesite=strict" in cookie
         assert "path=/api/v1" in cookie
+        parsed_cookie = SimpleCookie()
+        parsed_cookie.load(login.headers["set-cookie"])
+        cookie_expiry = parsedate_to_datetime(
+            parsed_cookie[settings.auth_cookie_name]["expires"]
+        )
+        response_expiry = datetime.fromisoformat(body["expires_at"])
+        assert cookie_expiry == response_expiry
 
         me = client.get("/api/v1/auth/me")
         assert me.status_code == 200
         assert me.json()["csrf_token"] == body["csrf_token"]
+        assert "set-cookie" in me.headers
 
         missing_csrf = client.post("/api/v1/protected-pii")
         assert missing_csrf.status_code == 403
@@ -142,16 +174,53 @@ def test_login_me_csrf_and_logout_are_cookie_gated(configured_security: Path) ->
     assert AuditLogger(configured_security, TEST_AUDIT_KEY).verify_integrity() == 2
 
 
+def test_session_renewal_extends_deadline_without_rotating_request_proofs() -> None:
+    manager = SessionManager(TEST_SESSION_KEY, ttl_seconds=900)
+    _token, original = manager.issue(
+        "case.analyst",
+        credential_material=b"test-password-record-v1",
+        now=1_000,
+    )
+
+    renewed_token, renewed = manager.renew(
+        original.username,
+        csrf_token=original.csrf_token,
+        session_id=original.session_id,
+        credential_version=original.credential_version,
+        now=1_300,
+    )
+
+    assert renewed.issued_at == 1_300
+    assert renewed.expires_at == 2_200
+    assert renewed.expires_at > original.expires_at
+    assert renewed.csrf_token == original.csrf_token
+    assert renewed.session_id == original.session_id
+    assert renewed.credential_version == original.credential_version
+    assert manager.verify(renewed_token, now=2_199) == renewed
+
+
 def test_role_is_rechecked_from_user_store(configured_security: Path) -> None:
     with TestClient(_app()) as client:
         login = _login(client)
         assert login.status_code == 200
         csrf = login.json()["csrf_token"]
-        _write_users(settings.auth_users_file, roles=("investigator",))
+        _replace_roles(settings.auth_users_file, ("investigator",))
         response = client.post(
             "/api/v1/protected-pii", headers={"X-CSRF-Token": csrf}
         )
         assert response.status_code == 403
+
+
+def test_password_record_rotation_invalidates_renewable_session(
+    configured_security: Path,
+) -> None:
+    with TestClient(_app()) as client:
+        assert _login(client).status_code == 200
+        _write_users(
+            settings.auth_users_file,
+            roles=("investigator", "breach_pii_viewer"),
+        )
+        assert client.get("/api/v1/auth/me").status_code == 401
 
 
 def test_user_store_readiness_requires_an_active_investigator(tmp_path: Path) -> None:

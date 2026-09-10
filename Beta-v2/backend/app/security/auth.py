@@ -30,7 +30,7 @@ from app.config import settings
 ALLOWED_ROLES = frozenset({"investigator", "breach_pii_viewer"})
 USERNAME_PATTERN = re.compile(r"^[a-z0-9._-]{1,64}$")
 CSRF_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
-SESSION_VERSION = 1
+SESSION_VERSION = 2
 SESSION_CLOCK_SKEW_SECONDS = 30
 MAX_USER_FILE_BYTES = 1_000_000
 MAX_SESSION_TOKEN_BYTES = 4096
@@ -54,6 +54,7 @@ class UserRecord:
     iterations: int
     salt: bytes
     password_digest: bytes
+    credential_material: bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +66,7 @@ class SessionClaims:
     expires_at: int
     csrf_token: str
     session_id: str
+    credential_version: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +78,7 @@ class AuthenticatedUser:
     expires_at: datetime
     csrf_token: str
     session_id: str
+    credential_version: str = ""
 
 
 def _decode_base64(value: str, *, field: str) -> bytes:
@@ -190,7 +193,36 @@ class UserStore:
         digest = _decode_base64(password.get("digest"), field="password digest")
         if len(salt) < 16 or len(digest) != hashlib.sha256().digest_size:
             raise AuthConfigurationError("invalid password record length")
-        return UserRecord(username, roles, active, iterations, salt, digest)
+        credential_material = (
+            b"user-store-v1\0"
+            + iterations.to_bytes(8, "big")
+            + salt
+            + digest
+        )
+        return UserRecord(
+            username,
+            roles,
+            active,
+            iterations,
+            salt,
+            digest,
+            credential_material,
+        )
+
+    @staticmethod
+    def _configured_user(username: str) -> UserRecord:
+        """Build the configured operator and its private session-version input."""
+
+        password = str(settings.auth_password)
+        return UserRecord(
+            username=username,
+            roles=("breach_pii_viewer", "investigator"),
+            active=True,
+            iterations=600_000,
+            salt=b"0" * 32,
+            password_digest=b"0" * 32,
+            credential_material=b"configured-account-v1\0" + password.encode("utf-8"),
+        )
 
     def get_active_user(self, username: str) -> UserRecord | None:
         """Return an active user, checking env user first then user store."""
@@ -198,14 +230,7 @@ class UserStore:
         normalized = normalize_username(username)
         env_user = normalize_username(settings.auth_user) if getattr(settings, "auth_user", None) else None
         if env_user and normalized == env_user:
-            return UserRecord(
-                username=env_user,
-                roles=("breach_pii_viewer", "investigator"),
-                active=True,
-                iterations=600_000,
-                salt=b"0" * 32,
-                password_digest=b"0" * 32,
-            )
+            return self._configured_user(env_user)
         user = self._read_users().get(normalized)
         return user if user is not None and user.active else None
 
@@ -224,19 +249,19 @@ class UserStore:
         return 1
 
     def authenticate(self, username: str, password: str) -> UserRecord | None:
-        """Verify credentials against env (uppolice / testingaccount) or user store."""
+        """Verify credentials against the configured account or user store."""
 
         normalized = normalize_username(username)
         env_user = normalize_username(settings.auth_user) if getattr(settings, "auth_user", None) else None
-        if env_user and normalized == env_user and password == settings.auth_password:
-            return UserRecord(
-                username=env_user,
-                roles=("breach_pii_viewer", "investigator"),
-                active=True,
-                iterations=600_000,
-                salt=b"0" * 32,
-                password_digest=b"0" * 32,
+        if env_user and normalized == env_user:
+            configured_password = str(settings.auth_password)
+            password_matches = hmac.compare_digest(
+                password.encode("utf-8"),
+                configured_password.encode("utf-8"),
             )
+            if not password_matches:
+                return None
+            return self._configured_user(env_user)
         users = self._read_users()
         user = users.get(normalized)
         salt = user.salt if user is not None else self._dummy_salt
@@ -250,7 +275,7 @@ class UserStore:
 
 
 class SessionManager:
-    """Issue and validate short-lived, signed, stateless browser sessions."""
+    """Issue, renew, and validate signed, stateless browser sessions."""
 
     def __init__(self, secret: str, *, ttl_seconds: int) -> None:
         encoded = secret.encode("utf-8") if isinstance(secret, str) else b""
@@ -259,14 +284,41 @@ class SessionManager:
         self._secret = encoded
         self.ttl_seconds = ttl_seconds
 
-    def issue(self, username: str, *, now: int | None = None) -> tuple[str, SessionClaims]:
+    def credential_version(self, username: str, credential_material: bytes) -> str:
+        """Return an opaque version that changes when account credentials change."""
+
+        if not isinstance(credential_material, bytes) or not credential_material:
+            raise AuthConfigurationError("session credential material is unavailable")
+        subject = normalize_username(username).encode("utf-8")
+        message = b"upp-soc-session-credential-v1\0" + subject + b"\0" + credential_material
+        return _b64url_encode(hmac.new(self._secret, message, hashlib.sha256).digest())
+
+    def _issue_with_proof(
+        self,
+        username: str,
+        *,
+        csrf_token: str,
+        session_id: str,
+        credential_version: str,
+        now: int | None = None,
+    ) -> tuple[str, SessionClaims]:
+        if (
+            not isinstance(csrf_token, str)
+            or not isinstance(session_id, str)
+            or not isinstance(credential_version, str)
+            or not CSRF_PATTERN.fullmatch(csrf_token)
+            or not CSRF_PATTERN.fullmatch(session_id)
+            or not CSRF_PATTERN.fullmatch(credential_version)
+        ):
+            raise InvalidSessionError("invalid session proof")
         issued_at = int(time.time() if now is None else now)
         claims = SessionClaims(
             username=normalize_username(username),
             issued_at=issued_at,
             expires_at=issued_at + self.ttl_seconds,
-            csrf_token=secrets.token_urlsafe(32),
-            session_id=secrets.token_urlsafe(24),
+            csrf_token=csrf_token,
+            session_id=session_id,
+            credential_version=credential_version,
         )
         payload = {
             "v": SESSION_VERSION,
@@ -275,10 +327,47 @@ class SessionManager:
             "exp": claims.expires_at,
             "csrf": claims.csrf_token,
             "sid": claims.session_id,
+            "cred": claims.credential_version,
         }
         payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         signature = hmac.new(self._secret, payload_bytes, hashlib.sha256).digest()
         return f"{_b64url_encode(payload_bytes)}.{_b64url_encode(signature)}", claims
+
+    def issue(
+        self,
+        username: str,
+        *,
+        credential_material: bytes,
+        now: int | None = None,
+    ) -> tuple[str, SessionClaims]:
+        """Issue a new session with fresh CSRF and session identifiers."""
+
+        return self._issue_with_proof(
+            username,
+            csrf_token=secrets.token_urlsafe(32),
+            session_id=secrets.token_urlsafe(24),
+            credential_version=self.credential_version(username, credential_material),
+            now=now,
+        )
+
+    def renew(
+        self,
+        username: str,
+        *,
+        csrf_token: str,
+        session_id: str,
+        credential_version: str,
+        now: int | None = None,
+    ) -> tuple[str, SessionClaims]:
+        """Extend a valid session without invalidating concurrent CSRF requests."""
+
+        return self._issue_with_proof(
+            username,
+            csrf_token=csrf_token,
+            session_id=session_id,
+            credential_version=credential_version,
+            now=now,
+        )
 
     def verify(self, token: str, *, now: int | None = None) -> SessionClaims:
         if not isinstance(token, str) or len(token) > MAX_SESSION_TOKEN_BYTES or token.count(".") != 1:
@@ -293,7 +382,15 @@ class SessionManager:
             payload = json.loads(payload_bytes)
         except (UnicodeError, json.JSONDecodeError) as exc:
             raise InvalidSessionError("invalid session") from exc
-        if not isinstance(payload, dict) or set(payload) != {"v", "sub", "iat", "exp", "csrf", "sid"}:
+        if not isinstance(payload, dict) or set(payload) != {
+            "v",
+            "sub",
+            "iat",
+            "exp",
+            "csrf",
+            "sid",
+            "cred",
+        }:
             raise InvalidSessionError("invalid session")
         try:
             username = normalize_username(payload["sub"])
@@ -301,6 +398,7 @@ class SessionManager:
             expires_at = payload["exp"]
             csrf_token = payload["csrf"]
             session_id = payload["sid"]
+            credential_version = payload["cred"]
         except (KeyError, TypeError, ValueError) as exc:
             raise InvalidSessionError("invalid session") from exc
         if payload["v"] != SESSION_VERSION:
@@ -313,12 +411,24 @@ class SessionManager:
             raise InvalidSessionError("invalid session")
         if not isinstance(session_id, str) or not CSRF_PATTERN.fullmatch(session_id):
             raise InvalidSessionError("invalid session")
+        if (
+            not isinstance(credential_version, str)
+            or not CSRF_PATTERN.fullmatch(credential_version)
+        ):
+            raise InvalidSessionError("invalid session")
         current = int(time.time() if now is None else now)
         if issued_at > current + SESSION_CLOCK_SKEW_SECONDS or expires_at <= current:
             raise InvalidSessionError("expired session")
         if expires_at <= issued_at or expires_at - issued_at != self.ttl_seconds:
             raise InvalidSessionError("invalid session lifetime")
-        return SessionClaims(username, issued_at, expires_at, csrf_token, session_id)
+        return SessionClaims(
+            username,
+            issued_at,
+            expires_at,
+            csrf_token,
+            session_id,
+            credential_version,
+        )
 
 
 class LoginRateLimiter:
@@ -407,7 +517,8 @@ def get_current_user(request: Request) -> AuthenticatedUser:
     if not token:
         raise _unauthorized()
     try:
-        claims = get_session_manager().verify(token)
+        sessions = get_session_manager()
+        claims = sessions.verify(token)
         record = get_user_store().get_active_user(claims.username)
     except InvalidSessionError as exc:
         raise _unauthorized("Invalid or expired session") from exc
@@ -419,12 +530,19 @@ def get_current_user(request: Request) -> AuthenticatedUser:
         ) from exc
     if record is None:
         raise _unauthorized("Invalid or expired session")
+    expected_credential_version = sessions.credential_version(
+        record.username,
+        record.credential_material,
+    )
+    if not hmac.compare_digest(claims.credential_version, expected_credential_version):
+        raise _unauthorized("Invalid or expired session")
     principal = AuthenticatedUser(
         username=record.username,
         roles=record.roles,
         expires_at=datetime.fromtimestamp(claims.expires_at, tz=timezone.utc),
         csrf_token=claims.csrf_token,
         session_id=claims.session_id,
+        credential_version=claims.credential_version,
     )
     request.state.authenticated_user = principal
     return principal

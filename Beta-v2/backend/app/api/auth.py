@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
@@ -47,6 +49,26 @@ def _record_auth_event(*, analyst: str, outcome: str, target: str) -> None:
         raise _unavailable() from exc
 
 
+def _set_session_cookie(
+    response: Response,
+    *,
+    token: str,
+    expires_at: int,
+) -> None:
+    """Set the protected session cookie consistently for login and renewal."""
+
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=token,
+        max_age=settings.auth_session_ttl_seconds,
+        expires=datetime.fromtimestamp(expires_at, tz=timezone.utc),
+        path=settings.auth_cookie_path,
+        secure=settings.auth_cookie_secure,
+        httponly=True,
+        samesite="strict",
+    )
+
+
 @router.post("/login", response_model=SessionResponse)
 def login(
     payload: LoginRequest,
@@ -83,21 +105,15 @@ def login(
             headers={"WWW-Authenticate": "Session", "Cache-Control": "no-store"},
         )
     try:
-        token, claims = sessions.issue(user.username)
+        token, claims = sessions.issue(
+            user.username,
+            credential_material=user.credential_material,
+        )
     except (AuthConfigurationError, ValueError) as exc:
         raise _unavailable() from exc
     _record_auth_event(analyst=user.username, outcome="success", target=user.username)
     limiter.reset(payload.username, client_ip)
-    response.set_cookie(
-        key=settings.auth_cookie_name,
-        value=token,
-        max_age=settings.auth_session_ttl_seconds,
-        expires=claims.expires_at,
-        path=settings.auth_cookie_path,
-        secure=settings.auth_cookie_secure,
-        httponly=True,
-        samesite="strict",
-    )
+    _set_session_cookie(response, token=token, expires_at=claims.expires_at)
     response.headers["Cache-Control"] = "no-store"
     return SessionResponse(
         user=user.username,
@@ -112,14 +128,22 @@ def me(
     response: Response,
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> SessionResponse:
-    """Return the current principal and its session-bound CSRF token."""
+    """Return the principal and roll the valid session deadline forward."""
 
+    sessions = get_session_manager()
+    token, claims = sessions.renew(
+        user.username,
+        csrf_token=user.csrf_token,
+        session_id=user.session_id,
+        credential_version=user.credential_version,
+    )
+    _set_session_cookie(response, token=token, expires_at=claims.expires_at)
     response.headers["Cache-Control"] = "no-store"
     return SessionResponse(
         user=user.username,
         roles=list(user.roles),
-        csrf_token=user.csrf_token,
-        expires_at=user.expires_at,
+        csrf_token=claims.csrf_token,
+        expires_at=claims.expires_at,
     )
 
 

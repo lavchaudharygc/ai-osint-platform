@@ -25,27 +25,26 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://127.0.0.1:3000", "http://localhost:3000"]
     )
 
-    # Operator authentication. There are deliberately no default credentials or
-    # signing keys: authentication fails closed until an administrator provisions
-    # both through the local environment and user-creation script.
+    # Built-in loopback operator for this deployment. Environment values can
+    # still replace these credentials when the service is deployed elsewhere.
     auth_user: str = Field(default_factory=lambda: os.getenv("AUTH_USER", "uppolice"))
-    auth_password: str = Field(default_factory=lambda: os.getenv("AUTH_PASSWORD", "testingaccount"))
-    auth_session_secret: str = Field(
-        default_factory=lambda: os.getenv("AUTH_SESSION_SECRET") or "uppolice-soc-session-secret-key-32bytes"
+    auth_password: str = Field(default_factory=lambda: os.getenv("AUTH_PASSWORD", "test"))
+    auth_session_secret: str | None = Field(
+        default_factory=lambda: os.getenv("AUTH_SESSION_SECRET")
     )
     auth_users_file: Path = BACKEND_PATH / "runtime" / "soc_users.json"
     auth_cookie_name: str = "upp_soc_session"
     auth_cookie_path: str = "/api/v1"
     auth_cookie_secure: bool = False
-    auth_session_ttl_seconds: int = Field(default=900, ge=300, le=3600)
+    auth_session_ttl_seconds: int = Field(default=43_200, ge=300, le=604_800)
     auth_login_max_failures: int = Field(default=5, ge=1, le=20)
     auth_login_window_seconds: int = Field(default=900, ge=60, le=3600)
     auth_pbkdf2_iterations: int = Field(default=600_000, ge=100_000, le=2_000_000)
 
     # Append-only, HMAC-chained security audit. The audit key must be distinct
     # from AUTH_SESSION_SECRET. Protected operations fail when it is unavailable.
-    audit_hmac_key: str = Field(
-        default_factory=lambda: os.getenv("AUDIT_HMAC_KEY") or "uppolice-soc-audit-hmac-key-32bytes"
+    audit_hmac_key: str | None = Field(
+        default_factory=lambda: os.getenv("AUDIT_HMAC_KEY")
     )
     audit_log_path: Path = BACKEND_PATH / "runtime" / "security_audit.jsonl"
 
