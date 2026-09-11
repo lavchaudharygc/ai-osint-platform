@@ -4,8 +4,10 @@ All network I/O runs in parallel via asyncio.gather to prevent timeouts.
 """
 
 import asyncio
+from collections.abc import Awaitable
 from datetime import UTC, datetime
 import logging
+import time
 from typing import Any
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Response as FastAPIResponse, status
@@ -109,6 +111,11 @@ async def _record_contact_investigation_access(
             event,
         )
     except AuditUnavailable as exc:
+        logger.error(
+            "event=target_investigation_audit_unavailable outcome=%s error_type=%s",
+            outcome,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Investigation audit is unavailable",
@@ -164,6 +171,10 @@ async def proxy_image(
     try:
         image = await service.fetch(url)
     except ImageProxyError as exc:
+        logger.warning(
+            "event=image_proxy_rejected reason=upstream_policy status=%d",
+            exc.status_code,
+        )
         details = {
             400: "Image URL is not permitted",
             413: "Image exceeds the proxy size limit",
@@ -176,9 +187,12 @@ async def proxy_image(
             content={"detail": details.get(exc.status_code, "Image could not be retrieved")},
             headers={"Cache-Control": "no-store"},
         )
-    except Exception:
+    except Exception as exc:
         # Never log or return the target URL, exception text, or upstream body.
-        logger.warning("Image proxy failed unexpectedly")
+        logger.error(
+            "event=image_proxy_failed reason=unexpected error_type=%s",
+            type(exc).__name__,
+        )
         return JSONResponse(
             status_code=502,
             content={"detail": "Image could not be retrieved"},
@@ -229,12 +243,16 @@ def classify_input(raw: str) -> str:
     return "username"
 
 
-async def _safe(coro):
+async def _safe(coro: Awaitable[Any], component: str) -> Any:
     """Run a coroutine, returning None on any error."""
     try:
         return await coro
     except Exception as exc:
-        logger.warning("Pipeline step error: %s", exc)
+        logger.warning(
+            "event=target_pipeline_step_failed component=%s error_type=%s",
+            component,
+            type(exc).__name__,
+        )
         return None
 
 
@@ -246,6 +264,7 @@ async def run_investigation(
     _csrf_user: AuthenticatedUser = Depends(require_csrf),
 ) -> InvestigationResponse:
     investigation_id = f"UPP-{uuid4().hex[:8].upper()}"
+    started = time.monotonic()
     raw_query = request.username.strip()
     if "breach_pii_viewer" not in user.roles:
         await _record_contact_investigation_access(
@@ -266,6 +285,11 @@ async def run_investigation(
         outcome="requested",
     )
     kind = classify_input(raw_query)
+    logger.info(
+        "event=target_investigation_started investigation_id=%s input_kind=%s",
+        investigation_id,
+        kind,
+    )
     clean_handle = raw_query.lstrip("@").split("/")[-1].split("?")[0]
 
     # ── STEP 1: WMN probe + Instagram + TikTok + Twitter + Dorking + Wikidata — all start simultaneously ──
@@ -277,12 +301,12 @@ async def run_investigation(
     wikidata_service = WikidataService()
 
     wmn_data, ig_res, tiktok_res, twitter_res, dorking_results, wikidata_res = await asyncio.gather(
-        _safe(wmn_service.probe_username(raw_query)),
-        _safe(ig_service.fetch_profile_and_posts(clean_handle)),
-        _safe(tiktok_service.fetch_profile_and_videos(clean_handle)),
-        _safe(twitter_service.fetch_profile_and_tweets(clean_handle)),
-        _safe(dork_service.run_dorks(raw_query)),
-        _safe(wikidata_service.search_and_get_profile(raw_query)),
+        _safe(wmn_service.probe_username(raw_query), "whatsmyname"),
+        _safe(ig_service.fetch_profile_and_posts(clean_handle), "instagram"),
+        _safe(tiktok_service.fetch_profile_and_videos(clean_handle), "tiktok"),
+        _safe(twitter_service.fetch_profile_and_tweets(clean_handle), "twitter"),
+        _safe(dork_service.run_dorks(raw_query), "dorking"),
+        _safe(wikidata_service.search_and_get_profile(raw_query), "wikidata"),
     )
 
     wmn_data = wmn_data or {"status": "error", "scanned": 0, "hits_count": 0, "hits": []}
@@ -299,15 +323,18 @@ async def run_investigation(
 
     try:
         from app.services.linkedin_apify_service import LinkedInApifyService
-        li_task = _safe(LinkedInApifyService().get_profile(clean_handle))
+        li_task = _safe(LinkedInApifyService().get_profile(clean_handle), "linkedin")
     except Exception as err:
-        logger.warning("LinkedInApifyService import error: %s", err)
-        li_task = _safe(asyncio.sleep(0, result=None))
+        logger.warning(
+            "event=target_pipeline_step_failed component=linkedin_initialization error_type=%s",
+            type(err).__name__,
+        )
+        li_task = _safe(asyncio.sleep(0, result=None), "linkedin_placeholder")
 
     li_url = f"https://www.linkedin.com/in/{clean_handle}"
-    sh_task = _safe(SignalHireService().search_candidate(raw_query))
-    rr_task = _safe(RocketReachService().lookup_by_linkedin_url(li_url))
-    fb_task = _safe(FacebookService().fetch_page_or_profile(clean_handle))
+    sh_task = _safe(SignalHireService().search_candidate(raw_query), "signalhire")
+    rr_task = _safe(RocketReachService().lookup_by_linkedin_url(li_url), "rocketreach")
+    fb_task = _safe(FacebookService().fetch_page_or_profile(clean_handle), "facebook")
 
     li_res, sh_res, rr_res, fb_res = await asyncio.gather(li_task, sh_task, rr_task, fb_task)
     
@@ -451,10 +478,17 @@ async def run_investigation(
     cti_queries = list(dict.fromkeys(q.strip() for q in raw_cti_list if q and len(str(q).strip()) >= 3))[:5]
 
     # Verify extra emails + run CTI concurrently
-    verify_tasks = [_safe(EmailVerifierService.verify_with_hunter(e)) for e in extra_emails]
-    telegram_cti_task = _safe(TelegramService().search_cti_breaches(cti_queries))
-    hitek_task = asyncio.get_event_loop().run_in_executor(
-        None, HiTekService().search_records, raw_query
+    verify_tasks = [
+        _safe(EmailVerifierService.verify_with_hunter(e), "email_verification")
+        for e in extra_emails
+    ]
+    telegram_cti_task = _safe(
+        TelegramService().search_cti_breaches(cti_queries),
+        "telegram_cti",
+    )
+    hitek_task = _safe(
+        asyncio.to_thread(HiTekService().search_records, raw_query),
+        "hitek",
     )
 
     gathered = await asyncio.gather(*verify_tasks, telegram_cti_task, hitek_task)
@@ -465,7 +499,10 @@ async def run_investigation(
     # Filter Telegram CTI results for Indian-centric relevance to reduce scammer noise
     if telegram_cti and telegram_cti.get("results") and getattr(settings, "cti_indian_filtering_enabled", True):
         cti_items = telegram_cti.get("results") or []
-        filtered_cti = await _safe(AIAnalyzer().filter_indian_centric_cti(cti_items, raw_query))
+        filtered_cti = await _safe(
+            AIAnalyzer().filter_indian_centric_cti(cti_items, raw_query),
+            "cti_ai_filter",
+        )
         if filtered_cti and isinstance(filtered_cti, list):
             telegram_cti["results"] = filtered_cti
             telegram_cti["total_records"] = len(filtered_cti)
@@ -515,7 +552,8 @@ async def run_investigation(
 
     # ── STEP 6: AI Behavioral Profiling ──
     ai_personality_dict = await _safe(
-        AIAnalyzer().analyze_personality(scraped_data, dorking_results, ig_res)
+        AIAnalyzer().analyze_personality(scraped_data, dorking_results, ig_res),
+        "ai_personality",
     ) or {
         "summary": "AI analysis unavailable.",
         "traits": [], "interests": [], "tone": "neutral", "riskFlags": [],
@@ -604,4 +642,23 @@ async def run_investigation(
     )
     response.headers["Cache-Control"] = "no-store, private"
     response.headers["Pragma"] = "no-cache"
+    successful_platform_count = sum(
+        1
+        for value in scraped_data.values()
+        if isinstance(value, dict)
+        and (
+            value.get("success") is True
+            or value.get("status") == "success"
+            or value.get("found") is True
+        )
+    )
+    logger.info(
+        "event=target_investigation_completed investigation_id=%s input_kind=%s "
+        "successful_platform_count=%d discovered_site_count=%d elapsed_ms=%d",
+        investigation_id,
+        kind,
+        successful_platform_count,
+        len(wmn_hits),
+        round((time.monotonic() - started) * 1000),
+    )
     return result

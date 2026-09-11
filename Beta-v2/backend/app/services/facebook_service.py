@@ -108,7 +108,11 @@ class FacebookService:
             items = r.json()
             return items if isinstance(items, list) else []
         except Exception as exc:
-            logger.warning("Apify %s failed: %s", actor_id, exc)
+            logger.warning(
+                "event=social_provider_failed provider=apify platform=facebook "
+                "error_type=%s",
+                type(exc).__name__,
+            )
             return []
 
     async def fetch_page_or_profile(self, identifier: str) -> Dict[str, Any]:

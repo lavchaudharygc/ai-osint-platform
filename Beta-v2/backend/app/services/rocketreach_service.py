@@ -81,7 +81,12 @@ class RocketReachService:
                                 "end_year": edu.get("end")
                             })
 
-                    logger.info("RocketReach HTTP 200: resolved %d emails, %d phones for %s", len(emails), len(phones), formatted_url)
+                    logger.info(
+                        "event=contact_provider_completed provider=rocketreach "
+                        "email_count=%d phone_count=%d",
+                        len(emails),
+                        len(phones),
+                    )
                     return {
                         "success": True,
                         "source": "rocketreach",
@@ -98,7 +103,11 @@ class RocketReachService:
                         "linkedin_url": data.get("linkedin_url") or formatted_url
                     }
                 else:
-                    logger.warning("RocketReach HTTP %d: %s (url: %s)", res.status_code, res.text[:200], formatted_url)
+                    logger.warning(
+                        "event=contact_provider_failed provider=rocketreach "
+                        "reason=http_error http_status=%d",
+                        res.status_code,
+                    )
                     error_msg = f"HTTP {res.status_code} Error"
                     try:
                         error_data = res.json()
@@ -108,7 +117,16 @@ class RocketReachService:
                         pass
                     return {"success": False, "error": error_msg, "emails": [], "phones": []}
         except Exception as exc:
-            logger.warning("RocketReach error: %s", exc)
-            return {"success": False, "error": str(exc), "emails": [], "phones": []}
+            logger.warning(
+                "event=contact_provider_failed provider=rocketreach "
+                "reason=request_error error_type=%s",
+                type(exc).__name__,
+            )
+            return {
+                "success": False,
+                "error": "RocketReach request failed",
+                "emails": [],
+                "phones": [],
+            }
 
         return {"success": False, "emails": [], "phones": []}

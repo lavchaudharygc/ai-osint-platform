@@ -11,6 +11,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
 import threading
@@ -27,6 +28,7 @@ from fastapi import Depends, HTTPException, Request, status
 from app.config import settings
 
 
+logger = logging.getLogger(__name__)
 ALLOWED_ROLES = frozenset({"investigator", "breach_pii_viewer"})
 USERNAME_PATTERN = re.compile(r"^[a-z0-9._-]{1,64}$")
 CSRF_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
@@ -42,6 +44,10 @@ class AuthConfigurationError(RuntimeError):
 
 class InvalidSessionError(ValueError):
     """A browser session is absent, invalid, or expired."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__("invalid or expired session")
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,11 +103,11 @@ def _b64url_encode(value: bytes) -> str:
 
 def _b64url_decode(value: str) -> bytes:
     if not value or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
-        raise InvalidSessionError("invalid session encoding")
+        raise InvalidSessionError("malformed_token")
     try:
         return base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
     except (ValueError, TypeError) as exc:
-        raise InvalidSessionError("invalid session encoding") from exc
+        raise InvalidSessionError("malformed_token") from exc
 
 
 def normalize_username(value: str) -> str:
@@ -310,7 +316,7 @@ class SessionManager:
             or not CSRF_PATTERN.fullmatch(session_id)
             or not CSRF_PATTERN.fullmatch(credential_version)
         ):
-            raise InvalidSessionError("invalid session proof")
+            raise InvalidSessionError("invalid_claims")
         issued_at = int(time.time() if now is None else now)
         claims = SessionClaims(
             username=normalize_username(username),
@@ -371,17 +377,17 @@ class SessionManager:
 
     def verify(self, token: str, *, now: int | None = None) -> SessionClaims:
         if not isinstance(token, str) or len(token) > MAX_SESSION_TOKEN_BYTES or token.count(".") != 1:
-            raise InvalidSessionError("invalid session")
+            raise InvalidSessionError("malformed_token")
         payload_part, signature_part = token.split(".", 1)
         payload_bytes = _b64url_decode(payload_part)
         supplied_signature = _b64url_decode(signature_part)
         expected_signature = hmac.new(self._secret, payload_bytes, hashlib.sha256).digest()
         if not hmac.compare_digest(supplied_signature, expected_signature):
-            raise InvalidSessionError("invalid session")
+            raise InvalidSessionError("bad_signature")
         try:
             payload = json.loads(payload_bytes)
         except (UnicodeError, json.JSONDecodeError) as exc:
-            raise InvalidSessionError("invalid session") from exc
+            raise InvalidSessionError("malformed_token") from exc
         if not isinstance(payload, dict) or set(payload) != {
             "v",
             "sub",
@@ -391,7 +397,7 @@ class SessionManager:
             "sid",
             "cred",
         }:
-            raise InvalidSessionError("invalid session")
+            raise InvalidSessionError("invalid_claims")
         try:
             username = normalize_username(payload["sub"])
             issued_at = payload["iat"]
@@ -400,27 +406,29 @@ class SessionManager:
             session_id = payload["sid"]
             credential_version = payload["cred"]
         except (KeyError, TypeError, ValueError) as exc:
-            raise InvalidSessionError("invalid session") from exc
+            raise InvalidSessionError("invalid_claims") from exc
         if payload["v"] != SESSION_VERSION:
-            raise InvalidSessionError("invalid session")
+            raise InvalidSessionError("version_mismatch")
         if not isinstance(issued_at, int) or isinstance(issued_at, bool):
-            raise InvalidSessionError("invalid session")
+            raise InvalidSessionError("invalid_claims")
         if not isinstance(expires_at, int) or isinstance(expires_at, bool):
-            raise InvalidSessionError("invalid session")
+            raise InvalidSessionError("invalid_claims")
         if not isinstance(csrf_token, str) or not CSRF_PATTERN.fullmatch(csrf_token):
-            raise InvalidSessionError("invalid session")
+            raise InvalidSessionError("invalid_claims")
         if not isinstance(session_id, str) or not CSRF_PATTERN.fullmatch(session_id):
-            raise InvalidSessionError("invalid session")
+            raise InvalidSessionError("invalid_claims")
         if (
             not isinstance(credential_version, str)
             or not CSRF_PATTERN.fullmatch(credential_version)
         ):
-            raise InvalidSessionError("invalid session")
+            raise InvalidSessionError("invalid_claims")
         current = int(time.time() if now is None else now)
-        if issued_at > current + SESSION_CLOCK_SKEW_SECONDS or expires_at <= current:
-            raise InvalidSessionError("expired session")
+        if issued_at > current + SESSION_CLOCK_SKEW_SECONDS:
+            raise InvalidSessionError("issued_in_future")
+        if expires_at <= current:
+            raise InvalidSessionError("expired")
         if expires_at <= issued_at or expires_at - issued_at != self.ttl_seconds:
-            raise InvalidSessionError("invalid session lifetime")
+            raise InvalidSessionError("ttl_mismatch")
         return SessionClaims(
             username,
             issued_at,
@@ -515,26 +523,34 @@ def get_current_user(request: Request) -> AuthenticatedUser:
         return cached
     token = request.cookies.get(settings.auth_cookie_name)
     if not token:
+        logger.info("event=auth_session_rejected reason=missing_cookie")
         raise _unauthorized()
     try:
         sessions = get_session_manager()
         claims = sessions.verify(token)
         record = get_user_store().get_active_user(claims.username)
     except InvalidSessionError as exc:
+        logger.warning("event=auth_session_rejected reason=%s", exc.reason)
         raise _unauthorized("Invalid or expired session") from exc
     except AuthConfigurationError as exc:
+        logger.error(
+            "event=auth_session_unavailable component=session_validation error_type=%s",
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable",
             headers={"Cache-Control": "no-store"},
         ) from exc
     if record is None:
+        logger.warning("event=auth_session_rejected reason=user_missing_or_inactive")
         raise _unauthorized("Invalid or expired session")
     expected_credential_version = sessions.credential_version(
         record.username,
         record.credential_material,
     )
     if not hmac.compare_digest(claims.credential_version, expected_credential_version):
+        logger.warning("event=auth_session_rejected reason=credentials_changed")
         raise _unauthorized("Invalid or expired session")
     principal = AuthenticatedUser(
         username=record.username,
@@ -556,6 +572,7 @@ def require_csrf(
 
     supplied = request.headers.get("X-CSRF-Token", "")
     if not supplied or not hmac.compare_digest(supplied, user.csrf_token):
+        logger.warning("event=auth_request_rejected reason=csrf_validation_failed")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="CSRF validation failed",
@@ -573,6 +590,10 @@ def require_roles(*required_roles: str) -> Callable[..., AuthenticatedUser]:
 
     def dependency(user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
         if not required.issubset(user.roles):
+            logger.warning(
+                "event=auth_request_rejected reason=insufficient_roles required_role_count=%d",
+                len(required),
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient role permissions",

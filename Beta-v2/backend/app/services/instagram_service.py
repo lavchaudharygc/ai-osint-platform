@@ -68,7 +68,11 @@ class InstagramService:
                 "external_urls": bio_links,
             }
         except Exception as exc:
-            logger.warning("Apify Instagram profile fetch failed: %s", exc)
+            logger.warning(
+                "event=social_provider_failed provider=apify platform=instagram "
+                "operation=profile error_type=%s",
+                type(exc).__name__,
+            )
             return {}
 
     async def _fetch_profile_flashapi(self, username: str) -> Dict[str, Any]:
@@ -98,7 +102,11 @@ class InstagramService:
                 "profile_pic_hd": user_obj.get("profile_pic_url_hd") or user_obj.get("profile_pic_url"),
             }
         except Exception as exc:
-            logger.warning("FlashAPI Instagram profile fetch failed: %s", exc)
+            logger.warning(
+                "event=social_provider_failed provider=flashapi platform=instagram "
+                "operation=profile error_type=%s",
+                type(exc).__name__,
+            )
             return {}
 
     async def _fetch_posts_apify(self, username: str, max_items: int = 30) -> Dict[str, Any]:
@@ -158,7 +166,11 @@ class InstagramService:
                 "post_captions": post_captions,
             }
         except Exception as exc:
-            logger.warning("Apify Instagram posts fetch failed: %s", exc)
+            logger.warning(
+                "event=social_provider_failed provider=apify platform=instagram "
+                "operation=posts error_type=%s",
+                type(exc).__name__,
+            )
             return {"posts": [], "all_hashtags": [], "post_captions": []}
 
     async def fetch_profile_and_posts(self, username: str) -> Dict[str, Any]:

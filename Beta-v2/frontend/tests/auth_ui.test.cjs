@@ -12,6 +12,13 @@ function response(status, payload) {
     return {
         ok: status >= 200 && status < 300,
         status,
+        headers: {
+            get(name) {
+                return String(name).toLowerCase() === "x-request-id"
+                    ? "request-test-1234"
+                    : null;
+            },
+        },
         async json() { return payload; },
     };
 }
@@ -23,6 +30,7 @@ async function main() {
     const events = {};
     const dispatched = [];
     const storage = new Map();
+    const diagnosticStorage = new Map();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     let expiryHandler = null;
     let nextTimerId = 0;
@@ -39,6 +47,7 @@ async function main() {
     let hangLogout = false;
     let hangNextMe = false;
     let hangNextMeBody = false;
+    let invalidNextMeJson = false;
     const nodes = Object.fromEntries([
         "login-screen", "main-dashboard", "login-error", "soc-authenticated-user",
         "login-user", "login-pass", "login-submit",
@@ -57,6 +66,17 @@ async function main() {
             : { ...(options.headers || {}) };
         calls.push({ url: String(url), options: { ...options, headers } });
         if (String(url).endsWith("/me")) {
+            if (invalidNextMeJson) {
+                invalidNextMeJson = false;
+                return {
+                    ok: true,
+                    status: 200,
+                    headers: response(200, {}).headers,
+                    async json() {
+                        throw new SyntaxError("PRIVATE-AUTH-JSON-SENTINEL");
+                    },
+                };
+            }
             if (hangNextMeBody) {
                 hangNextMeBody = false;
                 return {
@@ -164,7 +184,12 @@ async function main() {
     }
 
     const sandbox = {
-        console,
+        console: {
+            debug() {},
+            warn() {},
+            log: console.log,
+            error: console.error,
+        },
         Headers,
         CustomEvent: FakeCustomEvent,
         fetch: fakeFetch,
@@ -172,6 +197,11 @@ async function main() {
             getItem(key) { return storage.has(key) ? storage.get(key) : null; },
             setItem(key, value) { storage.set(key, String(value)); },
             removeItem(key) { storage.delete(key); },
+        },
+        localStorage: {
+            getItem(key) { return diagnosticStorage.has(key) ? diagnosticStorage.get(key) : null; },
+            setItem(key, value) { diagnosticStorage.set(key, String(value)); },
+            removeItem(key) { diagnosticStorage.delete(key); },
         },
         document: { getElementById(id) { return nodes[id] || null; } },
         location: { protocol: "http:", hostname: "127.0.0.1" },
@@ -182,6 +212,26 @@ async function main() {
         dispatchEvent(event) { dispatched.push(event); },
     };
     sandbox.window = sandbox;
+
+    diagnosticStorage.set("upp_soc_auth_diagnostics_v1", JSON.stringify([
+        {
+            at: new Date().toISOString(),
+            event: "session.initialize_failed",
+            endpoint: "auth_initialize",
+            reason: "http_error",
+            status: 503,
+            request_id: "poison-safe-id-1234",
+            username: "POISON-USERNAME",
+            password: "POISON-PASSWORD",
+            target: "POISON-TARGET",
+            csrf_token: "POISON-CSRF",
+        },
+        {
+            at: new Date().toISOString(),
+            event: "attacker.controlled_event",
+            target: "POISON-UNKNOWN-EVENT",
+        },
+    ]));
 
     vm.runInNewContext(source, sandbox, { filename: sourcePath });
     await events.DOMContentLoaded();
@@ -225,6 +275,11 @@ async function main() {
     assert.equal(typeof scheduledKeepalive, "function");
     await scheduledKeepalive();
     assert.equal(storage.size, 1, "successful keepalive must retain local session state");
+    assert.equal(nodes["main-dashboard"].style.display, "block");
+
+    invalidNextMeJson = true;
+    assert.equal(await sandbox.SocAuth.refresh(), false);
+    assert.equal(storage.size, 1, "invalid refresh JSON must retain the local session");
     assert.equal(nodes["main-dashboard"].style.display, "block");
 
     hangNextMe = true;
@@ -332,6 +387,29 @@ async function main() {
     assert.equal(nodes["login-submit"].disabled, false);
     assert.equal(nodes["login-pass"].value, "");
     assert.equal(storage.size, 0);
+
+    const diagnostics = sandbox.SocAuth.diagnostics();
+    assert.ok(diagnostics.length > 0);
+    assert.ok(diagnostics.length <= 100);
+    assert.ok(diagnostics.some(row => row.event === "session.renewed"));
+    assert.ok(diagnostics.some(row => row.reason === "timeout" && row.session_retained === true));
+    assert.ok(diagnostics.some(row => row.reason === "server_rejected"));
+    assert.ok(diagnostics.some(row => (
+        row.reason === "invalid_json"
+        && row.status === 200
+        && row.request_id === "request-test-1234"
+    )));
+    assert.ok(diagnostics.some(row => row.request_id === "request-test-1234"));
+    const serializedDiagnostics = JSON.stringify(diagnostics);
+    assert.doesNotMatch(serializedDiagnostics, /temporary-test-password/);
+    assert.doesNotMatch(serializedDiagnostics, /csrf-test-token/);
+    assert.doesNotMatch(serializedDiagnostics, /analyst-one/);
+    assert.doesNotMatch(serializedDiagnostics, /POISON-/);
+    assert.doesNotMatch(serializedDiagnostics, /PRIVATE-AUTH-JSON-SENTINEL/);
+    assert.ok(diagnostics.some(row => row.request_id === "poison-safe-id-1234"));
+    assert.ok(diagnostics.every(row => !Object.hasOwn(row, "username")));
+    assert.ok(diagnostics.every(row => !Object.hasOwn(row, "password")));
+    assert.ok(diagnostics.every(row => !Object.hasOwn(row, "target")));
 
     console.log("auth_ui.test.cjs: all assertions passed");
 }

@@ -58,6 +58,11 @@ class WikidataService:
                 }
                 resp = await client.get(_WIKIDATA_SEARCH_URL, params=search_params, headers=headers)
                 if resp.status_code != 200:
+                    logger.warning(
+                        "event=public_data_provider_failed provider=wikidata "
+                        "operation=search reason=http_error http_status=%d",
+                        resp.status_code,
+                    )
                     return {"success": False, "status": "api_error", "found": False}
 
                 search_data = resp.json()
@@ -74,6 +79,11 @@ class WikidataService:
                 entity_url = f"https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json"
                 entity_resp = await client.get(entity_url, headers=headers)
                 if entity_resp.status_code != 200:
+                    logger.warning(
+                        "event=public_data_provider_failed provider=wikidata "
+                        "operation=entity reason=http_error http_status=%d",
+                        entity_resp.status_code,
+                    )
                     return {"success": False, "status": "entity_fetch_error", "found": False}
 
                 entity_data = entity_resp.json().get("entities", {}).get(entity_id, {})
@@ -134,5 +144,13 @@ class WikidataService:
                     "claims": claims_summary,
                 }
             except Exception as exc:
-                logger.warning("Wikidata lookup failed for '%s': %s", query, exc)
-                return {"success": False, "status": "error", "found": False, "error": str(exc)}
+                logger.warning(
+                    "event=public_data_provider_failed provider=wikidata error_type=%s",
+                    type(exc).__name__,
+                )
+                return {
+                    "success": False,
+                    "status": "error",
+                    "found": False,
+                    "error": "Wikidata request failed",
+                }

@@ -172,6 +172,51 @@ started it:
 Get-NetTCPConnection -State Listen | Where-Object LocalPort -in 3000,8010 | Select-Object LocalAddress,LocalPort,OwningProcess
 ```
 
+## Operational diagnostics
+
+Troubleshooting events are written automatically with UTC timestamps and safe
+request IDs. No extra `.env` configuration is required. The two files are:
+
+- `backend/runtime/application.log` — backend startup/readiness, authentication
+  and session renewal/rejection reasons, request status/timing, and bounded
+  provider outcomes.
+- `backend/runtime/launcher.log` — occupied ports, child-process startup/exit,
+  readiness timeouts, browser launch, and shutdown.
+
+Both files rotate automatically (`application.log` at 5 MiB with five backups;
+`launcher.log` at 2 MiB with three backups), and the entire `runtime` directory
+is ignored by Git. Follow the live backend log in PowerShell with:
+
+```powershell
+Get-Content .\backend\runtime\application.log -Tail 100 -Wait
+```
+
+For launcher failures:
+
+```powershell
+Get-Content .\backend\runtime\launcher.log -Tail 100
+```
+
+Failed investigation alerts display a safe `X-Request-ID` reference. Find the
+matching backend events with (replace the example ID):
+
+```powershell
+Select-String -Path .\backend\runtime\application.log* -SimpleMatch "request_id=abc123example"
+```
+
+The browser keeps only the latest 100 allowlisted authentication diagnostic
+events. In Developer Tools, run `SocAuth.diagnostics()` to inspect them or
+`SocAuth.clearDiagnostics()` to remove them. These records contain status and
+reason codes only—not usernames, passwords, cookies, CSRF values, targets,
+request/response bodies, provider keys, emails, phone numbers, or full URLs.
+
+The operational files are not the compliance audit. The append-only,
+HMAC-chained `security_audit.jsonl` remains separate and is never rotated by
+this feature. Review diagnostic files before sharing them outside the trusted
+SOC environment. Optional `APP_LOG_*` controls are documented in
+`backend/.env.example`; keep Uvicorn access logging disabled because raw URLs
+can contain sensitive query parameters.
+
 ## Restricted disclosure boundary
 
 The gated dashboard can display provider-attributed email, full name, phone,

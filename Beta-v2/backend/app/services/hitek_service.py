@@ -41,5 +41,8 @@ class HiTekService:
             ]
             return {"status": "success", "matches": matches}
         except Exception as exc:
-            logger.warning("HiTek DB search failed: %s", exc)
+            logger.warning(
+                "event=local_database_search_failed provider=hitek error_type=%s",
+                type(exc).__name__,
+            )
             return {"status": "error", "matches": []}

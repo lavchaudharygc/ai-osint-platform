@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.schemas.auth import LoginRequest, LogoutResponse, SessionResponse
-from app.security.audit import AuditEvent, AuditUnavailable, get_audit_logger
+from app.security.audit import AuditEvent, AuditReceipt, AuditUnavailable, get_audit_logger
 from app.security.auth import (
     AuthConfigurationError,
     AuthenticatedUser,
@@ -22,6 +23,7 @@ from app.security.auth import (
 
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
+logger = logging.getLogger(__name__)
 
 
 def _unavailable() -> HTTPException:
@@ -32,9 +34,9 @@ def _unavailable() -> HTTPException:
     )
 
 
-def _record_auth_event(*, analyst: str, outcome: str, target: str) -> None:
+def _record_auth_event(*, analyst: str, outcome: str, target: str) -> AuditReceipt:
     try:
-        get_audit_logger().record(
+        return get_audit_logger().record(
             AuditEvent(
                 analyst=analyst,
                 action="auth.login",
@@ -46,6 +48,11 @@ def _record_auth_event(*, analyst: str, outcome: str, target: str) -> None:
             )
         )
     except AuditUnavailable as exc:
+        logger.error(
+            "event=auth_audit_unavailable outcome=%s error_type=%s",
+            outcome,
+            type(exc).__name__,
+        )
         raise _unavailable() from exc
 
 
@@ -83,10 +90,24 @@ def login(
         sessions = get_session_manager()
         limiter = get_login_rate_limiter()
     except AuthConfigurationError as exc:
+        logger.error(
+            "event=auth_login_unavailable component=initialization error_type=%s",
+            type(exc).__name__,
+        )
         raise _unavailable() from exc
     retry_after = limiter.retry_after(payload.username, client_ip)
     if retry_after:
-        _record_auth_event(analyst="anonymous", outcome="rate_limited", target=payload.username)
+        receipt = _record_auth_event(
+            analyst="anonymous",
+            outcome="rate_limited",
+            target=payload.username,
+        )
+        logger.warning(
+            "event=auth_login_rejected reason=rate_limited retry_after_seconds=%d "
+            "audit_event_id=%s",
+            retry_after,
+            receipt.event_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts",
@@ -95,10 +116,22 @@ def login(
     try:
         user = store.authenticate(payload.username, payload.password.get_secret_value())
     except (AuthConfigurationError, ValueError) as exc:
+        logger.error(
+            "event=auth_login_unavailable component=credential_store error_type=%s",
+            type(exc).__name__,
+        )
         raise _unavailable() from exc
     if user is None:
         limiter.register_failure(payload.username, client_ip)
-        _record_auth_event(analyst="anonymous", outcome="denied", target=payload.username)
+        receipt = _record_auth_event(
+            analyst="anonymous",
+            outcome="denied",
+            target=payload.username,
+        )
+        logger.warning(
+            "event=auth_login_rejected reason=invalid_credentials audit_event_id=%s",
+            receipt.event_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -110,11 +143,25 @@ def login(
             credential_material=user.credential_material,
         )
     except (AuthConfigurationError, ValueError) as exc:
+        logger.error(
+            "event=auth_login_unavailable component=session_issue error_type=%s",
+            type(exc).__name__,
+        )
         raise _unavailable() from exc
-    _record_auth_event(analyst=user.username, outcome="success", target=user.username)
+    receipt = _record_auth_event(
+        analyst=user.username,
+        outcome="success",
+        target=user.username,
+    )
     limiter.reset(payload.username, client_ip)
     _set_session_cookie(response, token=token, expires_at=claims.expires_at)
     response.headers["Cache-Control"] = "no-store"
+    logger.info(
+        "event=auth_login_succeeded role_count=%d ttl_seconds=%d audit_event_id=%s",
+        len(user.roles),
+        settings.auth_session_ttl_seconds,
+        receipt.event_id,
+    )
     return SessionResponse(
         user=user.username,
         roles=list(user.roles),
@@ -139,6 +186,10 @@ def me(
     )
     _set_session_cookie(response, token=token, expires_at=claims.expires_at)
     response.headers["Cache-Control"] = "no-store"
+    logger.info(
+        "event=auth_session_renewed ttl_seconds=%d",
+        settings.auth_session_ttl_seconds,
+    )
     return SessionResponse(
         user=user.username,
         roles=list(user.roles),
@@ -155,7 +206,7 @@ def logout(
     """Audit and clear the operator's browser session."""
 
     try:
-        get_audit_logger().record(
+        receipt = get_audit_logger().record(
             AuditEvent(
                 analyst=user.username,
                 action="auth.logout",
@@ -165,7 +216,11 @@ def logout(
                 target=user.username,
             )
         )
-    except AuditUnavailable:
+    except AuditUnavailable as exc:
+        logger.error(
+            "event=auth_logout_audit_unavailable error_type=%s",
+            type(exc).__name__,
+        )
         # Logout must still remove the browser credential even if the audit
         # device is unavailable. Return an explicit failure so the operator
         # knows the audit did not complete, but never leave the session cookie.
@@ -190,4 +245,8 @@ def logout(
         samesite="strict",
     )
     response.headers["Cache-Control"] = "no-store"
+    logger.info(
+        "event=auth_logout_succeeded audit_event_id=%s",
+        receipt.event_id,
+    )
     return LogoutResponse()

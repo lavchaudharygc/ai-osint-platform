@@ -96,7 +96,10 @@ class DorkingService:
                                     "source": "apify_google_search",
                                 })
             except Exception as exc:
-                logger.warning("Apify dorking query failed: %s", exc)
+                logger.warning(
+                    "event=dorking_provider_failed provider=apify error_type=%s",
+                    type(exc).__name__,
+                )
                 if self.api_key:
                     provider = "serpapi"
                     all_results = []
@@ -141,8 +144,17 @@ class DorkingService:
                                     "query": dork,
                                     "source": "serpapi",
                                 })
+                        else:
+                            logger.warning(
+                                "event=dorking_provider_failed provider=serpapi "
+                                "reason=http_error http_status=%d",
+                                r.status_code,
+                            )
                     except Exception as exc:
-                        logger.warning("Dorking query failed: %s", exc)
+                        logger.warning(
+                            "event=dorking_provider_failed provider=serpapi error_type=%s",
+                            type(exc).__name__,
+                        )
 
         status = "completed" if queries_run else "error"
         if not all_results and queries_run:

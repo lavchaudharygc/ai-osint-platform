@@ -22,6 +22,7 @@ function response(payload, jsonPromise = null) {
     return {
         ok: true,
         status: 200,
+        headers: { get() { return null; } },
         async json() {
             return jsonPromise || payload;
         },
@@ -342,9 +343,92 @@ async function testLogoutWhileJsonIsPending() {
     assert(!harness.nodeFor("consolidated-identity-body").innerHTML.includes("LATE-JSON-RESPONSE"));
 }
 
+function consoleText(harness) {
+    return harness.nodeFor("console-stream").children
+        .map(child => String(child.textContent || ""))
+        .join("\n");
+}
+
+async function testHttpFailureShowsSafeCorrelationReference() {
+    const harness = createHarness();
+    prepareScanInput(harness, "PRIVATE-HTTP-TARGET");
+    harness.setFetchImpl(async () => ({
+        ok: false,
+        status: 503,
+        headers: {
+            get(name) {
+                return String(name).toLowerCase() === "x-request-id"
+                    ? "failure-ref-503"
+                    : null;
+            },
+        },
+    }));
+
+    await harness.sandbox.executeScan(true);
+
+    assert.match(consoleText(harness), /HTTP_503 REFERENCE=failure-ref-503/);
+    assert.match(harness.alerts.at(-1), /HTTP 503/);
+    assert.match(harness.alerts.at(-1), /failure-ref-503/);
+    const visibleFailure = `${consoleText(harness)}\n${harness.alerts.join("\n")}`;
+    assert.doesNotMatch(visibleFailure, /PRIVATE-HTTP-TARGET/);
+    assert.doesNotMatch(visibleFailure, /@example\.org/);
+    assert.doesNotMatch(visibleFailure, /1234567890/);
+}
+
+async function testNetworkFailureDoesNotExposeExceptionOrTarget() {
+    const harness = createHarness();
+    prepareScanInput(harness, "PRIVATE-NETWORK-TARGET");
+    harness.setFetchImpl(async () => {
+        throw new TypeError("PRIVATE-NETWORK-ERROR-MESSAGE");
+    });
+
+    await harness.sandbox.executeScan(true);
+
+    assert.match(consoleText(harness), /NETWORK_ERROR REFERENCE=UNAVAILABLE/);
+    assert.match(harness.alerts.at(-1), /No server failure reference was available/);
+    const visibleFailure = `${consoleText(harness)}\n${harness.alerts.join("\n")}`;
+    assert.doesNotMatch(visibleFailure, /PRIVATE-NETWORK-TARGET/);
+    assert.doesNotMatch(visibleFailure, /PRIVATE-NETWORK-ERROR-MESSAGE/);
+    assert.doesNotMatch(visibleFailure, /@example\.org/);
+    assert.doesNotMatch(visibleFailure, /1234567890/);
+}
+
+async function testInvalidSuccessPayloadKeepsResponseReference() {
+    const harness = createHarness();
+    prepareScanInput(harness, "PRIVATE-JSON-TARGET");
+    harness.setFetchImpl(async () => ({
+        ok: true,
+        status: 200,
+        headers: {
+            get(name) {
+                return String(name).toLowerCase() === "x-request-id"
+                    ? "invalid-json-ref-200"
+                    : null;
+            },
+        },
+        async json() {
+            throw new SyntaxError("PRIVATE-JSON-ERROR-MESSAGE");
+        },
+    }));
+
+    await harness.sandbox.executeScan(true);
+
+    assert.match(
+        consoleText(harness),
+        /RESPONSE_ERROR HTTP_200 REFERENCE=invalid-json-ref-200/,
+    );
+    assert.match(harness.alerts.at(-1), /invalid-json-ref-200/);
+    const visibleFailure = `${consoleText(harness)}\n${harness.alerts.join("\n")}`;
+    assert.doesNotMatch(visibleFailure, /PRIVATE-JSON-TARGET/);
+    assert.doesNotMatch(visibleFailure, /PRIVATE-JSON-ERROR-MESSAGE/);
+}
+
 async function main() {
     await testSessionEventWhileFetchIsPending();
     await testLogoutWhileJsonIsPending();
+    await testHttpFailureShowsSafeCorrelationReference();
+    await testNetworkFailureDoesNotExposeExceptionOrTarget();
+    await testInvalidSuccessPayloadKeepsResponseReference();
     console.log("legacy_scan_lifecycle.test.cjs: all assertions passed");
 }
 

@@ -1378,10 +1378,10 @@ class EmailInvestigationService:
                 )
             if response.status_code != 200:
                 logger.warning(
-                    "SerpAPI query for engine '%s' failed with status %d: %s",
+                    "event=email_web_provider_failed provider=serpapi engine=%s "
+                    "reason=http_error http_status=%d",
                     engine,
                     response.status_code,
-                    response.text[:200],
                 )
                 return False, []
             payload = response.json()
@@ -1390,7 +1390,12 @@ class EmailInvestigationService:
                 return False, []
             return True, [item for item in organic_results if isinstance(item, dict)][:10]
         except (httpx.HTTPError, ValueError, TypeError) as exc:
-            logger.warning("SerpAPI query error for engine '%s': %s", engine, exc)
+            logger.warning(
+                "event=email_web_provider_failed provider=serpapi engine=%s "
+                "reason=request_error error_type=%s",
+                engine,
+                type(exc).__name__,
+            )
             return False, []
 
     @staticmethod

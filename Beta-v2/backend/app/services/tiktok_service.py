@@ -98,5 +98,14 @@ class TikTokService:
             }
 
         except Exception as exc:
-            logger.error("TikTok scrape failed: %s", exc)
-            return {"success": False, "platform": "tiktok", "username": clean_handle, "error": str(exc)}
+            logger.error(
+                "event=social_provider_failed provider=apify platform=tiktok "
+                "error_type=%s",
+                type(exc).__name__,
+            )
+            return {
+                "success": False,
+                "platform": "tiktok",
+                "username": clean_handle,
+                "error": "TikTok provider request failed",
+            }

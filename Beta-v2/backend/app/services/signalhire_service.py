@@ -35,6 +35,11 @@ class SignalHireService:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 res = await client.post(url, headers=headers, json=payload)
                 if res.status_code != 200:
+                    logger.warning(
+                        "event=social_provider_failed provider=signalhire "
+                        "platform=linkedin reason=http_error http_status=%d",
+                        res.status_code,
+                    )
                     return {
                         "success": False,
                         "platform": "linkedin",
@@ -69,5 +74,14 @@ class SignalHireService:
                     "url": linkedin_url,
                 }
         except Exception as exc:
-            logger.error("SignalHire candidate search failed: %s", exc)
-            return {"success": False, "platform": "linkedin", "message": str(exc), "data": None}
+            logger.error(
+                "event=social_provider_failed provider=signalhire platform=linkedin "
+                "error_type=%s",
+                type(exc).__name__,
+            )
+            return {
+                "success": False,
+                "platform": "linkedin",
+                "message": "SignalHire request failed",
+                "data": None,
+            }

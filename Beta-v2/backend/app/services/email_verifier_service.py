@@ -147,8 +147,16 @@ class EmailVerifierService:
                     "deliverable": deliverable,
                     "reason": f"ZeroBounce: {zb_status} ({data.get('sub_status') or 'no substatus'})",
                 }
+            logger.warning(
+                "event=email_verifier_failed provider=zerobounce "
+                "reason=http_error http_status=%d",
+                r.status_code,
+            )
         except Exception as exc:
-            logger.warning("ZeroBounce verification failed for %s: %s", email, exc)
+            logger.warning(
+                "event=email_verifier_failed provider=zerobounce error_type=%s",
+                type(exc).__name__,
+            )
         return cls.verify_email(email)
 
     @classmethod
@@ -181,6 +189,14 @@ class EmailVerifierService:
                     "reason": f"Hunter.io verification: {result_status}",
                     "score": data.get("score"),
                 }
+            logger.warning(
+                "event=email_verifier_failed provider=hunter "
+                "reason=http_error http_status=%d",
+                r.status_code,
+            )
         except Exception as exc:
-            logger.warning("Hunter.io verification failed for %s: %s", email, exc)
+            logger.warning(
+                "event=email_verifier_failed provider=hunter error_type=%s",
+                type(exc).__name__,
+            )
         return await cls.verify_with_zerobounce(email)

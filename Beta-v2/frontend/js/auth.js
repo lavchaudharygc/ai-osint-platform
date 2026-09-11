@@ -18,6 +18,179 @@
     const SESSION_REQUEST_TIMEOUT_MS = 10 * 1000;
     const LOGOUT_TIMEOUT_MS = 5 * 1000;
     const MAX_TIMER_DELAY_MS = 2_147_000_000;
+    const DIAGNOSTIC_KEY = "upp_soc_auth_diagnostics_v1";
+    const DIAGNOSTIC_LIMIT = 100;
+    const SAFE_ENDPOINTS = new Set([
+        "auth_initialize",
+        "auth_login",
+        "auth_logout",
+        "auth_refresh",
+        "protected_request",
+        "session_storage",
+    ]);
+
+    const SAFE_EVENTS = new Set([
+        "auth.login_failed",
+        "auth.login_rejected",
+        "auth.login_succeeded",
+        "auth.logout_finished",
+        "protected.auth_challenge",
+        "session.cleared",
+        "session.initialize_failed",
+        "session.initialize_ignored",
+        "session.initialize_rejected",
+        "session.initialize_retry",
+        "session.initialized",
+        "session.local_state_rejected",
+        "session.refresh_ignored",
+        "session.refresh_rejected",
+        "session.refresh_retry",
+        "session.renewed",
+    ]);
+
+    const SAFE_REASONS = new Set([
+        "backend_timeout",
+        "backend_unavailable",
+        "credentials_accepted",
+        "feature_auth_status",
+        "http_error",
+        "http_rejected",
+        "initial_session_rejected",
+        "invalid_json",
+        "invalid_local_state",
+        "invalid_session_payload",
+        "keepalive_success",
+        "local_expired",
+        "login_network_error",
+        "login_rejected",
+        "login_timeout",
+        "manual_clear",
+        "missing_csrf",
+        "network_error",
+        "operator_logout",
+        "server_error",
+        "server_rejected",
+        "server_session_valid",
+        "stale_operation",
+        "storage_error",
+        "success",
+        "timeout",
+        "unexpected_client_error",
+    ]);
+
+    function sanitizeDiagnosticRow(value) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+        const at = String(value.at || "");
+        const timestamp = Date.parse(at);
+        if (
+            !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(at)
+            || !Number.isFinite(timestamp)
+            || timestamp > Date.now() + 5 * 60 * 1000
+        ) return null;
+        const event = String(value.event || "");
+        if (!SAFE_EVENTS.has(event)) return null;
+
+        const row = { at, event };
+        if (SAFE_ENDPOINTS.has(value.endpoint)) row.endpoint = value.endpoint;
+        if (SAFE_REASONS.has(value.reason)) row.reason = value.reason;
+        if (Number.isInteger(value.status) && value.status >= 100 && value.status <= 599) {
+            row.status = value.status;
+        }
+        for (const key of ["duration_ms", "retry_ms"]) {
+            if (typeof value[key] === "number" && Number.isFinite(value[key]) && value[key] >= 0) {
+                row[key] = Math.min(3_600_000, Math.round(value[key]));
+            }
+        }
+        if (typeof value.session_retained === "boolean") {
+            row.session_retained = value.session_retained;
+        }
+        if (/^[A-Za-z0-9_-]{8,64}$/.test(String(value.request_id || ""))) {
+            row.request_id = String(value.request_id);
+        }
+        return row;
+    }
+
+    function parseDiagnostics(serialized) {
+        try {
+            const parsed = JSON.parse(serialized || "[]");
+            if (!Array.isArray(parsed)) return [];
+            return parsed
+                .map(sanitizeDiagnosticRow)
+                .filter(Boolean)
+                .slice(-DIAGNOSTIC_LIMIT);
+        } catch (_error) {
+            return [];
+        }
+    }
+
+    function readDiagnostics() {
+        try {
+            return parseDiagnostics(window.localStorage?.getItem(DIAGNOSTIC_KEY));
+        } catch (_error) {
+            return [];
+        }
+    }
+
+    function mergeDiagnostics(...collections) {
+        const unique = new Map();
+        for (const collection of collections) {
+            for (const candidate of Array.isArray(collection) ? collection : []) {
+                const row = sanitizeDiagnosticRow(candidate);
+                if (!row) continue;
+                unique.set(JSON.stringify(row), row);
+            }
+        }
+        return [...unique.values()]
+            .sort((left, right) => left.at.localeCompare(right.at))
+            .slice(-DIAGNOSTIC_LIMIT);
+    }
+
+    let diagnosticEvents = readDiagnostics();
+
+    function safeRequestId(response) {
+        try {
+            const value = String(response?.headers?.get?.("x-request-id") || "");
+            return /^[A-Za-z0-9_-]{8,64}$/.test(value) ? value : "";
+        } catch (_error) {
+            return "";
+        }
+    }
+
+    function recordDiagnostic(event, level = "debug", fields = {}) {
+        const row = sanitizeDiagnosticRow({
+            at: new Date().toISOString(),
+            event: String(event || ""),
+            ...fields,
+        });
+        if (!row) return;
+        // Re-read before every write so another tab's event is not routinely
+        // replaced by this tab's older in-memory snapshot.
+        diagnosticEvents = mergeDiagnostics(readDiagnostics(), diagnosticEvents, [row]);
+        try {
+            window.localStorage?.setItem(DIAGNOSTIC_KEY, JSON.stringify(diagnosticEvents));
+        } catch (_error) {
+            // In-memory diagnostics still work when browser storage is blocked.
+        }
+        const method = level === "warn" ? "warn" : "debug";
+        try {
+            window.console?.[method]?.("[SOC diagnostic]", { ...row });
+        } catch (_error) {
+            // Diagnostics must never interfere with authentication.
+        }
+    }
+
+    function listDiagnostics() {
+        return diagnosticEvents.map(row => ({ ...row }));
+    }
+
+    function clearDiagnostics() {
+        diagnosticEvents = [];
+        try {
+            window.localStorage?.removeItem(DIAGNOSTIC_KEY);
+        } catch (_error) {
+            // The in-memory list was still cleared.
+        }
+    }
 
     let session = readSession();
     let keepaliveTimer = null;
@@ -42,10 +215,22 @@
             const expiry = Date.parse(expiresAt);
             if (!username || !csrfToken || !Number.isFinite(expiry) || expiry <= Date.now()) {
                 sessionStorage.removeItem(SESSION_KEY);
+                recordDiagnostic("session.local_state_rejected", "warn", {
+                    endpoint: "session_storage",
+                    reason: Number.isFinite(expiry) && expiry <= Date.now()
+                        ? "local_expired"
+                        : "invalid_local_state",
+                    session_retained: false,
+                });
                 return null;
             }
             return { username, roles, csrfToken, expiresAt };
         } catch (_error) {
+            recordDiagnostic("session.local_state_rejected", "warn", {
+                endpoint: "session_storage",
+                reason: "storage_error",
+                session_retained: false,
+            });
             return null;
         }
     }
@@ -86,7 +271,7 @@
         if (!session) return true;
         const expiry = Date.parse(session.expiresAt);
         if (!Number.isFinite(expiry) || expiry <= Date.now()) {
-            clearSession("Your authenticated session expired. Sign in again.");
+            clearSession("Your authenticated session expired. Sign in again.", "local_expired");
             return false;
         }
         scheduleSessionRefresh();
@@ -140,13 +325,18 @@
         window.dispatchEvent(new CustomEvent("soc:authenticated", { detail: publicSession() }));
     }
 
-    function clearSession(message = "") {
+    function clearSession(message = "", reason = "manual_clear") {
         cancelKeepaliveTimer();
         session = null;
         sessionRevision += 1;
         sessionStorage.removeItem(SESSION_KEY);
         updateShell(false, message);
         window.dispatchEvent(new CustomEvent("soc:unauthenticated"));
+        recordDiagnostic("session.cleared", reason === "operator_logout" ? "debug" : "warn", {
+            endpoint: "session_storage",
+            reason,
+            session_retained: false,
+        });
     }
 
     async function responseMessage(response, fallback) {
@@ -166,11 +356,16 @@
         const controller = makeAbortController();
         refreshController = controller;
         let timeoutId = null;
+        let timedOut = false;
+        let failureReason = "network_error";
+        let lastResponse = null;
+        const startedAt = Date.now();
         cancelKeepaliveTimer();
         refreshPromise = (async () => {
             try {
                 const timeout = new Promise((_, reject) => {
                     timeoutId = window.setTimeout(() => {
+                        timedOut = true;
                         controller?.abort("session_refresh_timeout");
                         reject(new Error("Session refresh timed out"));
                     }, SESSION_REQUEST_TIMEOUT_MS);
@@ -183,7 +378,12 @@
                         headers: { "Accept": "application/json" },
                         ...(controller ? { signal: controller.signal } : {}),
                     });
-                    const payload = response.ok ? await response.json() : null;
+                    lastResponse = response;
+                    let payload = null;
+                    if (response.ok) {
+                        failureReason = "invalid_json";
+                        payload = await response.json();
+                    }
                     return { response, payload };
                 })();
                 const { response, payload } = await Promise.race([
@@ -195,17 +395,47 @@
                         logoutInProgress
                         || session !== sessionAtStart
                         || sessionRevision !== revisionAtStart
-                    ) return false;
+                    ) {
+                        recordDiagnostic("session.refresh_ignored", "debug", {
+                            endpoint: "auth_refresh",
+                            reason: "stale_operation",
+                            status: response.status,
+                            duration_ms: Date.now() - startedAt,
+                            session_retained: Boolean(session),
+                            request_id: safeRequestId(response),
+                        });
+                        return false;
+                    }
+                    failureReason = "invalid_session_payload";
                     persistSession(payload);
+                    recordDiagnostic("session.renewed", "debug", {
+                        endpoint: "auth_refresh",
+                        reason: "keepalive_success",
+                        status: response.status,
+                        duration_ms: Date.now() - startedAt,
+                        session_retained: true,
+                        request_id: safeRequestId(response),
+                    });
                     return true;
                 }
                 if (response.status === 401 || response.status === 419) {
+                    recordDiagnostic("session.refresh_rejected", "warn", {
+                        endpoint: "auth_refresh",
+                        reason: "server_rejected",
+                        status: response.status,
+                        duration_ms: Date.now() - startedAt,
+                        session_retained: false,
+                        request_id: safeRequestId(response),
+                    });
                     if (
                         session === sessionAtStart
                         && sessionRevision === revisionAtStart
                         && !logoutInProgress
                     ) {
-                        clearSession("Your authenticated session is no longer valid. Sign in again.");
+                        clearSession(
+                            "Your authenticated session is no longer valid. Sign in again.",
+                            "server_rejected",
+                        );
                     }
                     return false;
                 }
@@ -213,7 +443,18 @@
                     session === sessionAtStart
                     && sessionRevision === revisionAtStart
                     && !logoutInProgress
-                ) scheduleSessionRefresh(KEEPALIVE_RETRY_MS);
+                ) {
+                    recordDiagnostic("session.refresh_retry", "warn", {
+                        endpoint: "auth_refresh",
+                        reason: "http_error",
+                        status: response.status,
+                        duration_ms: Date.now() - startedAt,
+                        retry_ms: KEEPALIVE_RETRY_MS,
+                        session_retained: true,
+                        request_id: safeRequestId(response),
+                    });
+                    scheduleSessionRefresh(KEEPALIVE_RETRY_MS);
+                }
                 return false;
             } catch (_error) {
                 // A temporary backend/network failure is not proof that the
@@ -222,7 +463,18 @@
                     session === sessionAtStart
                     && sessionRevision === revisionAtStart
                     && !logoutInProgress
-                ) scheduleSessionRefresh(KEEPALIVE_RETRY_MS);
+                ) {
+                    recordDiagnostic("session.refresh_retry", "warn", {
+                        endpoint: "auth_refresh",
+                        reason: timedOut ? "timeout" : failureReason,
+                        status: lastResponse?.status,
+                        duration_ms: Date.now() - startedAt,
+                        retry_ms: KEEPALIVE_RETRY_MS,
+                        session_retained: true,
+                        request_id: safeRequestId(lastResponse),
+                    });
+                    scheduleSessionRefresh(KEEPALIVE_RETRY_MS);
+                }
                 return false;
             } finally {
                 if (timeoutId !== null) window.clearTimeout(timeoutId);
@@ -240,6 +492,9 @@
         initializeController = controller;
         let timeoutId = null;
         let timedOut = false;
+        let failureReason = "network_error";
+        let lastResponse = null;
+        const startedAt = Date.now();
         try {
             const timeout = new Promise((_, reject) => {
                 timeoutId = window.setTimeout(() => {
@@ -256,25 +511,87 @@
                     headers: { "Accept": "application/json" },
                     ...(controller ? { signal: controller.signal } : {}),
                 });
-                const payload = response.ok ? await response.json() : null;
+                lastResponse = response;
+                let payload = null;
+                if (response.ok) {
+                    failureReason = "invalid_json";
+                    payload = await response.json();
+                }
                 return { response, payload };
             })();
             const { response, payload } = await Promise.race([request, timeout]);
-            if (sessionRevision !== revisionAtStart) return Boolean(session);
+            if (sessionRevision !== revisionAtStart) {
+                recordDiagnostic("session.initialize_ignored", "debug", {
+                    endpoint: "auth_initialize",
+                    reason: "stale_operation",
+                    status: response.status,
+                    duration_ms: Date.now() - startedAt,
+                    session_retained: Boolean(session),
+                    request_id: safeRequestId(response),
+                });
+                return Boolean(session);
+            }
             if (!response.ok) {
                 if (response.status === 401 || response.status === 419) {
-                    clearSession("");
+                    recordDiagnostic("session.initialize_rejected", "warn", {
+                        endpoint: "auth_initialize",
+                        reason: "server_rejected",
+                        status: response.status,
+                        duration_ms: Date.now() - startedAt,
+                        session_retained: false,
+                        request_id: safeRequestId(response),
+                    });
+                    clearSession("", "initial_session_rejected");
                 } else if (session && enforceSessionDeadline()) {
                     updateShell(true);
                     cancelKeepaliveTimer();
+                    recordDiagnostic("session.initialize_retry", "warn", {
+                        endpoint: "auth_initialize",
+                        reason: "http_error",
+                        status: response.status,
+                        duration_ms: Date.now() - startedAt,
+                        retry_ms: KEEPALIVE_RETRY_MS,
+                        session_retained: true,
+                        request_id: safeRequestId(response),
+                    });
                     scheduleSessionRefresh(KEEPALIVE_RETRY_MS);
                 } else {
-                    clearSession("Authentication service is unavailable. Start the Beta-v2 backend and try again.");
+                    recordDiagnostic("session.initialize_failed", "warn", {
+                        endpoint: "auth_initialize",
+                        reason: "http_error",
+                        status: response.status,
+                        duration_ms: Date.now() - startedAt,
+                        session_retained: false,
+                        request_id: safeRequestId(response),
+                    });
+                    clearSession(
+                        "Authentication service is unavailable. Start the Beta-v2 backend and try again.",
+                        "backend_unavailable",
+                    );
                 }
                 return false;
             }
-            if (sessionRevision !== revisionAtStart) return Boolean(session);
+            if (sessionRevision !== revisionAtStart) {
+                recordDiagnostic("session.initialize_ignored", "debug", {
+                    endpoint: "auth_initialize",
+                    reason: "stale_operation",
+                    status: response.status,
+                    duration_ms: Date.now() - startedAt,
+                    session_retained: Boolean(session),
+                    request_id: safeRequestId(response),
+                });
+                return Boolean(session);
+            }
+            failureReason = "invalid_session_payload";
             persistSession(payload);
+            recordDiagnostic("session.initialized", "debug", {
+                endpoint: "auth_initialize",
+                reason: "server_session_valid",
+                status: response.status,
+                duration_ms: Date.now() - startedAt,
+                session_retained: true,
+                request_id: safeRequestId(response),
+            });
             return true;
         } catch (_error) {
             if (controller?.signal.aborted && !timedOut) return Boolean(session);
@@ -282,9 +599,32 @@
             if (session && enforceSessionDeadline()) {
                 updateShell(true);
                 cancelKeepaliveTimer();
+                recordDiagnostic("session.initialize_retry", "warn", {
+                    endpoint: "auth_initialize",
+                    reason: timedOut ? "timeout" : failureReason,
+                    status: lastResponse?.status,
+                    duration_ms: Date.now() - startedAt,
+                    retry_ms: KEEPALIVE_RETRY_MS,
+                    session_retained: true,
+                    request_id: safeRequestId(lastResponse),
+                });
                 scheduleSessionRefresh(KEEPALIVE_RETRY_MS);
             } else {
-                clearSession("Authentication service is unavailable. Start the Beta-v2 backend and try again.");
+                const reason = timedOut ? "timeout" : failureReason;
+                recordDiagnostic("session.initialize_failed", "warn", {
+                    endpoint: "auth_initialize",
+                    reason,
+                    status: lastResponse?.status,
+                    duration_ms: Date.now() - startedAt,
+                    session_retained: false,
+                    request_id: safeRequestId(lastResponse),
+                });
+                clearSession(
+                    "Authentication service is unavailable. Start the Beta-v2 backend and try again.",
+                    timedOut
+                        ? "backend_timeout"
+                        : (failureReason === "network_error" ? "backend_unavailable" : failureReason),
+                );
             }
             return false;
         } finally {
@@ -312,6 +652,9 @@
         loginController = controller;
         let timeoutId = null;
         let timedOut = false;
+        let failureReason = "network_error";
+        let lastResponse = null;
+        const startedAt = Date.now();
         if (button) {
             button.disabled = true;
             button.textContent = "AUTHENTICATING...";
@@ -333,6 +676,7 @@
                     body: JSON.stringify({ username, password }),
                     ...(controller ? { signal: controller.signal } : {}),
                 });
+                lastResponse = response;
                 if (!response.ok) {
                     const message = await responseMessage(
                         response,
@@ -340,21 +684,52 @@
                     );
                     return { response, message, payload: null };
                 }
+                failureReason = "invalid_json";
                 return { response, message: "", payload: await response.json() };
             })();
             const { response, message, payload } = await Promise.race([request, timeout]);
             if (!response.ok) {
                 if (sessionRevision !== revisionForLogin || logoutInProgress) return false;
-                clearSession(message);
+                recordDiagnostic("auth.login_rejected", "warn", {
+                    endpoint: "auth_login",
+                    reason: "http_rejected",
+                    status: response.status,
+                    duration_ms: Date.now() - startedAt,
+                    session_retained: false,
+                    request_id: safeRequestId(response),
+                });
+                clearSession(message, "login_rejected");
                 return false;
             }
             if (sessionRevision !== revisionForLogin || logoutInProgress) return false;
+            failureReason = "invalid_session_payload";
             persistSession(payload);
+            recordDiagnostic("auth.login_succeeded", "debug", {
+                endpoint: "auth_login",
+                reason: "credentials_accepted",
+                status: response.status,
+                duration_ms: Date.now() - startedAt,
+                session_retained: true,
+                request_id: safeRequestId(response),
+            });
             return true;
         } catch (_error) {
             if (controller?.signal.aborted && !timedOut) return false;
             if (sessionRevision !== revisionForLogin || logoutInProgress) return false;
-            clearSession("Authentication service is unavailable. Start the Beta-v2 backend and try again.");
+            recordDiagnostic("auth.login_failed", "warn", {
+                endpoint: "auth_login",
+                reason: timedOut ? "timeout" : failureReason,
+                status: lastResponse?.status,
+                duration_ms: Date.now() - startedAt,
+                session_retained: false,
+                request_id: safeRequestId(lastResponse),
+            });
+            clearSession(
+                "Authentication service is unavailable. Start the Beta-v2 backend and try again.",
+                timedOut
+                    ? "login_timeout"
+                    : (failureReason === "network_error" ? "login_network_error" : failureReason),
+            );
             return false;
         } finally {
             if (timeoutId !== null) window.clearTimeout(timeoutId);
@@ -387,7 +762,10 @@
         const headers = new Headers(options.headers || {});
         if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
             if (!session?.csrfToken) {
-                clearSession("Your authenticated session is missing its CSRF proof. Sign in again.");
+                clearSession(
+                    "Your authenticated session is missing its CSRF proof. Sign in again.",
+                    "missing_csrf",
+                );
                 throw new Error("Authenticated session required.");
             }
             headers.set("X-CSRF-Token", session.csrfToken);
@@ -400,6 +778,13 @@
             cache: options.cache || "no-store",
         });
         if (redirectOnAuthFailure && (response.status === 401 || response.status === 419)) {
+            recordDiagnostic("protected.auth_challenge", "warn", {
+                endpoint: "protected_request",
+                reason: "feature_auth_status",
+                status: response.status,
+                session_retained: Boolean(session),
+                request_id: safeRequestId(response),
+            });
             // A collector/provider may report its own 401. Confirm the actual
             // SOC cookie with /auth/me before changing the operator's shell.
             await refreshSession();
@@ -414,7 +799,7 @@
         initializeController?.abort("logout");
         refreshController?.abort("logout");
         loginController?.abort("logout");
-        clearSession("");
+        clearSession("", "operator_logout");
         if (!csrfToken) {
             logoutInProgress = false;
             return true;
@@ -422,14 +807,15 @@
 
         const controller = makeAbortController();
         let timeoutId = null;
+        const startedAt = Date.now();
         try {
             const timeout = new Promise(resolve => {
                 timeoutId = window.setTimeout(() => {
                     controller?.abort("logout_timeout");
-                    resolve(null);
+                    resolve({ response: null, reason: "timeout" });
                 }, LOGOUT_TIMEOUT_MS);
             });
-            await Promise.race([
+            const outcome = await Promise.race([
                 fetch(`${AUTH_BASE}/logout`, {
                     method: "POST",
                     credentials: "include",
@@ -440,11 +826,31 @@
                         "X-CSRF-Token": csrfToken,
                     },
                     ...(controller ? { signal: controller.signal } : {}),
-                }).catch(() => null),
+                }).then(response => ({
+                    response,
+                    reason: response.ok
+                        ? "success"
+                        : (response.status >= 500 ? "server_error" : "http_rejected"),
+                }))
+                    .catch(() => ({ response: null, reason: "network_error" })),
                 timeout,
             ]);
+            recordDiagnostic("auth.logout_finished", outcome.response?.ok ? "debug" : "warn", {
+                endpoint: "auth_logout",
+                reason: outcome.reason,
+                status: outcome.response?.status,
+                duration_ms: Date.now() - startedAt,
+                session_retained: false,
+                request_id: safeRequestId(outcome.response),
+            });
         } catch (_error) {
             // Local state was already cleared; the request is best-effort.
+            recordDiagnostic("auth.logout_finished", "warn", {
+                endpoint: "auth_logout",
+                reason: "unexpected_client_error",
+                duration_ms: Date.now() - startedAt,
+                session_retained: false,
+            });
         } finally {
             if (timeoutId !== null) window.clearTimeout(timeoutId);
             logoutInProgress = false;
@@ -465,6 +871,8 @@
         hasRole,
         session: publicSession,
         clear: clearSession,
+        diagnostics: listDiagnostics,
+        clearDiagnostics,
     };
 
     document.addEventListener?.("visibilitychange", () => {
@@ -472,6 +880,17 @@
     });
     window.addEventListener("focus", () => {
         if (session) void refreshSession();
+    });
+    window.addEventListener("storage", event => {
+        if (event?.key !== DIAGNOSTIC_KEY) return;
+        if (event.newValue === null) {
+            diagnosticEvents = [];
+            return;
+        }
+        diagnosticEvents = mergeDiagnostics(
+            diagnosticEvents,
+            parseDiagnostics(event.newValue),
+        );
     });
     window.addEventListener("DOMContentLoaded", initialize);
 })();

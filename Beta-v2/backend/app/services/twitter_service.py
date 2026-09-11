@@ -39,7 +39,7 @@ class TwitterService:
             return {"success": False, "error": "Apify token not configured"}
 
         clean_handle = username.lstrip("@").strip()
-        last_err = None
+        provider_failed = False
 
         for actor_id, payload_fn in _TWITTER_ACTORS:
             try:
@@ -94,7 +94,18 @@ class TwitterService:
                     "source": "apify",
                 }
             except Exception as e:
-                logger.warning("Failed fetching Twitter via %s: %s", actor_id, e)
-                last_err = e
+                logger.warning(
+                    "event=social_provider_failed provider=apify platform=twitter "
+                    "error_type=%s",
+                    type(e).__name__,
+                )
+                provider_failed = True
 
-        return {"success": False, "error": str(last_err or "No profile found on Apify X scraper")}
+        return {
+            "success": False,
+            "error": (
+                "Twitter provider request failed"
+                if provider_failed
+                else "No profile found on Apify X scraper"
+            ),
+        }

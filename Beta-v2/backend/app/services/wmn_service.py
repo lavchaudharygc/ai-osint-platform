@@ -35,7 +35,10 @@ def _load_wmn_sites() -> List[Dict[str, Any]]:
                 _WMN_SITES = data.get("sites", [])
                 logger.info("Loaded %d WMN site templates from local file", len(_WMN_SITES))
         except Exception as exc:
-            logger.error("Failed to load local WMN data: %s", exc)
+            logger.error(
+                "event=wmn_data_load_failed source=local error_type=%s",
+                type(exc).__name__,
+            )
     return _WMN_SITES
 
 
@@ -69,7 +72,10 @@ class WhatsMyNameService:
                         self.sites = sites
                         logger.info("Fetched %d WMN templates from remote", len(sites))
         except Exception as exc:
-            logger.warning("WMN remote fallback failed: %s", exc)
+            logger.warning(
+                "event=wmn_data_load_failed source=remote error_type=%s",
+                type(exc).__name__,
+            )
         return self.sites
 
     async def _check_site(

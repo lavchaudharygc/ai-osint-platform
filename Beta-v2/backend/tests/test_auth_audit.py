@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from http.cookies import SimpleCookie
@@ -239,7 +240,11 @@ def test_user_store_readiness_requires_an_active_investigator(tmp_path: Path) ->
         store.validate()
 
 
-def test_tampered_cookie_and_wrong_csrf_are_rejected(configured_security: Path) -> None:
+def test_tampered_cookie_and_wrong_csrf_are_rejected(
+    configured_security: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="app.security.auth")
     with TestClient(_app()) as client:
         login = _login(client)
         csrf = login.json()["csrf_token"]
@@ -247,14 +252,24 @@ def test_tampered_cookie_and_wrong_csrf_are_rejected(configured_security: Path) 
             "/api/v1/protected-pii", headers={"X-CSRF-Token": f"{csrf}x"}
         )
         assert denied.status_code == 403
+        valid_cookie = client.cookies.get(settings.auth_cookie_name)
+        assert valid_cookie is not None
+        payload_part, signature_part = valid_cookie.split(".", 1)
+        replacement = "A" if signature_part[0] != "A" else "B"
+        tampered_cookie = f"{payload_part}.{replacement}{signature_part[1:]}"
         client.cookies.set(
             settings.auth_cookie_name,
-            "not-a-valid.signed-cookie",
+            tampered_cookie,
             path=settings.auth_cookie_path,
         )
         invalid = client.get("/api/v1/auth/me")
         assert invalid.status_code == 401
-        assert "not-a-valid" not in invalid.text
+        assert tampered_cookie not in invalid.text
+
+    assert "event=auth_request_rejected reason=csrf_validation_failed" in caplog.text
+    assert "event=auth_session_rejected reason=bad_signature" in caplog.text
+    assert tampered_cookie not in caplog.text
+    assert csrf not in caplog.text
 
 
 def test_login_rate_gate_and_generic_credentials_error(configured_security: Path) -> None:

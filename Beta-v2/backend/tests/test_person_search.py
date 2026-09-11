@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -227,7 +228,13 @@ async def test_service_is_bounded_serpapi_only_and_returns_typed_groups() -> Non
 
 
 @pytest.mark.anyio
-async def test_provider_failure_preserves_approved_partial_results() -> None:
+async def test_provider_failure_preserves_approved_partial_results(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(
+        logging.WARNING,
+        logger="app.services.person_search.service",
+    )
     calls = 0
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -265,6 +272,10 @@ async def test_provider_failure_preserves_approved_partial_results() -> None:
     assert result.counts.queries_attempted == 2
     assert result.errors[0].code == "rate_limited"
     assert "quota exhausted" not in result.model_dump_json()
+    assert "reason=rate_limited" in caplog.text
+    assert "Shubham Jha" not in caplog.text
+    assert "test-key" not in caplog.text
+    assert "quota exhausted" not in caplog.text
 
 
 @pytest.mark.anyio

@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -104,6 +105,14 @@ class Settings(BaseSettings):
     wikidata_timeout_seconds: float = Field(default=10.0, ge=2.0, le=30.0)
 
     database_url: str = "sqlite:///./beta_v2_osint.db"
+
+    # Rotating operational diagnostics. This is deliberately separate from
+    # the append-only security audit and contains no request bodies or targets.
+    app_log_enabled: bool = True
+    app_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    app_log_path: Path = BACKEND_PATH / "runtime" / "application.log"
+    app_log_max_bytes: int = Field(default=5_242_880, ge=65_536, le=104_857_600)
+    app_log_backup_count: int = Field(default=5, ge=1, le=20)
 
 
 settings = Settings()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 import logging
+import time
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -46,6 +47,10 @@ class _NoStoreValidationRoute(APIRoute):
                             "msg": "Invalid person-search request value",
                         }
                     )
+                logger.warning(
+                    "event=person_search_validation_rejected error_count=%d",
+                    max(1, len(safe_errors)),
+                )
                 return JSONResponse(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     content={"detail": safe_errors or [{
@@ -98,6 +103,11 @@ async def _record_person_search_access(
         )
         return await asyncio.to_thread(get_audit_logger().record, event)
     except AuditUnavailable as exc:
+        logger.error(
+            "event=person_search_audit_unavailable outcome=%s error_type=%s",
+            outcome,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Person-search audit is unavailable",
@@ -141,11 +151,21 @@ async def person_search(
 
     investigation_id = f"UPP-{uuid4().hex[:8].upper()}"
     case_id = request.case_id or investigation_id
-    await _record_person_search_access(
+    started = time.monotonic()
+    requested_receipt = await _record_person_search_access(
         user=user,
         request=request,
         case_id=case_id,
         outcome="requested",
+    )
+    logger.info(
+        "event=person_search_started investigation_id=%s platform_count=%d "
+        "query_limit=%d profile_limit=%d audit_event_id=%s",
+        investigation_id,
+        len(request.platforms),
+        request.query_limit,
+        request.max_profiles,
+        requested_receipt.event_id,
     )
     try:
         result = await service.search(
@@ -154,7 +174,12 @@ async def person_search(
             case_id=case_id,
         )
     except Exception as exc:
-        logger.warning("Person-search service failed unexpectedly")
+        logger.error(
+            "event=person_search_failed investigation_id=%s elapsed_ms=%d error_type=%s",
+            investigation_id,
+            round((time.monotonic() - started) * 1000),
+            type(exc).__name__,
+        )
         await _record_person_search_access(
             user=user,
             request=request,
@@ -180,6 +205,20 @@ async def person_search(
         field_labels=_result_field_labels(result),
     )
     result.audit_event_id = receipt.event_id
+    provider_error = result.errors[0].code if result.errors else "none"
+    logger.info(
+        "event=person_search_completed investigation_id=%s result_status=%s "
+        "provider_error=%s profiles=%d queries_attempted=%d queries_completed=%d "
+        "elapsed_ms=%d audit_event_id=%s",
+        investigation_id,
+        result.status,
+        provider_error,
+        result.counts.profiles,
+        result.counts.queries_attempted,
+        result.counts.queries_completed,
+        round((time.monotonic() - started) * 1000),
+        receipt.event_id,
+    )
     response.headers["Cache-Control"] = "no-store, private"
     response.headers["Pragma"] = "no-cache"
     return result

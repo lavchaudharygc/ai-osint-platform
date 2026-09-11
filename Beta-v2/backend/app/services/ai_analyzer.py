@@ -290,8 +290,17 @@ class AIAnalyzer:
                             for f in (parsed.get("riskFlags") or [])[:6]
                         ],
                     }
+            else:
+                logger.warning(
+                    "event=ai_provider_failed operation=personality "
+                    "reason=http_error http_status=%d",
+                    resp.status_code,
+                )
         except Exception as exc:
-            logger.warning("AI personality API call failed: %s", exc)
+            logger.warning(
+                "event=ai_provider_failed operation=personality error_type=%s",
+                type(exc).__name__,
+            )
         return {}
 
     async def analyze_with_gemini_reasoning(
@@ -376,8 +385,17 @@ class AIAnalyzer:
                             for f in (parsed.get("riskFlags") or [])[:6]
                         ],
                     }
+            else:
+                logger.warning(
+                    "event=ai_provider_failed operation=reasoning "
+                    "reason=http_error http_status=%d",
+                    resp.status_code,
+                )
         except Exception as exc:
-            logger.warning("Gemini AI reasoning call failed: %s", exc)
+            logger.warning(
+                "event=ai_provider_failed operation=reasoning error_type=%s",
+                type(exc).__name__,
+            )
 
         return {
             "available": False,
@@ -443,8 +461,16 @@ class AIAnalyzer:
             if resp.status_code == 200:
                 analysis = self._sanitize(resp.json()["choices"][0]["message"]["content"])
                 return {"success": True, "analysis": analysis}
+            logger.warning(
+                "event=ai_provider_failed operation=risk_assessment "
+                "reason=http_error http_status=%d",
+                resp.status_code,
+            )
         except Exception as exc:
-            logger.warning("Risk assessment API failed: %s", exc)
+            logger.warning(
+                "event=ai_provider_failed operation=risk_assessment error_type=%s",
+                type(exc).__name__,
+            )
 
         return {
             "success": False,
@@ -537,7 +563,16 @@ class AIAnalyzer:
                             filtered_results.append(orig_item)
 
                     return filtered_results or cti_results
+            else:
+                logger.warning(
+                    "event=ai_provider_failed operation=cti_classification "
+                    "reason=http_error http_status=%d",
+                    resp.status_code,
+                )
         except Exception as exc:
-            logger.warning("LLM CTI Indian-centric classification failed: %s", exc)
+            logger.warning(
+                "event=ai_provider_failed operation=cti_classification error_type=%s",
+                type(exc).__name__,
+            )
 
         return cti_results

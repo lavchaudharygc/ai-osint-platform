@@ -8,6 +8,15 @@ let progressInterval = null;
 let activeLegacyController = null;
 let legacyRequestSerial = 0;
 
+function safeResponseRequestId(response) {
+    try {
+        const value = String(response?.headers?.get?.("x-request-id") || "");
+        return /^[A-Za-z0-9_-]{8,64}$/.test(value) ? value : "";
+    } catch (_error) {
+        return "";
+    }
+}
+
 function handleLogin() {
     return window.SocAuth.login();
 }
@@ -421,8 +430,12 @@ async function executeScan(fromHero = false) {
     // Show loader fillup animation
     startScanLoader(queryVal);
 
-    logConsole(`[SYS] OSINT DISPATCH — TARGET: ${queryVal} (${kind.toUpperCase()})`);
+    // Keep the UI diagnostic console useful without copying the investigated
+    // identifier into a log-like surface.
+    logConsole(`[SYS] OSINT DISPATCH — INPUT TYPE: ${kind.toUpperCase()}`);
 
+    let responseStatus = 0;
+    let responseRequestId = "";
     try {
         const res = await window.SocAuth.fetch(`${API_BASE}/api/v1/investigation/username`, {
             method: "POST",
@@ -430,11 +443,17 @@ async function executeScan(fromHero = false) {
             body: JSON.stringify(payload),
             signal: controller.signal,
         });
+        responseStatus = boundedInteger(res.status, 0, 0, 599);
+        responseRequestId = safeResponseRequestId(res);
 
         if (serial !== legacyRequestSerial || controller.signal.aborted) return;
 
         if (!res.ok) {
-            throw new Error(`API Error HTTP ${res.status}`);
+            const failure = new Error("Investigation request failed");
+            failure.name = "ScanHttpError";
+            failure.httpStatus = responseStatus;
+            failure.requestId = responseRequestId;
+            throw failure;
         }
 
         const data = await res.json();
@@ -455,8 +474,26 @@ async function executeScan(fromHero = false) {
     } catch (err) {
         if (serial !== legacyRequestSerial || controller.signal.aborted || err?.name === "AbortError") return;
         stopScanLoader();
-        logConsole(`[ERR] SCAN INTERRUPTED: ${err.message}`);
-        alert(`OSINT Scan Interrupted: ${err.message}`);
+        if (err?.name === "ScanHttpError") {
+            const status = boundedInteger(err.httpStatus, 500, 400, 599);
+            const reference = /^[A-Za-z0-9_-]{8,64}$/.test(String(err.requestId || ""))
+                ? String(err.requestId)
+                : "UNAVAILABLE";
+            logConsole(`[ERR] SCAN INTERRUPTED: HTTP_${status} REFERENCE=${reference}`);
+            alert(`OSINT scan failed (HTTP ${status}). Failure reference: ${reference}. Check backend operational logs.`);
+        } else {
+            const reason = responseStatus > 0
+                ? "RESPONSE_ERROR"
+                : (err?.name === "TypeError" ? "NETWORK_ERROR" : "CLIENT_ERROR");
+            const reference = responseRequestId || "UNAVAILABLE";
+            const httpContext = responseStatus > 0 ? ` HTTP_${responseStatus}` : "";
+            logConsole(`[ERR] SCAN INTERRUPTED: ${reason}${httpContext} REFERENCE=${reference}`);
+            if (responseStatus > 0) {
+                alert(`OSINT scan response could not be processed (HTTP ${responseStatus}). Failure reference: ${reference}. Check backend operational logs.`);
+            } else {
+                alert("OSINT scan was interrupted. No server failure reference was available. Check launcher and backend operational logs.");
+            }
+        }
     } finally {
         if (serial === legacyRequestSerial) activeLegacyController = null;
     }

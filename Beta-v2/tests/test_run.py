@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import socket
 import subprocess
+import tempfile
 import unittest
+import urllib.error
 from unittest.mock import MagicMock, patch
 
 import run
@@ -58,6 +61,18 @@ class HealthAndMonitorTests(unittest.TestCase):
         response.read.return_value = b'{"status":'
 
         self.assertFalse(run.http_is_healthy(run.HEALTH_TARGETS[0], timeout=0.1))
+
+    @patch("run.urllib.request.urlopen")
+    def test_wrapped_socket_timeout_is_classified_as_timeout(
+        self,
+        urlopen: MagicMock,
+    ) -> None:
+        urlopen.side_effect = urllib.error.URLError(
+            socket.timeout("HEALTH-TIMEOUT-SENTINEL")
+        )
+
+        self.assertFalse(run.http_is_healthy(run.HEALTH_TARGETS[0], timeout=0.1))
+        self.assertEqual(run._last_health_failure["backend"], ("timeout", 0))
 
     def test_wait_requires_both_services(self) -> None:
         processes = {"backend": MagicMock(), "frontend": MagicMock()}
@@ -129,6 +144,14 @@ class ShutdownTests(unittest.TestCase):
 
 
 class MainFlowTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # These are control-flow tests, so keep them entirely away from the
+        # developer's real backend/runtime/launcher.log file.
+        run.shutdown_launcher_logging()
+        logging_patch = patch("run.configure_launcher_logging", return_value=False)
+        logging_patch.start()
+        self.addCleanup(logging_patch.stop)
+
     @patch("run.webbrowser.open")
     @patch("run.subprocess.Popen")
     @patch("run.find_unavailable_ports", return_value=[("frontend", run.FRONTEND_PORT)])
@@ -231,6 +254,109 @@ class AlternateLauncherTests(unittest.TestCase):
                 self.assertNotIn("--reload", content)
                 self.assertNotIn("start-process", content)
                 self.assertNotIn("sleep ", content)
+
+
+class LauncherLoggingTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        run.shutdown_launcher_logging()
+
+    def test_configure_opens_destination_eagerly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "launcher.log"
+
+            self.assertTrue(run.configure_launcher_logging(log_path))
+            self.assertTrue(log_path.is_file())
+            run.shutdown_launcher_logging()
+
+    def test_log_path_that_is_a_directory_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "not-a-file"
+            log_path.mkdir()
+
+            self.assertFalse(run.configure_launcher_logging(log_path))
+            self.assertIsNone(run._launcher_handler)
+
+    @patch("run.socket.socket")
+    def test_port_probe_log_does_not_store_os_error_text(
+        self,
+        socket_factory: MagicMock,
+    ) -> None:
+        probe = socket_factory.return_value.__enter__.return_value
+        probe.bind.side_effect = OSError(10048, "PORT-ERROR-SENTINEL")
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "launcher.log"
+            self.assertTrue(run.configure_launcher_logging(log_path))
+            self.assertFalse(run.port_is_free(run.HOST, run.BACKEND_PORT))
+            run.shutdown_launcher_logging()
+            content = log_path.read_text(encoding="utf-8")
+
+        self.assertIn("event=port_probe_failed", content)
+        self.assertIn("reason=address_in_use", content)
+        self.assertNotIn("PORT-ERROR-SENTINEL", content)
+
+    @patch("run.find_unavailable_ports", return_value=[("backend", run.BACKEND_PORT)])
+    def test_blocked_port_is_persisted(self, _ports: MagicMock) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "launcher.log"
+            with patch.object(run, "LAUNCHER_LOG_PATH", log_path):
+                self.assertEqual(run.main(), 1)
+            content = log_path.read_text(encoding="utf-8")
+
+        self.assertIn("event=launcher_port_unavailable service=backend port=8010", content)
+        self.assertIn("event=launcher_failed reason=port_unavailable", content)
+
+    @patch("run.find_unavailable_ports", return_value=[("backend", run.BACKEND_PORT)])
+    @patch("builtins.print")
+    def test_main_prints_absolute_active_log_path(
+        self,
+        output: MagicMock,
+        _ports: MagicMock,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "diagnostics" / "launcher.log"
+            with patch.object(run, "LAUNCHER_LOG_PATH", log_path):
+                self.assertEqual(run.main(), 1)
+
+            expected = f"[LOG] Launcher diagnostics: {log_path.resolve()}"
+            self.assertTrue(
+                any(call.args == (expected,) for call in output.call_args_list),
+                output.call_args_list,
+            )
+
+    def test_shutdown_failures_are_safe_and_report_still_running_child(self) -> None:
+        process = MagicMock()
+        process.poll.return_value = None
+        process.terminate.side_effect = OSError(5, "TERMINATE-ERROR-SENTINEL")
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired("WAIT-COMMAND-SENTINEL", 0),
+            OSError(6, "REAP-ERROR-SENTINEL"),
+        ]
+        process.kill.side_effect = OSError(13, "KILL-ERROR-SENTINEL")
+
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "launcher.log"
+            self.assertTrue(run.configure_launcher_logging(log_path))
+            run.terminate_processes({"backend": process}, timeout=0.0)
+            run.shutdown_launcher_logging()
+            content = log_path.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "event=child_shutdown_failed service=backend action=terminate "
+            "error_type=OSError errno=5 winerror=0",
+            content,
+        )
+        self.assertIn(
+            "event=child_shutdown_incomplete service=backend action=wait "
+            "error_type=TimeoutExpired errno=0 winerror=0",
+            content,
+        )
+        self.assertIn(
+            "event=child_shutdown_failed service=backend action=kill "
+            "error_type=PermissionError errno=13 winerror=0",
+            content,
+        )
+        self.assertIn("action=final_check state=still_running", content)
+        self.assertNotIn("SENTINEL", content)
 
 
 if __name__ == "__main__":

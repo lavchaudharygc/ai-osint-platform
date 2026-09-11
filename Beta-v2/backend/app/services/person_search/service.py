@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import logging
 from typing import Any
 
 import httpx
@@ -20,6 +21,7 @@ from app.services.person_search.query_builder import PersonSearchQueryBuilder
 
 _UNSET = object()
 SERPAPI_SEARCH_URL = "https://serpapi.com/search.json"
+logger = logging.getLogger(__name__)
 
 
 class PersonSearchService:
@@ -177,6 +179,7 @@ class PersonSearchService:
         discovery = await self._discover(
             queries,
             country_code=request.country_code,
+            investigation_id=investigation_id,
         )
         profiles = self.normalizer.normalize_results(
             discovery["results"],
@@ -249,6 +252,7 @@ class PersonSearchService:
         queries: list[dict[str, Any]],
         *,
         country_code: str | None,
+        investigation_id: str,
     ) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         attempted = 0
@@ -274,12 +278,24 @@ class PersonSearchService:
                     try:
                         response = await client.get(self.base_url, params=params)
                     except httpx.TimeoutException:
+                        logger.warning(
+                            "event=person_search_provider_failed investigation_id=%s "
+                            "provider=serpapi reason=timeout attempt=%d",
+                            investigation_id,
+                            attempted,
+                        )
                         error = {
                             "code": "timeout",
                             "message": "The person-search provider timed out.",
                         }
                         break
                     except httpx.HTTPError:
+                        logger.warning(
+                            "event=person_search_provider_failed investigation_id=%s "
+                            "provider=serpapi reason=network_error attempt=%d",
+                            investigation_id,
+                            attempted,
+                        )
                         error = {
                             "code": "network_error",
                             "message": "The person-search provider could not be reached.",
@@ -288,18 +304,38 @@ class PersonSearchService:
 
                     payload = self._json_payload(response)
                     if response.status_code == 429:
+                        logger.warning(
+                            "event=person_search_provider_failed investigation_id=%s "
+                            "provider=serpapi reason=rate_limited attempt=%d http_status=%d",
+                            investigation_id,
+                            attempted,
+                            response.status_code,
+                        )
                         error = {
                             "code": "rate_limited",
                             "message": "The person-search provider rate limited the request.",
                         }
                         break
                     if response.is_error:
+                        logger.warning(
+                            "event=person_search_provider_failed investigation_id=%s "
+                            "provider=serpapi reason=http_error attempt=%d http_status=%d",
+                            investigation_id,
+                            attempted,
+                            response.status_code,
+                        )
                         error = {
                             "code": "provider_error",
                             "message": "The person-search provider returned an error.",
                         }
                         break
                     if not isinstance(payload, dict):
+                        logger.warning(
+                            "event=person_search_provider_failed investigation_id=%s "
+                            "provider=serpapi reason=invalid_response attempt=%d",
+                            investigation_id,
+                            attempted,
+                        )
                         error = {
                             "code": "invalid_response",
                             "message": "The person-search provider returned an invalid response.",
@@ -314,6 +350,13 @@ class PersonSearchService:
                                 for token in ("rate", "quota", "limit", "credit")
                             )
                             else "provider_error"
+                        )
+                        logger.warning(
+                            "event=person_search_provider_failed investigation_id=%s "
+                            "provider=serpapi reason=%s attempt=%d",
+                            investigation_id,
+                            code,
+                            attempted,
                         )
                         error = {
                             "code": code,
@@ -330,7 +373,13 @@ class PersonSearchService:
                         row = self._search_result(item)
                         if row is not None:
                             results.append(row)
-        except (TypeError, ValueError, httpx.InvalidURL):
+        except (TypeError, ValueError, httpx.InvalidURL) as exc:
+            logger.error(
+                "event=person_search_provider_failed investigation_id=%s "
+                "provider=serpapi reason=configuration_error error_type=%s",
+                investigation_id,
+                type(exc).__name__,
+            )
             error = {
                 "code": "provider_error",
                 "message": "The person-search provider is not configured correctly.",

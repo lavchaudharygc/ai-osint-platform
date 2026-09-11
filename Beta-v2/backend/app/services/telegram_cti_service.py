@@ -176,7 +176,12 @@ async def fetch_cti(
                     if attempt < 2:
                         await asyncio.sleep(1.5 * (attempt + 1))
                         continue
-                    return q, None, str(exc)
+                    logger.warning(
+                        "event=cti_provider_failed provider=leakosintapi "
+                        "operation=search error_type=%s",
+                        type(exc).__name__,
+                    )
+                    return q, None, "Provider request failed"
             return q, None, "Rate limit exceeded"
 
     current_queue = list(clean_initial)
@@ -320,6 +325,11 @@ class TelegramCTIService:
             async with httpx.AsyncClient(timeout=25.0, transport=self._transport) as client:
                 response = await client.post(self.api_url, json=payload)
         except Exception as exc:
+            logger.warning(
+                "event=cti_provider_failed provider=leakosintapi "
+                "operation=healthcheck error_type=%s",
+                type(exc).__name__,
+            )
             return {
                 "provider": "leakosintapi",
                 "configured": True,
@@ -327,7 +337,7 @@ class TelegramCTIService:
                 "status": "error",
                 "outcome": "network_error",
                 "checked_at": checked_at,
-                "provider_message": str(exc),
+                "provider_message": "Provider request failed",
                 "raw_provider_response": None,
             }
 

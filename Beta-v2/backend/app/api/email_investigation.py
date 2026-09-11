@@ -1,6 +1,8 @@
 """Authenticated, audited, single-target email-investigation endpoint."""
 
 import asyncio
+import logging
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
@@ -15,6 +17,7 @@ from app.security.auth import AuthenticatedUser, require_csrf, require_roles
 
 router = APIRouter(prefix="/api/v1/email-investigation", tags=["email-investigation"])
 require_email_investigator = require_roles("investigator")
+logger = logging.getLogger(__name__)
 
 
 def get_email_investigation_service() -> EmailInvestigationService:
@@ -46,6 +49,11 @@ async def _record_restricted_access(
             event,
         )
     except AuditUnavailable as exc:
+        logger.error(
+            "event=email_investigation_audit_unavailable outcome=%s error_type=%s",
+            outcome,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Restricted disclosure audit is unavailable",
@@ -63,7 +71,18 @@ async def run_email_investigation(
 ) -> EmailInvestigationResponse:
     """Investigate one address; restricted disclosure requires RBAC and audit."""
 
+    started = time.monotonic()
+    logger.info(
+        "event=email_investigation_started restricted_requested=%s "
+        "breach_requested=%s web_discovery_requested=%s",
+        request.include_restricted_breach_details,
+        request.include_breach_lookup,
+        request.include_web_discovery,
+    )
     if request.include_restricted_breach_details and "breach_pii_viewer" not in user.roles:
+        logger.warning(
+            "event=email_investigation_rejected reason=insufficient_restricted_role"
+        )
         await _record_restricted_access(user=user, request=request, outcome="denied")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -120,4 +139,14 @@ async def run_email_investigation(
 
     response.headers["Cache-Control"] = "no-store, private"
     response.headers["Pragma"] = "no-cache"
+    logger.info(
+        "event=email_investigation_completed investigation_id=%s result_status=%s "
+        "breach_status=%s web_status=%s risk_status=%s elapsed_ms=%d",
+        result.investigation_id,
+        result.status,
+        result.breach_intelligence.status,
+        result.web_discovery.status,
+        result.risk_summary.overall_status,
+        round((time.monotonic() - started) * 1000),
+    )
     return result

@@ -36,9 +36,10 @@ def test_readiness_is_generic_and_rechecks_security_state() -> None:
     assert first.json() == {"status": "ready"}
     assert first.headers["cache-control"] == "no-store"
     assert second.status_code == 200
-    assert get_session.call_count == 2
-    assert users.validate.call_count == 2
-    assert audit.verify_integrity.call_count == 2
+    # One startup check is followed by both explicit readiness requests.
+    assert get_session.call_count == 3
+    assert users.validate.call_count == 3
+    assert audit.verify_integrity.call_count == 3
 
 
 @pytest.mark.parametrize(
