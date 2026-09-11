@@ -98,7 +98,23 @@ class Settings(BaseSettings):
     telegram_api_hash: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_API_HASH"))
     telegram_cti_api_key: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_CTI_API_KEY"))
     telegram_cti_enabled: bool = Field(default_factory=lambda: os.getenv("TELEGRAM_CTI_ENABLED", "true").lower() == "true")
+    # CTI collection is deliberately conservative: request values may lower
+    # these ceilings, but can never expand them. Completed breach responses are
+    # not cached because they may contain sensitive personal information.
+    telegram_cti_default_limit: int = Field(default=50, ge=1, le=100)
+    telegram_cti_max_seed_identifiers: int = Field(default=3, ge=1, le=5)
+    telegram_cti_max_depth: int = Field(default=2, ge=1, le=2)
+    telegram_cti_max_logical_searches: int = Field(default=5, ge=1, le=15)
+    telegram_cti_max_http_attempts: int = Field(default=6, ge=1, le=20)
+    telegram_cti_max_http_attempts_per_hour: int = Field(default=30, ge=1, le=1_000)
+    telegram_cti_max_retries_per_query: int = Field(default=1, ge=0, le=2)
+    telegram_cti_max_concurrency: int = Field(default=1, ge=1, le=3)
+    telegram_cti_min_request_interval_seconds: float = Field(default=0.5, ge=0.0, le=10.0)
+    telegram_cti_cooldown_seconds: int = Field(default=300, ge=30, le=86_400)
     cti_indian_filtering_enabled: bool = Field(default_factory=lambda: os.getenv("CTI_INDIAN_FILTERING_ENABLED", "true").lower() == "true")
+    # Sending breach records to an external AI is opt-in. Local deterministic
+    # filtering remains available when Indian-centric filtering is enabled.
+    cti_external_ai_filtering_enabled: bool = Field(default=False)
 
     wikidata_enabled: bool = Field(default_factory=lambda: os.getenv("WIKIDATA_ENABLED", "true").lower() == "true")
     wikidata_user_agent: str = Field(default_factory=lambda: os.getenv("WIKIDATA_USER_AGENT", "UPPoliceCyberCell/2.0 (cybercell@uppolice.gov.in)"))

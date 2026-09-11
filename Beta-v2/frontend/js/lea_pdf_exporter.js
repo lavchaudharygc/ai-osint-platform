@@ -149,6 +149,12 @@ window.LeaPdfExporter = {
     const dorkHits = dorking.results || [];
     const ctiData = data.telegram_cti || {};
     const ctiResults = ctiData.results || [];
+    const ctiStatus = String(ctiData.status || (ctiResults.length ? "success" : "no_results")).toLowerCase();
+    const ctiUsage = ctiData.usage && typeof ctiData.usage === "object" ? ctiData.usage : {};
+    const ctiHourlyText = Number(ctiUsage.hourly_http_attempt_limit || 0)
+      ? ` | Rolling hour: ${Number(ctiUsage.hourly_http_attempts_at_end || 0)}/${Number(ctiUsage.hourly_http_attempt_limit)}`
+      : "";
+    const ctiUsageText = `Status: ${ctiStatus.toUpperCase()} | Searches: ${Number(ctiUsage.logical_searches_performed || ctiData.searches_performed || 0)}/${Number(ctiUsage.logical_search_limit || 0)} | Provider calls: ${Number(ctiUsage.http_attempts || 0)}/${Number(ctiUsage.http_attempt_limit || 0)}${ctiHourlyText}`;
     const internalMatches = data.internal_database_matches || {};
     const internalList = internalMatches.matches || [];
     const scrapedData = data.scraped_data || {};
@@ -332,7 +338,14 @@ window.LeaPdfExporter = {
     }
 
     if (!ctiRowsHTML) {
-      ctiRowsHTML = `<tr><td colspan="3" style="text-align: center; color: #555;">No records matched in active darkweb leak databases.</td></tr>`;
+      const ctiEmptyMessage = ctiStatus === "error" || ctiStatus === "partial"
+        ? redactSensitiveText(ctiData.error || "CTI lookup stopped before a complete result was available.")
+        : ctiStatus === "skipped"
+        ? "CTI lookup was disabled by configuration."
+        : ctiStatus === "not_configured"
+        ? "CTI lookup was not configured."
+        : "No records matched in the completed CTI searches.";
+      ctiRowsHTML = `<tr><td colspan="3" style="text-align: center; color: #555;">${esc(ctiEmptyMessage)}</td></tr>`;
     }
 
     // --- 3. Associated Accounts HTML ---
@@ -557,13 +570,13 @@ window.LeaPdfExporter = {
     ${platformCardsHTML}
 
     <div class="section-title">3. TELEGRAM CTI DARKWEB BREACH &amp; LEAK DOSSIER</div>
-    <p><small>Matches retrieved from darkweb paste dumps, telecom subscriber leaks, and credential breach registries:</small></p>
+    <p><small>${esc(ctiUsageText)}. Sensitive authentication and identifier values are suppressed.</small></p>
     <table>
         <thead>
             <tr>
                 <th style="width:25%;">Database / Source</th>
                 <th style="width:30%;">Breach Context / Leak Details</th>
-                <th>Exposed Record Fields (Address, DocNumber, Password, Phone)</th>
+                <th>Exposed Record Fields (sensitive values suppressed)</th>
             </tr>
         </thead>
         <tbody>

@@ -18,5 +18,13 @@ class TelegramService:
         self.cti_key = settings.telegram_cti_api_key
 
     async def search_cti_breaches(self, queries: List[str]) -> Dict[str, Any]:
-        """Query leakosintapi.com for breach databases matching target identifiers with depth-2 search."""
-        return await fetch_cti(queries)
+        """Query CTI under the server-owned privacy and quota ceilings."""
+
+        return await fetch_cti(
+            queries,
+            limit=settings.telegram_cti_default_limit,
+            max_depth=settings.telegram_cti_max_depth,
+            max_total_searches=settings.telegram_cti_max_logical_searches,
+            max_http_attempts=settings.telegram_cti_max_http_attempts,
+            max_retries_per_query=settings.telegram_cti_max_retries_per_query,
+        )

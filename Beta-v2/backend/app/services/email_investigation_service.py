@@ -137,7 +137,7 @@ _SENSITIVE_TEXT_RE = re.compile(
     r"diagnosis|treatment|medical[\s_-]*(?:record|number)|patient[\s_-]*id|"
     r"date[\s_-]*of[\s_-]*birth|birth[\s_-]*date|dob|ip[\s_-]*address|"
     r"device[\s_-]*id|imei|imsi)\b"
-    r"\s*[:=\-]\s*[^\r\n,;|]{1,200}"
+    r"[\"']?\s*[:=\-]\s*[\"']?[^\r\n,;|]{1,200}"
 )
 _INCIDENT_CONTACT_VALUE_RE = re.compile(
     r"(?i)\b(email|e-mail|phone|mobile|address|full\s*name|username)\b"
@@ -347,15 +347,59 @@ def _sensitive_group(key: Any) -> str | None:
     return None
 
 
+_SEMANTIC_FIELD_NAME_KEYS = {
+    "category",
+    "datatype",
+    "field",
+    "fieldname",
+    "key",
+    "label",
+    "name",
+    "type",
+}
+_SEMANTIC_FIELD_VALUE_KEYS = {
+    "content",
+    "data",
+    "fielddata",
+    "fieldvalue",
+    "fieldvalues",
+    "original",
+    "payload",
+    "raw",
+    "secret",
+    "text",
+    "value",
+    "values",
+}
+
+
+def _semantic_sensitive_group(value: dict[Any, Any]) -> str | None:
+    """Recognize typed key/value records such as password/value pairs."""
+
+    for raw_key, child in list(value.items())[:100]:
+        if _normalized_key(raw_key) not in _SEMANTIC_FIELD_NAME_KEYS:
+            continue
+        if isinstance(child, (str, int)) and not isinstance(child, bool):
+            sensitive = _sensitive_group(child)
+            if sensitive:
+                return sensitive
+    return None
+
+
 def _redact_sensitive_payload(value: Any, *, depth: int = 0) -> Any:
     """Recursively redact high-sensitivity values before any downstream use."""
     if depth >= 6:
         return "[TRUNCATED]"
     if isinstance(value, dict):
+        semantic_sensitive = _semantic_sensitive_group(value)
         redacted: dict[str, Any] = {}
         for raw_key, child in list(value.items())[:100]:
             key = str(raw_key)[:100]
-            if _sensitive_group(key):
+            normalized_key = _normalized_key(key)
+            if _sensitive_group(key) or (
+                semantic_sensitive
+                and normalized_key in _SEMANTIC_FIELD_VALUE_KEYS
+            ):
                 redacted[key] = "[REDACTED]"
             else:
                 redacted[key] = _redact_sensitive_payload(child, depth=depth + 1)
@@ -406,6 +450,12 @@ def _collect_breach_metadata(value: Any) -> tuple[set[str], set[str], bool]:
         if depth >= 6 or budget <= 0:
             return
         if isinstance(node, dict):
+            semantic_sensitive = _semantic_sensitive_group(node)
+            if semantic_sensitive:
+                redacted_groups.add(semantic_sensitive)
+                credential_exposure = (
+                    credential_exposure or semantic_sensitive == "authentication"
+                )
             for key, child in node.items():
                 if budget <= 0:
                     break
@@ -415,6 +465,11 @@ def _collect_breach_metadata(value: Any) -> tuple[set[str], set[str], bool]:
                 if sensitive:
                     redacted_groups.add(sensitive)
                     credential_exposure = credential_exposure or sensitive == "authentication"
+                    continue
+                if (
+                    semantic_sensitive
+                    and _normalized_key(key) in _SEMANTIC_FIELD_VALUE_KEYS
+                ):
                     continue
                 visit(child, depth + 1)
         elif isinstance(node, (list, tuple)):

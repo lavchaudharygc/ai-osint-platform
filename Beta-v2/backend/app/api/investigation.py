@@ -150,7 +150,26 @@ async def get_keys_diagnostics():
             ),
         },
         "zerobounce": {"configured": bool(settings.zerobounce_api_key), "status": "Active" if settings.zerobounce_api_key else "Missing"},
-        "telegram_cti": {"configured": bool(settings.telegram_cti_api_key), "status": "Active" if settings.telegram_cti_api_key else "Missing"},
+        "telegram_cti": {
+            "configured": bool(settings.telegram_cti_api_key),
+            "enabled": settings.telegram_cti_enabled,
+            "status": (
+                "Disabled"
+                if not settings.telegram_cti_enabled
+                else "Configured (health not checked)"
+                if settings.telegram_cti_api_key
+                else "Missing"
+            ),
+            "quota_policy": {
+                "max_seed_identifiers": settings.telegram_cti_max_seed_identifiers,
+                "max_logical_searches": settings.telegram_cti_max_logical_searches,
+                "max_http_attempts": settings.telegram_cti_max_http_attempts,
+                "max_http_attempts_per_hour": settings.telegram_cti_max_http_attempts_per_hour,
+                "cooldown_seconds": settings.telegram_cti_cooldown_seconds,
+                "response_cache": "no_store",
+            },
+            "external_ai_filtering": settings.cti_external_ai_filtering_enabled,
+        },
         "hunter": {"configured": bool(settings.hunter_api_key), "status": "Active" if settings.hunter_api_key else "Missing"},
         "rocketreach": {"configured": bool(settings.rocketreach_api_key), "status": "Active" if settings.rocketreach_api_key else "Missing"},
     }
@@ -254,6 +273,91 @@ async def _safe(coro: Awaitable[Any], component: str) -> Any:
             type(exc).__name__,
         )
         return None
+
+
+def _count_cti_rows(results: Any) -> int:
+    """Count visible breach rows without confusing database groups for rows."""
+
+    if not isinstance(results, list):
+        return 0
+    count = 0
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        rows = item.get("rows")
+        if rows is None:
+            rows = item.get("data")
+        if isinstance(rows, list):
+            count += len(rows)
+        elif isinstance(rows, dict):
+            count += 1
+    return count
+
+
+async def _sanitize_and_filter_telegram_cti(
+    raw_payload: Any,
+    target_query: str,
+) -> dict[str, Any]:
+    """Sanitize provider CTI before it reaches AI or other downstream consumers.
+
+    This is the trust boundary for the raw breach payload.  In particular,
+    password, hash, token, credential, financial, government-ID, medical, and
+    technical-identifier values are removed before the optional third-party AI
+    relevance filter is invoked.  Contact fields needed for deterministic
+    correlation remain available on the sanitized copy.
+    """
+
+    empty_payload: dict[str, Any] = {
+        "searches_performed": 0,
+        "total_records": 0,
+        "totalRecords": 0,
+        "results": [],
+        "databases": [],
+        "status": "error",
+        "error": "CTI collection failed before a complete result was available",
+    }
+    payload = raw_payload if isinstance(raw_payload, dict) else empty_payload
+    sanitized = _redact_sensitive_payload(payload)
+    if not isinstance(sanitized, dict):
+        sanitized = empty_payload.copy()
+    sanitized["filter_status"] = "disabled"
+    sanitized["filter_mode"] = "none"
+
+    cti_items = sanitized.get("results")
+    if (
+        isinstance(cti_items, list)
+        and cti_items
+        and getattr(settings, "cti_indian_filtering_enabled", True)
+    ):
+        external_filter_active = bool(
+            getattr(settings, "cti_external_ai_filtering_enabled", False)
+            and settings.groq_api_key
+        )
+        sanitized["filter_mode"] = "external_ai" if external_filter_active else "local"
+        filtered_cti = await _safe(
+            AIAnalyzer().filter_indian_centric_cti(cti_items, target_query),
+            "cti_ai_filter",
+        )
+        if isinstance(filtered_cti, list):
+            before_filter = _count_cti_rows(cti_items)
+            sanitized["results"] = filtered_cti
+            visible_records = _count_cti_rows(filtered_cti)
+            visible_databases = sorted(
+                {
+                    str(item.get("database"))
+                    for item in filtered_cti
+                    if isinstance(item, dict) and item.get("database")
+                }
+            )
+            sanitized["records_before_filter"] = before_filter
+            sanitized["total_records"] = visible_records
+            sanitized["totalRecords"] = visible_records
+            sanitized["databases"] = visible_databases
+            sanitized["filter_status"] = "applied"
+        else:
+            sanitized["filter_status"] = "failed"
+
+    return sanitized
 
 
 @router.post("/username", response_model=InvestigationResponse)
@@ -475,7 +579,12 @@ async def run_investigation(
     if not raw_cti_list:
         raw_cti_list.append(clean_handle)
 
-    cti_queries = list(dict.fromkeys(q.strip() for q in raw_cti_list if q and len(str(q).strip()) >= 3))[:5]
+    cti_seed_limit = int(getattr(settings, "telegram_cti_max_seed_identifiers", 3))
+    cti_queries = list(
+        dict.fromkeys(
+            q.strip() for q in raw_cti_list if q and len(str(q).strip()) >= 3
+        )
+    )[:cti_seed_limit]
 
     # Verify extra emails + run CTI concurrently
     verify_tasks = [
@@ -493,19 +602,14 @@ async def run_investigation(
 
     gathered = await asyncio.gather(*verify_tasks, telegram_cti_task, hitek_task)
     verified_extras = [r for r in gathered[:len(verify_tasks)] if r]
-    telegram_cti = gathered[len(verify_tasks)] or {"searches_performed": 0, "total_records": 0, "results": [], "databases": []}
+    raw_telegram_cti = gathered[len(verify_tasks)]
     internal_db_matches = gathered[-1] or {"status": "not_available", "matches": []}
 
-    # Filter Telegram CTI results for Indian-centric relevance to reduce scammer noise
-    if telegram_cti and telegram_cti.get("results") and getattr(settings, "cti_indian_filtering_enabled", True):
-        cti_items = telegram_cti.get("results") or []
-        filtered_cti = await _safe(
-            AIAnalyzer().filter_indian_centric_cti(cti_items, raw_query),
-            "cti_ai_filter",
-        )
-        if filtered_cti and isinstance(filtered_cti, list):
-            telegram_cti["results"] = filtered_cti
-            telegram_cti["total_records"] = len(filtered_cti)
+    # Never expose a raw breach payload to Groq/other AI or later pipeline stages.
+    telegram_cti = await _sanitize_and_filter_telegram_cti(
+        raw_telegram_cti,
+        raw_query,
+    )
 
     # Merge and deduplicate all emails
     seen_emails: set = set()
@@ -545,9 +649,8 @@ async def run_investigation(
     associated_accounts = AssociatedAccountsService.verify_account_matches(
         clean_handle, wmn_hits, scraped_data, dorking_results, telegram_cti,
     )
-    # Legacy CTI correlation may use contact identifiers internally, but secret,
-    # financial, government-ID, medical, DOB, IP, and device values must never
-    # cross the public response boundary.
+    # Defence in depth at the response boundary.  The CTI payload was already
+    # sanitized before AI filtering and deterministic account correlation.
     public_telegram_cti = _redact_sensitive_payload(telegram_cti)
 
     # ── STEP 6: AI Behavioral Profiling ──

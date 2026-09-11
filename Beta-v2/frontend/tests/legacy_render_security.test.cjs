@@ -308,6 +308,26 @@ async function runAppTests() {
     assert(!html.includes('href="javascript:'), "CTI javascript value became clickable");
     assert(!html.includes('href="http://127.0.0.1'), "CTI loopback value became clickable");
 
+    sandbox.renderTelegramCTI({
+        status: "error",
+        error: `CTI provider quota exhausted ${MARKUP_PAYLOAD}`,
+        total_records: 0,
+        databases: [],
+        results: [],
+        usage: {
+            logical_searches_performed: 2,
+            logical_search_limit: 5,
+            http_attempts: 2,
+            http_attempt_limit: 6,
+        },
+    });
+    html = nodeFor("telegram-cti-body").innerHTML;
+    assert(html.includes("CTI provider quota exhausted"), "CTI error was rendered as no-results");
+    assert(html.includes("provider calls"), "CTI usage counters were not rendered");
+    assert(!html.includes("No breach records were found"), "failed CTI lookup was shown as successful");
+    assert(!html.includes(MARKUP_PAYLOAD), "CTI error markup reached HTML");
+    assert.match(nodeFor("cti-records-badge").textContent, /ERROR/);
+
     sandbox.renderPlatformDossiers({
         instagram: {
             success: true,
@@ -592,6 +612,26 @@ function runExporterTests() {
         assert(html.includes(`href="${url.replace(/&/g, "&amp;")}"`), `valid PDF link disappeared: ${url}`);
     }
     assertImagesUseAuthenticatedProxy(html, safeURL, "valid PDF media", 8);
+
+    const ctiFailureData = validExporterData();
+    ctiFailureData.telegram_cti = {
+        status: "error",
+        error: `CTI provider quota exhausted ${MARKUP_PAYLOAD}`,
+        total_records: 0,
+        databases: [],
+        results: [],
+        usage: {
+            logical_searches_performed: 1,
+            logical_search_limit: 5,
+            http_attempts: 1,
+            http_attempt_limit: 6,
+        },
+    };
+    html = exporter.generateReportHtml(ctiFailureData);
+    assert(html.includes("CTI provider quota exhausted"), "PDF hid CTI provider failure");
+    assert(html.includes("Provider calls: 1/6"), "PDF omitted CTI quota usage");
+    assert(!html.includes("No records matched in the completed CTI searches"));
+    assert(!html.includes(MARKUP_PAYLOAD), "PDF CTI error markup was not escaped");
 }
 
 async function main() {

@@ -743,12 +743,63 @@ function renderTelegramCTI(cti) {
     const body = document.getElementById("telegram-cti-body");
     const badge = document.getElementById("cti-records-badge");
     if (!body) return;
-    const records = cti?.total_records || 0;
+    const boundedCount = value => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+    };
+    const records = boundedCount(cti?.total_records);
+    const databaseCount = Array.isArray(cti?.databases) ? cti.databases.length : 0;
+    const knownStatuses = new Set(["success", "partial", "no_results", "error", "skipped", "not_configured"]);
+    const rawStatus = String(cti?.status || (records ? "success" : "no_results")).toLowerCase();
+    const ctiStatus = knownStatuses.has(rawStatus) ? rawStatus : "error";
+    const usage = cti?.usage && typeof cti.usage === "object" ? cti.usage : {};
+    const logicalUsed = boundedCount(usage.logical_searches_performed ?? cti?.searches_performed);
+    const logicalLimit = boundedCount(usage.logical_search_limit);
+    const httpUsed = boundedCount(usage.http_attempts);
+    const httpLimit = boundedCount(usage.http_attempt_limit);
+    const hourlyUsed = boundedCount(usage.hourly_http_attempts_at_end);
+    const hourlyLimit = boundedCount(usage.hourly_http_attempt_limit);
+    const hourlyText = hourlyLimit ? ` Rolling hour: ${hourlyUsed}/${hourlyLimit}.` : "";
+    const usageText = `CTI usage: ${logicalUsed}${logicalLimit ? `/${logicalLimit}` : ""} searches, ${httpUsed}${httpLimit ? `/${httpLimit}` : ""} provider calls.${hourlyText}`;
 
-    if (badge) badge.textContent = `${records} COMPROMISED RECORDS (${(cti?.databases || []).length} DATABASES)`;
+    if (badge) {
+        const statusSuffix = ctiStatus === "success" || ctiStatus === "no_results"
+            ? ""
+            : ` • ${ctiStatus.toUpperCase()}`;
+        badge.textContent = `${records} COMPROMISED RECORDS (${databaseCount} DATABASES)${statusSuffix}`;
+    }
+
+    const statusDetails = {
+        error: {
+            color: "var(--risk-critical)",
+            message: redactSensitiveText(cti?.error || "CTI lookup failed before a complete result was available."),
+        },
+        partial: {
+            color: "var(--risk-medium)",
+            message: redactSensitiveText(cti?.error || "CTI lookup stopped early; the records below are incomplete."),
+        },
+        skipped: {
+            color: "var(--text-muted)",
+            message: "CTI lookup is disabled by configuration.",
+        },
+        not_configured: {
+            color: "var(--risk-medium)",
+            message: "CTI lookup is unavailable because its API key is not configured.",
+        },
+        no_results: {
+            color: "var(--status-success)",
+            message: "No breach records were found by the completed CTI searches.",
+        },
+    };
+
+    const state = statusDetails[ctiStatus];
+    const stateBanner = state
+        ? `<div style="color:${state.color}; font-size:12px; margin-bottom:6px;">${escapeHTML(state.message)}</div>`
+          + `<div style="color:var(--text-muted); font-size:10px; margin-bottom:10px;">${escapeHTML(usageText)}</div>`
+        : "";
 
     if (!records) {
-        body.innerHTML = "<div style='color:var(--status-success); font-size:12px;'>No breach records found in leak databases.</div>";
+        body.innerHTML = stateBanner || `<div style="color:var(--status-success); font-size:12px;">No breach records found.</div><div style="color:var(--text-muted); font-size:10px;">${escapeHTML(usageText)}</div>`;
         return;
     }
 
@@ -758,12 +809,12 @@ function renderTelegramCTI(cti) {
         Username: 'Username', IP: 'IP Address', Country: 'Country',
         Address: 'Address', DOB: 'Date of Birth', Login: 'Login',
     };
-    const results = cti?.results || [];
+    const results = Array.isArray(cti?.results) ? cti.results : [];
     let cardsHTML = '';
     results.forEach(res => {
         const dbName = redactSensitiveText(res.database || 'Leak DB');
         const infoLeak = redactSensitiveText(res.info_leak || '');
-        const entries = res.data || [];
+        const entries = Array.isArray(res.data) ? res.data : (Array.isArray(res.rows) ? res.rows : []);
         entries.forEach(item => {
             const fieldRows = Object.entries(item).map(([k, v]) => {
                 if (!v || v === '-') return '';
@@ -791,7 +842,7 @@ function renderTelegramCTI(cti) {
         });
     });
 
-    body.innerHTML = cardsHTML || "<div style='color:var(--text-muted);'>No records could be parsed.</div>";
+    body.innerHTML = stateBanner + (cardsHTML || "<div style='color:var(--text-muted);'>No records could be parsed.</div>");
 }
 
 // 7. Platform Dossiers
@@ -1309,28 +1360,41 @@ function renderDiagnosticsPanel(data) {
 
     // Telegram CTI
     const cti = data.telegram_cti || {};
-    if (cti.status === "success") {
+    const ctiUsage = cti.usage && typeof cti.usage === "object" ? cti.usage : {};
+    const ctiHourlySummary = Number(ctiUsage.hourly_http_attempt_limit || 0)
+        ? ` Rolling hour ${Number(ctiUsage.hourly_http_attempts_at_end || 0)}/${Number(ctiUsage.hourly_http_attempt_limit)}.`
+        : "";
+    const ctiUsageSummary = `Searches ${Number(ctiUsage.logical_searches_performed || cti.searches_performed || 0)}/${Number(ctiUsage.logical_search_limit || 0)}, provider calls ${Number(ctiUsage.http_attempts || 0)}/${Number(ctiUsage.http_attempt_limit || 0)}.${ctiHourlySummary}`;
+    if (cti.status === "success" || cti.status === "no_results") {
         items.push({
             name: "CTI Leak Lookup",
             status: "OK",
-            details: `Queried identifiers. Found ${cti.total_records || 0} leak records.`,
+            details: `Found ${cti.total_records || 0} leak records. ${ctiUsageSummary}`,
             recovery: null
         });
-    } else if (cti.status === "not_configured") {
+    } else if (cti.status === "partial") {
+        warningsCount++;
+        items.push({
+            name: "CTI Leak Lookup",
+            status: "WARNING",
+            details: `${cti.error || "CTI collection stopped early."} ${ctiUsageSummary}`,
+            recovery: "Review the CTI stop reason and quota counters before retrying."
+        });
+    } else if (cti.status === "not_configured" || cti.status === "skipped") {
         warningsCount++;
         items.push({
             name: "CTI Leak Lookup",
             status: "DISABLED",
-            details: "CTI API token is not configured.",
-            recovery: "Add a valid CTI API token in config."
+            details: cti.status === "skipped" ? "CTI collection is disabled." : "CTI API token is not configured.",
+            recovery: cti.status === "skipped" ? "Enable CTI only when provider use is authorized." : "Add a valid CTI API token in config."
         });
     } else {
         errorsCount++;
         items.push({
             name: "CTI Leak Lookup",
             status: "ERROR",
-            details: cti.error || "Subscription expired or API server offline.",
-            recovery: "Verify CTI token. Retry scan shortly if provider is temporarily down."
+            details: `${cti.error || "CTI provider request failed."} ${ctiUsageSummary}`,
+            recovery: "Do not repeatedly retry. Check the stop reason, cooldown, provider balance, and token status."
         });
     }
 

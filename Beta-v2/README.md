@@ -115,6 +115,26 @@ Older Beta-v2 revisions contained embedded provider-key fallbacks. They have bee
 removed. Revoke and replace any live provider credential that matched a committed
 fallback, then keep the replacement only in `backend/.env`.
 
+## Target Scan CTI privacy and quota policy
+
+Target Scan uses its separate `TELEGRAM_CTI_API_KEY`. Provider responses are
+redacted at the CTI service boundary before correlation, AI filtering, browser
+rendering, or PDF export. Completed breach responses are never cached. Identical
+simultaneous lookups may share only their in-flight work, which is discarded as
+soon as it completes.
+
+The committed defaults accept at most three seed identifiers, five logical
+searches, six HTTP attempts per investigation, and 30 CTI provider calls in a
+rolling hour for the application process. Calls are serialized and paced. A
+rate-limit, exhausted-balance, or authentication response stops remaining work
+and opens a five-minute circuit-breaker cooldown instead of retrying repeatedly.
+All ceilings are documented in `backend/.env.example`.
+
+Indian-centric filtering runs locally by default. Sending already-redacted CTI
+records to an external AI requires the explicit, privacy-reviewed opt-in
+`CTI_EXTERNAL_AI_FILTERING_ENABLED=true`; the target query itself is not placed
+in that AI prompt.
+
 ## People Search provider
 
 The standalone **People Search** view performs bounded exact-full-name discovery

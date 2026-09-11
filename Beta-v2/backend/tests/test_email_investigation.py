@@ -473,6 +473,7 @@ def test_recursive_redaction_covers_credentials_financial_ids_and_medical_values
         "Pass": "PASS-SENTINEL",
         "Authorization": "AUTHORIZATION-SENTINEL",
         "description": "password: TEXT-PASSWORD-SENTINEL | public context",
+        "json_text": '{"password":"JSON-PASSWORD-SENTINEL","city":"Lucknow"}',
     }
     redacted = _redact_sensitive_payload(payload)
     serialized = json.dumps(redacted)
@@ -488,6 +489,33 @@ def test_recursive_redaction_covers_credentials_financial_ids_and_medical_values
         "PASS-SENTINEL",
         "AUTHORIZATION-SENTINEL",
         "TEXT-PASSWORD-SENTINEL",
+        "JSON-PASSWORD-SENTINEL",
+    ):
+        assert secret not in serialized
+
+
+def test_recursive_redaction_covers_typed_sensitive_key_value_records() -> None:
+    payload = {
+        "fields": [
+            {"type": "password", "value": "TYPED-PASSWORD-SENTINEL"},
+            {"field": "access_token", "data": "TYPED-TOKEN-SENTINEL"},
+            {"label": "passport", "content": "TYPED-PASSPORT-SENTINEL"},
+            {"name": "email", "value": "contact@example.in"},
+        ]
+    }
+
+    redacted = _redact_sensitive_payload(payload)
+    serialized = json.dumps(redacted)
+
+    assert redacted["fields"][0]["type"] == "password"
+    assert redacted["fields"][0]["value"] == "[REDACTED]"
+    assert redacted["fields"][1]["data"] == "[REDACTED]"
+    assert redacted["fields"][2]["content"] == "[REDACTED]"
+    assert redacted["fields"][3]["value"] == "contact@example.in"
+    for secret in (
+        "TYPED-PASSWORD-SENTINEL",
+        "TYPED-TOKEN-SENTINEL",
+        "TYPED-PASSPORT-SENTINEL",
     ):
         assert secret not in serialized
 

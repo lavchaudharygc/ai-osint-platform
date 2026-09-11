@@ -486,9 +486,17 @@ class AIAnalyzer:
         """Classify and filter Telegram CTI leak results to isolate Indian-centric records from foreign noise."""
         if not cti_results or not isinstance(cti_results, list):
             return []
+        # The target itself is not needed for geographic classification and
+        # must never be placed in an external AI prompt.
+        del target_query
 
-        # If LLM is not configured, apply deterministic Indian keyword/phone heuristics
-        if not self.is_configured():
+        # Breach records remain local by default even when Groq is configured.
+        # External CTI classification requires an explicit privacy-reviewed
+        # opt-in; otherwise use deterministic keyword/phone heuristics.
+        external_ai_allowed = bool(
+            getattr(settings, "cti_external_ai_filtering_enabled", False)
+        )
+        if not external_ai_allowed or not self.is_configured():
             filtered = []
             for item in cti_results:
                 text = json.dumps(item, ensure_ascii=False).lower()
@@ -518,7 +526,7 @@ class AIAnalyzer:
 
         prompt = (
             f"You are a Cyber Crime CTI Analyst for the Indian Cyber Cell.\n"
-            f"Analyze the following CTI breach records for target '{target_query}'.\n"
+            f"Analyze the following already-redacted CTI breach records.\n"
             f"Identify which records are INDIAN-CENTRIC (e.g. Indian names/surnames, +91 phones, Indian locations/cities, Indian organizations/IPS/IAS) "
             f"versus foreign noise (e.g. Russian, European, American, or non-Indian scammer dumps).\n\n"
             f"RECORDS JSON:\n{json.dumps(items_payload, ensure_ascii=False)}\n\n"

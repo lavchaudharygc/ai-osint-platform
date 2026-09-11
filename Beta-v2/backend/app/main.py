@@ -129,6 +129,25 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 and settings.email_investigation_breach_api_key
             ),
         )
+        logger.info(
+            "event=cti_policy enabled=%s configured=%s default_limit=%d "
+            "max_seed_identifiers=%d max_logical_searches=%d "
+            "max_http_attempts=%d max_http_attempts_per_hour=%d "
+            "max_retries_per_query=%d "
+            "max_concurrency=%d cooldown_seconds=%d "
+            "external_ai_filtering=%s response_cache=no_store",
+            settings.telegram_cti_enabled,
+            bool(settings.telegram_cti_api_key),
+            settings.telegram_cti_default_limit,
+            settings.telegram_cti_max_seed_identifiers,
+            settings.telegram_cti_max_logical_searches,
+            settings.telegram_cti_max_http_attempts,
+            settings.telegram_cti_max_http_attempts_per_hour,
+            settings.telegram_cti_max_retries_per_query,
+            settings.telegram_cti_max_concurrency,
+            settings.telegram_cti_cooldown_seconds,
+            settings.cti_external_ai_filtering_enabled,
+        )
         _log_readiness_transition(_readiness_failure())
         yield
     except Exception as exc:
