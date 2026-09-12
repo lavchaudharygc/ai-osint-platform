@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     apify_http_timeout_seconds: float = 30.0
     apify_run_timeout_seconds: float = 300.0
     apify_poll_wait_seconds: int = 5
+    apify_quota_check_ttl_seconds: int = Field(default=300, ge=30, le=3600)
+    apify_quota_check_timeout_seconds: float = Field(default=10.0, ge=2.0, le=30.0)
+    apify_max_total_charge_usd_per_run: float = Field(default=1.0, gt=0.0, le=10.0)
+    apify_instagram_profile_actor_id: str = "apify/instagram-profile-scraper"
+    apify_instagram_posts_actor_id: str = "apify/instagram-scraper"
+    apify_tiktok_actor_id: str = "clockworks/tiktok-scraper"
+    apify_facebook_pages_actor_id: str = "apify/facebook-pages-scraper"
+    apify_facebook_posts_actor_id: str = "apify/facebook-posts-scraper"
+    # This Actor returns actual public X profiles/timeline posts. The previous
+    # default returned follower rows that the UI incorrectly labelled tweets.
+    apify_twitter_actor_id: str = "automation-lab/twitter-scraper"
     apify_linkedin_profile_actor_id: str = "apimaestro/linkedin-profile-detail"
     apify_linkedin_posts_actor_id: str = "bebity/linkedin-post-search-scraper"
     signalhire_api_key: str | None = Field(default_factory=lambda: os.getenv("SIGNALHIRE_API_KEY"))

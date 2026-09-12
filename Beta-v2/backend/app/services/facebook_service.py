@@ -1,22 +1,14 @@
-"""Facebook page & profile scraper service for Beta-v2.
-Ports V1 FacebookApifyService using Apify run-sync-get-dataset-items endpoint.
-Returns full metadata: title, full_name, bio, profile_pic, likes, followers, posts.
-"""
+"""Public Facebook Page metadata and posts via the shared Apify Actor client."""
 
 import logging
 import asyncio
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
-import httpx
 from app.config import settings
+from app.services.apify_client import ApifyActorClient, ApifyClientError
 
 logger = logging.getLogger(__name__)
-
-_PAGES_ACTOR = "apify~facebook-pages-scraper"
-_POSTS_ACTOR = "apify~facebook-posts-scraper"
-_APIFY_BASE = "https://api.apify.com/v2"
-
 
 def _fb_url(identifier: str) -> str:
     s = identifier.strip().lstrip("@").rstrip("/")
@@ -88,35 +80,22 @@ def _normalize_post(item: dict) -> dict:
 
 
 class FacebookService:
-    def __init__(self):
-        self.apify_token = settings.apify_api_token
+    def __init__(self, client: ApifyActorClient | None = None) -> None:
+        self.apify_client = client or ApifyActorClient()
 
     def _configured(self) -> bool:
-        return bool(self.apify_token)
+        return self.apify_client.is_configured()
 
-    async def _run_sync(self, actor_id: str, payload: dict, timeout: float = 120.0) -> List[dict]:
-        if not self._configured():
-            return []
-        url = f"{_APIFY_BASE}/acts/{actor_id}/run-sync-get-dataset-items"
-        headers = {"Authorization": f"Bearer {self.apify_token}"}
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                r = await client.post(url, headers=headers, json=payload)
-            if r.status_code not in (200, 201):
-                logger.warning("Apify %s returned HTTP %d", actor_id, r.status_code)
-                return []
-            items = r.json()
-            return items if isinstance(items, list) else []
-        except Exception as exc:
-            logger.warning(
-                "event=social_provider_failed provider=apify platform=facebook "
-                "error_type=%s",
-                type(exc).__name__,
-            )
-            return []
+    async def _run_actor(self, actor_id: str, payload: dict, limit: int) -> list[dict]:
+        run = await self.apify_client.run_actor(
+            actor_id,
+            payload,
+            dataset_limit=limit,
+        )
+        return run.items
 
     async def fetch_page_or_profile(self, identifier: str) -> Dict[str, Any]:
-        """Fetch Facebook page details: title, full_name, bio, profile_pic, likes, posts."""
+        """Fetch public Page details and posts for a Page slug or URL."""
         clean_id = identifier.strip().lstrip("@").rstrip("/")
         if "facebook.com/" in clean_id:
             clean_id = clean_id.split("facebook.com/")[-1].split("/")[0]
@@ -143,17 +122,42 @@ class FacebookService:
         posts_payload = {"startUrls": [{"url": fb_url}], "resultsLimit": 15}
 
         pages_items, posts_items = await asyncio.gather(
-            self._run_sync(_PAGES_ACTOR, pages_payload),
-            self._run_sync(_POSTS_ACTOR, posts_payload),
+            self._run_actor(settings.apify_facebook_pages_actor_id, pages_payload, 2),
+            self._run_actor(settings.apify_facebook_posts_actor_id, posts_payload, 15),
+            return_exceptions=True,
         )
+
+        provider_errors: list[dict[str, Any]] = []
+        if isinstance(pages_items, BaseException):
+            if isinstance(pages_items, ApifyClientError):
+                provider_errors.append(pages_items.as_dict())
+            else:
+                provider_errors.append({"code": "unexpected_error", "message": "Facebook page provider request failed"})
+            pages_items = []
+        if isinstance(posts_items, BaseException):
+            if isinstance(posts_items, ApifyClientError):
+                provider_errors.append(posts_items.as_dict())
+            else:
+                provider_errors.append({"code": "unexpected_error", "message": "Facebook posts provider request failed"})
+            posts_items = []
+
+        for failure in provider_errors:
+            logger.warning(
+                "event=social_provider_failed provider=apify platform=facebook "
+                "reason=%s http_status=%s provider_error_type=%s",
+                failure.get("code"),
+                failure.get("status_code"),
+                failure.get("provider_error_type"),
+            )
 
         page = _normalize_page(pages_items[0]) if pages_items else {}
         posts = [_normalize_post(i) for i in posts_items]
 
         success = bool(page or posts)
 
-        return {
+        result = {
             "success": success,
+            "status": "success" if success else "error",
             "platform": "facebook",
             "username": page.get("username") or clean_id,
             "title": page.get("title") or page.get("full_name") or clean_id,
@@ -186,3 +190,14 @@ class FacebookService:
             "source": "apify_facebook",
             "scraped_at": datetime.now(UTC).isoformat(),
         }
+        if provider_errors:
+            result["provider_errors"] = provider_errors
+            if not success:
+                result["error"] = provider_errors[0]["message"]
+                result["error_code"] = provider_errors[0]["code"]
+                result["provider_error_type"] = provider_errors[0].get("provider_error_type")
+                result["http_status"] = provider_errors[0].get("status_code")
+        elif not success:
+            result["error"] = "No public Facebook Page data returned"
+            result["error_code"] = "no_results"
+        return result

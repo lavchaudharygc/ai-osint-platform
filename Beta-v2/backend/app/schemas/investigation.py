@@ -46,6 +46,7 @@ class InvestigationResponse(BaseModel):
     target_query: str
     wmn_results: dict[str, Any] | None = None
     scraped_data: dict[str, Any] | None = None
+    provider_statuses: dict[str, Any] | None = None
     dorking_results: dict[str, Any] | None = None
     telegram_cti: dict[str, Any] | None = None
     internal_database_matches: dict[str, Any] | None = None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import Response
 from pydantic import ValidationError
 
 from app.api.investigation import get_keys_diagnostics
@@ -84,7 +85,7 @@ async def test_cti_diagnostics_report_policy_not_unverified_health(
     monkeypatch.setattr(settings, "telegram_cti_cooldown_seconds", 300)
     monkeypatch.setattr(settings, "cti_external_ai_filtering_enabled", False)
 
-    diagnostics = await get_keys_diagnostics()
+    diagnostics = await get_keys_diagnostics(Response())
     cti = diagnostics["telegram_cti"]
 
     assert cti["configured"] is True

@@ -1208,7 +1208,7 @@ async function fetchApiKeysStatus() {
     if (!listContainer) return;
 
     try {
-        const res = await window.SocAuth.fetch(`${API_BASE}/api/v1/investigation/diagnostics/keys`);
+        const res = await window.SocAuth.fetch(`${API_BASE}/api/v1/investigation/diagnostics/keys?refresh_apify=true`);
         if (!res.ok) throw new Error("Diagnostics API unreachable");
         const keys = await res.json();
 
@@ -1218,9 +1218,14 @@ async function fetchApiKeysStatus() {
 
         for (const [keyName, rawDetails] of Object.entries(keys)) {
             const details = rawDetails && typeof rawDetails === "object" ? rawDetails : {};
-            const isOK = details.configured === true;
-            const badgeColor = isOK ? "var(--status-success)" : "var(--text-muted)";
-            const badgeBg = isOK ? "rgba(40,167,69,0.15)" : "rgba(255,255,255,0.05)";
+            const isOK = details.configured === true && details.available !== false;
+            const isConfiguredButUnavailable = details.configured === true && details.available === false;
+            const badgeColor = isOK
+                ? "var(--status-success)"
+                : (isConfiguredButUnavailable ? "var(--risk-medium)" : "var(--text-muted)");
+            const badgeBg = isOK
+                ? "rgba(40,167,69,0.15)"
+                : (isConfiguredButUnavailable ? "rgba(255,193,7,0.12)" : "rgba(255,255,255,0.05)");
             
             const labelMap = {
                 "apify": "PLATFORM SCRAPER",
@@ -1234,7 +1239,12 @@ async function fetchApiKeysStatus() {
             };
             const label = labelMap[keyName] || String(keyName).toUpperCase().replaceAll("_", " ");
             const statusCandidate = String(details.status || "").trim().toLowerCase();
-            const diagnosticStatus = ["active", "missing", "disabled"].includes(statusCandidate)
+            const allowedStatuses = [
+                "active", "missing", "disabled", "ready", "quota exhausted",
+                "invalid token", "health check unavailable",
+                "configured (health not checked)"
+            ];
+            const diagnosticStatus = allowedStatuses.includes(statusCandidate)
                 ? statusCandidate.toUpperCase()
                 : (isOK ? "ACTIVE" : "MISSING");
 
@@ -1299,18 +1309,55 @@ function renderDiagnosticsPanel(data) {
         });
     }
 
+    // Shared Apify account capacity
+    const providerStatuses = data.provider_statuses || {};
+    const apify = providerStatuses.apify || {};
+    if (apify.state === "quota_exhausted") {
+        errorsCount++;
+        const usage = Number(apify.monthly_usage_usd);
+        const limit = Number(apify.monthly_limit_usd);
+        const usageSummary = Number.isFinite(usage) && Number.isFinite(limit)
+            ? ` Monthly usage is $${usage.toFixed(2)} / $${limit.toFixed(2)}.`
+            : "";
+        const resetSummary = apify.usage_cycle_ends_at
+            ? ` Cycle ends ${new Date(apify.usage_cycle_ends_at).toLocaleString()}.`
+            : "";
+        items.push({
+            name: "Apify Account Capacity",
+            status: "ERROR",
+            details: `Monthly usage limit exhausted.${usageSummary}${resetSummary}`,
+            recovery: "Raise the Apify monthly usage limit or wait for the usage cycle to reset. The app has skipped paid Actor launches."
+        });
+    } else if (apify.state === "ready") {
+        items.push({
+            name: "Apify Account Capacity",
+            status: "OK",
+            details: "Token and monthly account capacity passed the read-only preflight.",
+            recovery: null
+        });
+    } else if (apify.state === "invalid_token") {
+        errorsCount++;
+        items.push({
+            name: "Apify Account Capacity",
+            status: "ERROR",
+            details: "Apify rejected the configured token.",
+            recovery: "Create or select a valid Apify token with Actor Run permission and update APIFY_API_TOKEN."
+        });
+    }
+
     // Scrapers
     const scraped = data.scraped_data || {};
     const scrapersList = [
         { key: "instagram", name: "Instagram Scraper" },
         { key: "facebook", name: "Facebook Scraper" },
         { key: "tiktok", name: "TikTok Scraper" },
+        { key: "twitter", name: "X Timeline Scraper" },
         { key: "linkedin", name: "LinkedIn Scraper" },
         { key: "rocketreach", name: "Contact Enrichment Engine" }
     ];
 
     scrapersList.forEach(s => {
-        const sd = scraped[s.key];
+        const sd = scraped[s.key] || providerStatuses[s.key];
         if (sd) {
             if (sd.success || sd.status === "completed" || sd.status === "success") {
                 items.push({
@@ -1325,7 +1372,11 @@ function renderDiagnosticsPanel(data) {
                     name: s.name,
                     status: "WARNING",
                     details: sd.error || "Empty response or configuration mismatch.",
-                    recovery: "Verify target profile exists and scraper configurations are active."
+                    recovery: sd.error_code === "quota_exhausted"
+                        ? "Raise the Apify monthly usage limit or wait for its cycle to reset; do not repeatedly retry."
+                        : sd.error_code === "access_denied"
+                        ? "Give the token Actor Run permission and review any Actor approval/subscription requirement in Apify Console."
+                        : "Verify the public target exists and review the provider status and Actor configuration."
                 });
             }
         } else {

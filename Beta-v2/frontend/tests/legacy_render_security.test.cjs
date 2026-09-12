@@ -394,6 +394,32 @@ async function runAppTests() {
     assert(html.includes("&lt;IMG SRC=&quot;X&quot;"), "diagnostics key was not escaped");
     assert.match(html, />MISSING<\/span>/, "unknown diagnostics status was not normalized");
 
+    sandbox.renderDiagnosticsPanel({
+        wmn_results: { status: "success", hits_count: 0 },
+        provider_statuses: {
+            apify: {
+                state: "quota_exhausted",
+                monthly_usage_usd: 5.08,
+                monthly_limit_usd: 5,
+                usage_cycle_ends_at: "2030-01-01T00:00:00.000Z",
+            },
+            instagram: {
+                success: false,
+                status: "error",
+                error: "Apify monthly usage limit is exhausted",
+                error_code: "quota_exhausted",
+            },
+        },
+        scraped_data: {},
+        dorking_results: { status: "completed", results_count: 0 },
+        telegram_cti: { status: "skipped", usage: {} },
+        internal_database_matches: { status: "not_available", matches: [] },
+    });
+    html = nodeFor("diagnostics-body").innerHTML;
+    assert(html.includes("Apify Account Capacity"), "Apify capacity diagnostic was omitted");
+    assert(html.includes("$5.08 / $5.00"), "Apify quota counters were omitted");
+    assert(html.includes("skipped paid Actor launches"), "Apify recovery guidance was omitted");
+
     sandbox.renderPlatformDossiers({
         instagram: {
             success: true,

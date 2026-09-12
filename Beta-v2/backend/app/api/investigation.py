@@ -32,6 +32,7 @@ from app.services.ai_analyzer import AIAnalyzer
 from app.services.twitter_service import TwitterService
 from app.services.rocketreach_service import RocketReachService
 from app.services.wikidata_service import WikidataService
+from app.services.apify_client import ApifyActorClient
 from app.services.email_investigation_service import _redact_sensitive_payload
 from app.services.image_proxy_service import ImageProxyError, ImageProxyService
 from app.security.audit import AuditEvent, AuditUnavailable, get_audit_logger
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/investigation", tags=["investigation"])
 require_image_proxy_investigator = require_roles("investigator")
 require_contact_investigator = require_roles("investigator")
+require_diagnostics_investigator = require_roles("investigator")
 
 _CONTACT_AUDIT_FIELD_MAP = {
     "email": "email",
@@ -84,6 +86,40 @@ def _contact_field_labels(value: Any, *, depth: int = 0) -> tuple[str, ...]:
         for child in value[:100]:
             labels.update(_contact_field_labels(child, depth=depth + 1))
     return tuple(sorted(labels))
+
+
+def _safe_provider_status(result: Any) -> dict[str, Any]:
+    """Keep diagnostics actionable without copying collected target data."""
+    if not isinstance(result, dict):
+        return {
+            "success": False,
+            "status": "error",
+            "error": "Provider step did not return a result",
+            "error_code": "missing_result",
+        }
+    provider_errors = result.get("provider_errors")
+    first_provider_error = (
+        provider_errors[0]
+        if isinstance(provider_errors, list)
+        and provider_errors
+        and isinstance(provider_errors[0], dict)
+        else {}
+    )
+    return {
+        "success": result.get("success") is True,
+        "status": result.get("status") or ("success" if result.get("success") else "error"),
+        "provider": result.get("provider") or (
+            "apify" if str(result.get("source") or "").startswith("apify") else None
+        ),
+        "source": result.get("source"),
+        "error": result.get("error") or first_provider_error.get("message"),
+        "error_code": result.get("error_code") or first_provider_error.get("code"),
+        "provider_error_type": (
+            result.get("provider_error_type")
+            or first_provider_error.get("provider_error_type")
+        ),
+        "http_status": result.get("http_status") or first_provider_error.get("status_code"),
+    }
 
 
 async def _record_contact_investigation_access(
@@ -130,9 +166,44 @@ def get_image_proxy_service() -> ImageProxyService:
 
 
 @router.get("/diagnostics/keys")
-async def get_keys_diagnostics():
+async def get_keys_diagnostics(
+    response: FastAPIResponse,
+    refresh_apify: bool = False,
+    _user: AuthenticatedUser = Depends(require_diagnostics_investigator),
+):
+    response.headers["Cache-Control"] = "no-store, private"
+    apify_diagnostics: dict[str, Any] = {
+        "configured": bool(settings.apify_api_token),
+        "available": None,
+        "status": (
+            "Configured (health not checked)"
+            if settings.apify_api_token
+            else "Missing"
+        ),
+    }
+    if refresh_apify and settings.apify_api_token:
+        capacity = await ApifyActorClient().check_account_capacity(force=True)
+        status_labels = {
+            "ready": "Ready",
+            "quota_exhausted": "Quota exhausted",
+            "invalid_token": "Invalid token",
+            "quota_check_unavailable": "Health check unavailable",
+        }
+        apify_diagnostics.update(
+            {
+                "available": capacity.can_start_runs,
+                "status": status_labels.get(capacity.state, "Unavailable"),
+                "reason": capacity.state,
+                "quota": {
+                    "monthly_usage_usd": capacity.monthly_usage_usd,
+                    "monthly_limit_usd": capacity.monthly_limit_usd,
+                    "remaining_usd": capacity.remaining_usd,
+                    "cycle_ends_at": capacity.usage_cycle_ends_at,
+                },
+            }
+        )
     return {
-        "apify": {"configured": bool(settings.apify_api_token), "status": "Active" if settings.apify_api_token else "Missing"},
+        "apify": apify_diagnostics,
         "groq": {"configured": bool(settings.groq_api_key), "status": "Active" if settings.groq_api_key else "Missing"},
         "gemini": {"configured": bool(settings.gemini_api_key), "status": "Active" if settings.gemini_api_key else "Missing"},
         "serpapi": {"configured": bool(settings.serpapi_key), "status": "Active" if settings.serpapi_key else "Missing"},
@@ -397,11 +468,15 @@ async def run_investigation(
     clean_handle = raw_query.lstrip("@").split("/")[-1].split("?")[0]
 
     # ── STEP 1: WMN probe + Instagram + TikTok + Twitter + Dorking + Wikidata — all start simultaneously ──
+    # One shared client performs a single read-only quota preflight and shares
+    # any permission denial across every Apify-backed step in this request.
+    apify_client = ApifyActorClient()
+    apify_capacity = await apify_client.check_account_capacity()
+    ig_service = InstagramService(client=apify_client)
+    tiktok_service = TikTokService(client=apify_client)
+    twitter_service = TwitterService(client=apify_client)
+    dork_service = DorkingService(client=apify_client)
     wmn_service = WhatsMyNameService()
-    ig_service = InstagramService()
-    tiktok_service = TikTokService()
-    twitter_service = TwitterService()
-    dork_service = DorkingService()
     wikidata_service = WikidataService()
 
     wmn_data, ig_res, tiktok_res, twitter_res, dorking_results, wikidata_res = await asyncio.gather(
@@ -427,7 +502,10 @@ async def run_investigation(
 
     try:
         from app.services.linkedin_apify_service import LinkedInApifyService
-        li_task = _safe(LinkedInApifyService().get_profile(clean_handle), "linkedin")
+        li_task = _safe(
+            LinkedInApifyService(client=apify_client).get_profile(clean_handle),
+            "linkedin",
+        )
     except Exception as err:
         logger.warning(
             "event=target_pipeline_step_failed component=linkedin_initialization error_type=%s",
@@ -438,9 +516,20 @@ async def run_investigation(
     li_url = f"https://www.linkedin.com/in/{clean_handle}"
     sh_task = _safe(SignalHireService().search_candidate(raw_query), "signalhire")
     rr_task = _safe(RocketReachService().lookup_by_linkedin_url(li_url), "rocketreach")
-    fb_task = _safe(FacebookService().fetch_page_or_profile(clean_handle), "facebook")
+    fb_task = _safe(
+        FacebookService(client=apify_client).fetch_page_or_profile(clean_handle),
+        "facebook",
+    )
 
     li_res, sh_res, rr_res, fb_res = await asyncio.gather(li_task, sh_task, rr_task, fb_task)
+
+    provider_statuses = {
+        "apify": apify_capacity.as_dict(),
+        "instagram": _safe_provider_status(ig_res),
+        "tiktok": _safe_provider_status(tiktok_res),
+        "twitter": _safe_provider_status(twitter_res),
+        "facebook": _safe_provider_status(fb_res),
+    }
     
     linkedin_combined: dict = {}
     if isinstance(li_res, dict) and li_res.get("success"):
@@ -727,6 +816,7 @@ async def run_investigation(
         target_query=raw_query,
         wmn_results=wmn_data,
         scraped_data=scraped_data,
+        provider_statuses=provider_statuses,
         dorking_results=dorking_results,
         telegram_cti=public_telegram_cti,
         internal_database_matches=internal_db_matches,

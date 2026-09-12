@@ -115,6 +115,43 @@ Older Beta-v2 revisions contained embedded provider-key fallbacks. They have bee
 removed. Revoke and replace any live provider credential that matched a committed
 fallback, then keep the replacement only in `backend/.env`.
 
+## Apify social scrapers and account quota
+
+Instagram, TikTok, public Facebook Pages, X timelines, LinkedIn, and optional
+Apify dorking now use the same asynchronous Actor client. Before a paid Actor is
+started, the backend makes one read-only `/users/me/limits` request and caches
+the result for five minutes. If monthly usage is at the account limit, every
+paid launch is skipped and diagnostics report `quota_exhausted`; the app resumes
+automatically after the usage cycle resets or the account owner raises the
+limit. A launch also has a default `$1.00` maximum-charge ceiling.
+
+Configure the token and review the non-secret ceilings in `backend/.env.example`:
+
+```dotenv
+APIFY_API_TOKEN=<complete Apify API token>
+APIFY_QUOTA_CHECK_TTL_SECONDS=300
+APIFY_QUOTA_CHECK_TIMEOUT_SECONDS=10
+APIFY_MAX_TOTAL_CHARGE_USD_PER_RUN=1.0
+```
+
+The dashboard integration badge performs the same read-only capacity check.
+`Ready` means the token can read its account limits and budget remains; it does
+not claim that a particular public target will return data. `Quota exhausted`
+requires action in Apify Console under **Billing / Limits** or waiting for the
+displayed cycle end. `Access denied` requires an API token with Actor Run rights
+and, where applicable, one-time Actor permission/subscription approval. Never
+put the token in Git or browser code.
+
+Actor IDs are explicit `APIFY_*_ACTOR_ID` settings. The X default is a real
+profile/timeline collector (`automation-lab/twitter-scraper`); follower records
+are no longer relabelled as tweets. Facebook collection is intentionally
+described as public Page collection because the configured Actors do not promise
+personal-profile access.
+
+When `SERPAPI_KEY` is configured, Google dorking uses SerpAPI directly instead
+of spending Apify Actor capacity. Apify Google Search is used only when SerpAPI
+is unavailable.
+
 ## Target Scan CTI privacy and quota policy
 
 Target Scan uses its separate `TELEGRAM_CTI_API_KEY`. Provider responses are

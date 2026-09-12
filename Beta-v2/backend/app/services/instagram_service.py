@@ -9,43 +9,56 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List
 import httpx
 from app.config import settings
+from app.services.apify_client import ApifyActorClient, ApifyClientError
 
 logger = logging.getLogger(__name__)
 
-_PROFILE_ACTOR = "apify~instagram-profile-scraper"
-_POSTS_ACTOR = "apify~instagram-scraper"
-_APIFY_BASE = "https://api.apify.com/v2"
-
-
 class InstagramService:
-    def __init__(self):
-        self.apify_token = settings.apify_api_token
+    def __init__(self, client: ApifyActorClient | None = None) -> None:
+        self.apify_client = client or ApifyActorClient()
         self.rapidapi_key = settings.rapidapi_key
+        self.provider_errors: list[dict[str, Any]] = []
+        self._profile_source: str | None = None
 
     def _apify_configured(self) -> bool:
-        return bool(self.apify_token)
+        return self.apify_client.is_configured()
 
-    async def _apify_run_sync(self, actor_id: str, payload: dict, timeout: float = 120.0) -> List[Dict[str, Any]]:
-        """Run an Apify actor synchronously and return dataset items."""
-        url = f"{_APIFY_BASE}/acts/{actor_id}/run-sync-get-dataset-items"
-        headers = {"Authorization": f"Bearer {self.apify_token}"}
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            r = await client.post(url, headers=headers, json=payload)
-        if r.status_code not in (200, 201):
-            logger.warning("Apify %s returned HTTP %d", actor_id, r.status_code)
-            return []
-        items = r.json()
-        return items if isinstance(items, list) else []
+    async def _apify_run(self, actor_id: str, payload: dict, limit: int) -> List[Dict[str, Any]]:
+        """Run an Actor through the shared quota-aware Apify client."""
+        run = await self.apify_client.run_actor(
+            actor_id,
+            payload,
+            dataset_limit=limit,
+        )
+        return run.items
+
+    def _record_apify_error(self, exc: ApifyClientError, operation: str) -> None:
+        failure = exc.as_dict()
+        failure["operation"] = operation
+        self.provider_errors.append(failure)
+        logger.warning(
+            "event=social_provider_failed provider=apify platform=instagram "
+            "operation=%s reason=%s http_status=%s provider_error_type=%s",
+            operation,
+            exc.code,
+            exc.status_code,
+            exc.provider_error_type,
+        )
 
     async def _fetch_profile_apify(self, username: str) -> Dict[str, Any]:
         """Fetch Instagram profile via Apify profile scraper."""
         if not self._apify_configured():
             return {}
         try:
-            items = await self._apify_run_sync(_PROFILE_ACTOR, {"usernames": [username]})
+            items = await self._apify_run(
+                settings.apify_instagram_profile_actor_id,
+                {"usernames": [username]},
+                2,
+            )
             if not items or not isinstance(items[0], dict):
                 return {}
             item = items[0]
+            self._profile_source = "apify"
             bio_links = []
             for lnk in (item.get("externalUrls") or []):
                 if isinstance(lnk, dict) and lnk.get("url"):
@@ -67,6 +80,9 @@ class InstagramService:
                 "external_url": item.get("externalUrl"),
                 "external_urls": bio_links,
             }
+        except ApifyClientError as exc:
+            self._record_apify_error(exc, "profile")
+            return {}
         except Exception as exc:
             logger.warning(
                 "event=social_provider_failed provider=apify platform=instagram "
@@ -93,6 +109,7 @@ class InstagramService:
             user_obj = data.get("user") or data.get("data") or {}
             if not user_obj:
                 return {}
+            self._profile_source = "flashapi"
             return {
                 "full_name": user_obj.get("full_name") or user_obj.get("username"),
                 "bio": user_obj.get("biography") or user_obj.get("bio"),
@@ -120,7 +137,11 @@ class InstagramService:
                 "resultsLimit": max_items,
                 "addParentData": False,
             }
-            items = await self._apify_run_sync(_POSTS_ACTOR, payload)
+            items = await self._apify_run(
+                settings.apify_instagram_posts_actor_id,
+                payload,
+                max_items,
+            )
             posts = []
             all_hashtags: set = set()
             post_captions: List[str] = []
@@ -165,6 +186,9 @@ class InstagramService:
                 "all_hashtags": sorted(all_hashtags),
                 "post_captions": post_captions,
             }
+        except ApifyClientError as exc:
+            self._record_apify_error(exc, "posts")
+            return {"posts": [], "all_hashtags": [], "post_captions": []}
         except Exception as exc:
             logger.warning(
                 "event=social_provider_failed provider=apify platform=instagram "
@@ -176,6 +200,8 @@ class InstagramService:
     async def fetch_profile_and_posts(self, username: str) -> Dict[str, Any]:
         """Fetch Instagram profile + posts. Apify primary, FlashAPI fallback for profile."""
         username = username.strip().lstrip("@")
+        self.provider_errors = []
+        self._profile_source = None
 
         # Fetch profile (Apify preferred, FlashAPI fallback)
         profile = await self._fetch_profile_apify(username)
@@ -191,8 +217,19 @@ class InstagramService:
         for tag in re.findall(r"#(\w+)", bio):
             all_hashtags.add(tag.lower())
 
-        return {
-            "success": bool(profile or posts_data["posts"]),
+        success = bool(profile or posts_data["posts"])
+        if self._profile_source == "flashapi" and posts_data["posts"]:
+            source = "flashapi_profile+apify_posts"
+        elif self._profile_source:
+            source = self._profile_source
+        elif posts_data["posts"]:
+            source = "apify"
+        else:
+            source = "unavailable"
+
+        result = {
+            "success": success,
+            "status": "success" if success else "error",
             "platform": "instagram",
             "username": username,
             "full_name": profile.get("full_name"),
@@ -211,6 +248,17 @@ class InstagramService:
             "posts": posts_data.get("posts") or [],
             "post_captions": posts_data.get("post_captions") or [],
             "post_hashtags": sorted(all_hashtags),
-            "source": "apify" if self._apify_configured() else "flashapi",
+            "source": source,
             "scraped_at": datetime.now(UTC).isoformat(),
         }
+        if self.provider_errors:
+            result["provider_errors"] = self.provider_errors
+            if not success:
+                result["error"] = self.provider_errors[0]["message"]
+                result["error_code"] = self.provider_errors[0]["code"]
+                result["provider_error_type"] = self.provider_errors[0].get("provider_error_type")
+                result["http_status"] = self.provider_errors[0].get("status_code")
+        elif not success:
+            result["error"] = "No public Instagram data returned"
+            result["error_code"] = "no_results"
+        return result

@@ -24,9 +24,9 @@ def categorize_dork_hit(url: str, title: str, snippet: str) -> str:
 
 
 class DorkingService:
-    def __init__(self):
+    def __init__(self, client: ApifyActorClient | None = None) -> None:
         self.api_key = settings.serpapi_key
-        self.apify_client = ApifyActorClient()
+        self.apify_client = client or ApifyActorClient()
 
     def is_configured(self) -> bool:
         return bool(self.apify_client.is_configured() or self.api_key)
@@ -36,7 +36,7 @@ class DorkingService:
         if not self.is_configured():
             return {
                 "status": "not_configured",
-                "message": "SERPAPI_KEY is not configured",
+                "message": "Neither SERPAPI_KEY nor APIFY_API_TOKEN is configured",
                 "results": [],
                 "queries_run": 0,
             }
@@ -60,7 +60,9 @@ class DorkingService:
         all_results: List[Dict[str, Any]] = []
         queries_run = 0
         attempted_providers: List[str] = []
-        provider = "apify_google" if self.apify_client.is_configured() else "serpapi"
+        # SerpAPI is the dedicated dorking provider. Prefer it whenever it is
+        # configured so social Actor capacity is not spent on Google searches.
+        provider = "serpapi" if self.api_key else "apify_google"
 
         if provider == "apify_google":
             attempted_providers.append("apify_google")
