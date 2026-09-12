@@ -7,6 +7,10 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 from app.config import settings
 from app.services.apify_client import ApifyActorClient, ApifyClientError
+from app.services.hashtag_analysis_service import (
+    extract_hashtags_from_text,
+    normalize_hashtag_values,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,16 +70,24 @@ def _normalize_page(item: dict) -> dict:
 
 def _normalize_post(item: dict) -> dict:
     user = item.get("user") if isinstance(item.get("user"), dict) else {}
+    text = item.get("text") or item.get("caption")
+    hashtags = sorted(
+        {
+            *extract_hashtags_from_text(text),
+            *normalize_hashtag_values(item.get("hashtags")),
+        }
+    )
     return {
         "id": item.get("postId") or item.get("id"),
         "url": item.get("url") or item.get("topLevelUrl"),
-        "text": item.get("text") or item.get("caption"),
+        "text": text,
         "created_at": item.get("time") or item.get("timestamp"),
         "author_name": user.get("name") or item.get("pageName"),
         "like_count": item.get("likes"),
         "comment_count": item.get("comments"),
         "share_count": item.get("shares"),
         "media": item.get("media") or [],
+        "hashtags": hashtags,
     }
 
 
@@ -182,14 +194,15 @@ class FacebookService:
             "posts": posts,
             "post_count": len(posts),
             "all_hashtags": sorted({
-                t.lstrip("#").rstrip(".,:;!?")
+                tag
                 for post in posts
-                for t in str(post.get("text") or "").split()
-                if t.startswith("#") and len(t) > 1
+                for tag in post.get("hashtags", [])
+                if tag
             }),
             "source": "apify_facebook",
             "scraped_at": datetime.now(UTC).isoformat(),
         }
+        result["hashtags"] = result["all_hashtags"]
         if provider_errors:
             result["provider_errors"] = provider_errors
             if not success:

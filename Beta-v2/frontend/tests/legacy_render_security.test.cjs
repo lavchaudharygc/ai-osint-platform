@@ -8,8 +8,10 @@ const vm = require("node:vm");
 const frontendRoot = path.resolve(__dirname, "..");
 const appPath = path.join(frontendRoot, "js", "app.js");
 const exporterPath = path.join(frontendRoot, "js", "lea_pdf_exporter.js");
+const indexPath = path.join(frontendRoot, "index.html");
 const appSource = fs.readFileSync(appPath, "utf8");
 const exporterSource = fs.readFileSync(exporterPath, "utf8");
+const indexSource = fs.readFileSync(indexPath, "utf8");
 
 const API_BASE = "http://127.0.0.1:8010";
 const VALID_LINKS = {
@@ -242,6 +244,8 @@ function assertBadURLsRejected(safeURL, label) {
 async function runAppTests() {
     const { sandbox, nodeFor } = loadApp();
     const safeURL = value => sandbox.safeAbsoluteHttpURL(value);
+    assert.match(indexSource, /id="hashtag-analysis-badge"/);
+    assert.match(indexSource, /id="hashtag-analysis-body"/);
     assertBadURLsRejected(safeURL, "app.safeAbsoluteHttpURL");
     assert.equal(sandbox.proxiedImageURL(BAD_URLS[0]), "", "app image helper accepted active scheme");
     assert.equal(sandbox.proxiedImageURL("http://10.0.0.1/private.png"), "", "app image helper accepted private host");
@@ -272,6 +276,68 @@ async function runAppTests() {
     });
     html = nodeFor("consolidated-identity-body").innerHTML;
     assertImagesUseAuthenticatedProxy(html, safeURL, "app consolidated image", 1);
+
+    const hashtagFixture = {
+        status: "completed",
+        total_unique_hashtags: 5,
+        total_mentions: 9,
+        platforms_with_hashtags: 4,
+        top_hashtags: [
+            {
+                tag: "CyberSafe",
+                mentions: 4,
+                platforms: ["instagram", "tiktok", "twitter", "facebook"],
+                cross_platform: true,
+            },
+            {
+                tag: MARKUP_PAYLOAD,
+                mentions: NUMERIC_PAYLOAD,
+                platforms: ["twitter"],
+                cross_platform: false,
+            },
+            { tag: "###", mentions: 1, platforms: [] },
+        ],
+        cross_platform_hashtags: [{
+            tag: "CyberSafe",
+            mentions: 4,
+            platforms: ["instagram", "tiktok", "twitter", "facebook"],
+            cross_platform: true,
+        }],
+        platforms: {
+            instagram: { total_mentions: 3, hashtags: ["CyberSafe", MARKUP_PAYLOAD] },
+            tiktok: { total_mentions: 2, hashtags: ["CyberSafe"] },
+            twitter: { total_mentions: 2, hashtags: ["CyberSafe", "DFIR"] },
+            facebook: { total_mentions: 2, hashtags: ["CyberSafe", "UPPolice"] },
+        },
+    };
+    sandbox.renderHashtagAnalysis(hashtagFixture);
+    html = nodeFor("hashtag-analysis-body").innerHTML;
+    assert(html.includes("#CyberSafe"), "top hashtag was not rendered");
+    assert(html.includes("CROSS-PLATFORM HASHTAGS (1)"), "cross-platform summary was omitted");
+    for (const platform of ["Instagram", "TikTok", "X", "Facebook"]) {
+        assert(html.includes(`>${platform}<`), `hashtag platform row missing: ${platform}`);
+    }
+    assert(!html.includes(MARKUP_PAYLOAD), "hashtag markup reached rendered HTML");
+    assert(!html.includes(NUMERIC_PAYLOAD), "hashtag count markup reached rendered HTML");
+    assert(!html.includes("&lt;img"), "malformed hashtag text was not rejected");
+    assert(!html.includes(">#</div>"), "empty hashtag chip was rendered");
+    assert.equal(nodeFor("hashtag-analysis-badge").textContent, "5 UNIQUE · 9 MENTIONS");
+
+    sandbox.renderResults({
+        hashtag_analysis: hashtagFixture,
+        scraped_data: {},
+        associated_accounts: [],
+        dorking_results: { results: [] },
+        telegram_cti: { results: [], databases: [] },
+    });
+    assert(
+        nodeFor("hashtag-analysis-body").innerHTML.includes("#CyberSafe"),
+        "renderResults did not invoke hashtag analysis rendering",
+    );
+
+    sandbox.renderHashtagAnalysis({ status: "no_data", top_hashtags: [] });
+    html = nodeFor("hashtag-analysis-body").innerHTML;
+    assert(html.includes("No public hashtags were found"), "hashtag empty state was omitted");
 
     sandbox.renderGoogleDorking({
         results: [...BAD_URLS, VALID_LINKS.public].map((url, index) => ({
@@ -371,6 +437,12 @@ async function runAppTests() {
             post_count: NUMERIC_PAYLOAD,
             profile_pic_url: "http://10.0.0.1/twitter.jpg",
             tweets: [{ text: "fixture", like_count: NUMERIC_PAYLOAD, retweet_count: NUMERIC_PAYLOAD }],
+            hashtags: [MARKUP_PAYLOAD],
+        },
+        facebook: {
+            success: true,
+            page_name: "fixture",
+            all_hashtags: [MARKUP_PAYLOAD],
         },
     });
     html = nodeFor("platform-dossiers-body").innerHTML;
@@ -459,6 +531,12 @@ async function runAppTests() {
             post_count: 1,
             profile_pic_url: VALID_IMAGES.twitter,
             tweets: [],
+            hashtags: ["CyberSafe", "UPPolice"],
+        },
+        facebook: {
+            success: true,
+            page_name: "fixture",
+            all_hashtags: ["CyberSafe", "PublicSafety"],
         },
     });
     html = nodeFor("platform-dossiers-body").innerHTML;
@@ -471,6 +549,8 @@ async function runAppTests() {
         "valid LinkedIn featured link disappeared",
     );
     assertImagesUseAuthenticatedProxy(html, safeURL, "app valid platform images", 3);
+    assert(html.includes("PUBLIC POST HASHTAGS (2 UNIQUE)"), "X/Facebook hashtag headings were omitted");
+    assert(html.includes("#CyberSafe"), "X/Facebook hashtag chips were omitted");
 
     sandbox.renderMediaGallery({
         scraped_data: {

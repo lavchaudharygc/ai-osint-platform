@@ -184,6 +184,7 @@ function seedSensitiveLegacyState(harness, suffix) {
     for (const id of [
         "consolidated-confidence-badge",
         "ai-category-badge",
+        "hashtag-analysis-badge",
         "associated-accounts-badge",
         "media-gallery-badge",
         "dorking-count-badge",
@@ -195,6 +196,7 @@ function seedSensitiveLegacyState(harness, suffix) {
     for (const id of [
         "consolidated-identity-body",
         "ai-personality-body",
+        "hashtag-analysis-body",
         "associated-accounts-body",
         "media-gallery-body",
         "dorking-results-body",
@@ -232,6 +234,7 @@ function assertStateCleared(harness, previousSerial, label) {
     for (const id of [
         "consolidated-confidence-badge",
         "ai-category-badge",
+        "hashtag-analysis-badge",
         "associated-accounts-badge",
         "media-gallery-badge",
         "dorking-count-badge",
@@ -243,6 +246,7 @@ function assertStateCleared(harness, previousSerial, label) {
     for (const id of [
         "consolidated-identity-body",
         "ai-personality-body",
+        "hashtag-analysis-body",
         "associated-accounts-body",
         "media-gallery-body",
         "dorking-results-body",

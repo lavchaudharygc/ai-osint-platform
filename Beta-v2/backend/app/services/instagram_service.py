@@ -3,13 +3,16 @@ Ports V1 InstagramProfileService + InstagramPostsService into one class.
 Uses Apify actors for profile and posts. Falls back to FlashAPI for profile.
 """
 
-import re
 import logging
 from datetime import UTC, datetime
 from typing import Any, Dict, List
 import httpx
 from app.config import settings
 from app.services.apify_client import ApifyActorClient, ApifyClientError
+from app.services.hashtag_analysis_service import (
+    extract_hashtags_from_text,
+    normalize_hashtag_values,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -153,19 +156,18 @@ class InstagramService:
                 if "cursor" in item and len(item) <= 3:
                     continue
 
-                hashtags_raw = item.get("hashtags") or []
-                if isinstance(hashtags_raw, str):
-                    hashtags_raw = [hashtags_raw]
-                hashtags = [h.strip().lstrip("#").lower() for h in hashtags_raw if isinstance(h, str) and h.strip()]
+                caption = item.get("caption") or ""
+                hashtags = sorted(
+                    {
+                        *normalize_hashtag_values(item.get("hashtags")),
+                        *extract_hashtags_from_text(caption),
+                    }
+                )
                 for tag in hashtags:
                     all_hashtags.add(tag)
 
-                caption = item.get("caption") or ""
                 if caption:
                     post_captions.append(caption[:500])
-                    # Also extract inline hashtags from caption text
-                    for tag in re.findall(r"#(\w+)", caption):
-                        all_hashtags.add(tag.lower())
 
                 posts.append({
                     "id": item.get("id"),
@@ -214,8 +216,7 @@ class InstagramService:
         # Merge hashtags from bio + posts
         all_hashtags: set = set(posts_data.get("all_hashtags") or [])
         bio = profile.get("bio") or ""
-        for tag in re.findall(r"#(\w+)", bio):
-            all_hashtags.add(tag.lower())
+        all_hashtags.update(extract_hashtags_from_text(bio))
 
         success = bool(profile or posts_data["posts"])
         if self._profile_source == "flashapi" and posts_data["posts"]:
@@ -248,6 +249,7 @@ class InstagramService:
             "posts": posts_data.get("posts") or [],
             "post_captions": posts_data.get("post_captions") or [],
             "post_hashtags": sorted(all_hashtags),
+            "hashtags": sorted(all_hashtags),
             "source": source,
             "scraped_at": datetime.now(UTC).isoformat(),
         }

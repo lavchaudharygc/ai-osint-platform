@@ -152,6 +152,22 @@ When `SERPAPI_KEY` is configured, Google dorking uses SerpAPI directly instead
 of spending Apify Actor capacity. Apify Google Search is used only when SerpAPI
 is unavailable.
 
+## Cross-platform hashtag analysis
+
+Successful Instagram, TikTok, X, and public Facebook Page collection is
+normalized into the top-level `hashtag_analysis` response. The analysis is
+deterministic and local: it makes no additional provider or AI call. Tags from
+public bios and collected posts/videos are case-normalized, counted once per
+source item, ranked, and attributed to their source platforms. The dashboard
+shows overall totals, cross-platform tags, per-platform summaries, and the
+original dossier-level tag lists. The same normalized summary is placed first
+in the behavioral-analysis evidence corpus so every supported platform can
+influence classification, not only Instagram.
+
+Operational logs record only the analysis status and counts under
+`event=hashtag_analysis_completed`; hashtag values and target identifiers are
+not written to the diagnostic log.
+
 ## Target Scan CTI privacy and quota policy
 
 Target Scan uses its separate `TELEGRAM_CTI_API_KEY`. Provider responses are

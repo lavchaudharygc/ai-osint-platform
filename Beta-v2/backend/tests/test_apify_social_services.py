@@ -107,6 +107,8 @@ async def test_instagram_uses_shared_actors_and_normalizes_profile_posts_hashtag
     assert result["full_name"] == "Alice Analyst"
     assert result["source"] == "apify"
     assert result["post_hashtags"] == ["cybersafe", "uppolice"]
+    assert result["hashtags"] == ["cybersafe", "uppolice"]
+    assert result["posts"][0]["hashtags"] == ["cybersafe", "uppolice"]
     assert result["posts"][0]["id"] == "ig-1"
     assert fake.calls == [
         (profile_actor, {"usernames": ["alice"]}, 2),
@@ -159,7 +161,8 @@ async def test_tiktok_uses_shared_actor_and_returns_run_provenance() -> None:
 
     assert result["success"] is True
     assert result["username"] == "alice"
-    assert result["hashtags"] == ["CyberSafe"]
+    assert result["hashtags"] == ["cybersafe"]
+    assert result["videos"][0]["hashtags"] == ["cybersafe"]
     assert result["videos"][0]["id"] == "video-1"
     assert result["actor_run"]["run_status"] == "SUCCEEDED"
     assert "items" not in result["actor_run"]
@@ -251,7 +254,9 @@ async def test_facebook_uses_shared_page_and_post_actors_and_normalizes_results(
     assert result["username"] == "alice.unit"
     assert result["full_name"] == "Alice Unit"
     assert result["posts"][0]["id"] == "fb-1"
-    assert result["all_hashtags"] == ["CyberSafe"]
+    assert result["all_hashtags"] == ["cybersafe"]
+    assert result["hashtags"] == ["cybersafe"]
+    assert result["posts"][0]["hashtags"] == ["cybersafe"]
     assert sorted(fake.calls, key=lambda call: call[0]) == sorted(
         [
             (

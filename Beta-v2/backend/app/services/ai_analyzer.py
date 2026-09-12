@@ -1,6 +1,6 @@
 """AI behavioral analysis and personality classification for Beta-v2.
 Ported from V1 ai_analyzer.py — uses multi-source evidence corpus:
-Instagram post hashtags & captions, all platform bios, dorking snippets.
+Cross-platform public hashtags, captions, bios, and dorking snippets.
 Cybersecurity/OSINT-specialist taxonomy. Never defaults to generic labels.
 """
 
@@ -140,31 +140,63 @@ class AIAnalyzer:
         profiles: Dict[str, Any],
         dorking: Dict[str, Any] | None = None,
         ig_data: Dict[str, Any] | None = None,
+        hashtag_analysis: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Synthesize multi-source OSINT corpus into structured behavioral profile.
 
         Evidence sources (in priority order):
-        1. Instagram post hashtags + captions (user requirement)
-        2. All platform bios/descriptions
-        3. LinkedIn headline, job title, company
-        4. TikTok description
-        5. Telegram bio
-        6. Google dorking snippets
-        7. Facebook description/bio
+        1. Cross-platform public hashtags
+        2. Instagram captions
+        3. All platform bios/descriptions
+        4. LinkedIn headline, job title, company
+        5. Google dorking snippets
         """
         corpus_parts: List[str] = []
 
-        # 1. Instagram hashtags & captions (HIGHEST PRIORITY per user requirement)
-        if ig_data and isinstance(ig_data, dict):
-            tags = ig_data.get("post_hashtags") or []
-            if tags:
-                corpus_parts.append(f"[instagram-hashtags] {' '.join(tags)}")
-            for cap in (ig_data.get("post_captions") or [])[:10]:
-                corpus_parts.append(f"[instagram-caption] {cap[:300]}")
-            if ig_data.get("bio"):
-                corpus_parts.append(f"[instagram-bio] {ig_data['bio']}")
+        # 1. Canonical cross-platform hashtag evidence. Platform summaries are
+        # placed first so later caption/bio truncation cannot hide social tags.
+        if hashtag_analysis and isinstance(hashtag_analysis, dict):
+            platform_summaries = hashtag_analysis.get("platforms") or {}
+            if isinstance(platform_summaries, dict):
+                for platform in ("instagram", "tiktok", "twitter", "facebook"):
+                    summary = platform_summaries.get(platform)
+                    if not isinstance(summary, dict):
+                        continue
+                    tags = [
+                        str(tag).strip().lstrip("#")
+                        for tag in (summary.get("hashtags") or [])[:20]
+                        if str(tag).strip().lstrip("#")
+                    ]
+                    if tags:
+                        corpus_parts.append(
+                            f"[{platform}-hashtags] " + " ".join(f"#{tag}" for tag in tags)
+                        )
+            cross_platform = hashtag_analysis.get("cross_platform_hashtags") or []
+            compact_cross_platform = []
+            for item in cross_platform[:10]:
+                if not isinstance(item, dict) or not item.get("tag"):
+                    continue
+                platforms = item.get("platforms") or []
+                compact_cross_platform.append(
+                    f"#{str(item['tag']).lstrip('#')}"
+                    f"({int(item.get('mentions') or 1)} mentions/"
+                    f"{len(platforms) if isinstance(platforms, list) else 0} platforms)"
+                )
+            if compact_cross_platform:
+                corpus_parts.append(
+                    "[cross-platform-hashtags] " + " ".join(compact_cross_platform)
+                )
 
-        # 2. All platform bios
+        # 2. Instagram captions. Retain the old hashtag path only for callers
+        # that have not supplied the canonical analysis object yet.
+        if ig_data and isinstance(ig_data, dict):
+            tags = ig_data.get("post_hashtags") or ig_data.get("hashtags") or []
+            if tags and not hashtag_analysis:
+                corpus_parts.append(f"[instagram-hashtags] {' '.join(tags)}")
+            for cap in (ig_data.get("post_captions") or [])[:5]:
+                corpus_parts.append(f"[instagram-caption] {str(cap)[:200]}")
+
+        # 3. All platform bios
         platform_count = 0
         for plat, p in profiles.items():
             if not isinstance(p, dict):
@@ -182,7 +214,7 @@ class AIAnalyzer:
                     if val:
                         corpus_parts.append(f"[linkedin-{field}] {val}")
 
-        # 3. Dorking snippets
+        # 4. Dorking snippets
         if dorking and isinstance(dorking, dict):
             for hit in (dorking.get("results") or [])[:8]:
                 if isinstance(hit, dict) and hit.get("snippet"):
@@ -255,7 +287,7 @@ class AIAnalyzer:
                                 "role": "system",
                                 "content": (
                                     "You are a senior behavioral analyst for a Law Enforcement Cyber Crime Operations Center. "
-                                    "Given OSINT profile text and Instagram hashtags, return ONLY raw JSON with keys: "
+                                    "Given OSINT profile text and cross-platform public hashtags, return ONLY raw JSON with keys: "
                                     "summary (2-3 detailed sentences, evidence-based — cybersecurity specialists must NOT be labeled privacy advocates), "
                                     "traits (up to 5 short strings describing professional/technical traits), "
                                     "interests (up to 5 short strings — focus on technical and professional interests), "

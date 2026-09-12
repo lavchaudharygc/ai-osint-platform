@@ -358,6 +358,7 @@ function clearLegacyInvestigationState() {
     [
         "consolidated-confidence-badge",
         "ai-category-badge",
+        "hashtag-analysis-badge",
         "associated-accounts-badge",
         "media-gallery-badge",
         "dorking-count-badge",
@@ -370,6 +371,7 @@ function clearLegacyInvestigationState() {
     [
         "consolidated-identity-body",
         "ai-personality-body",
+        "hashtag-analysis-body",
         "associated-accounts-body",
         "media-gallery-body",
         "dorking-results-body",
@@ -503,12 +505,131 @@ async function executeScan(fromHero = false) {
 function renderResults(data) {
     renderConsolidatedIdentity(data.consolidated_identity);
     renderAiPersonality(data.ai_personality, data.gemini_reasoning);
+    renderHashtagAnalysis(data.hashtag_analysis);
     renderAssociatedAccounts(data.associated_accounts);
     renderGoogleDorking(data.dorking_results);
     renderTelegramCTI(data.telegram_cti);
     renderPlatformDossiers(data.scraped_data);
     renderDiagnosticsPanel(data);
     renderMediaGallery(data);
+}
+
+function normalizedHashtagValues(values, limit = 100) {
+    if (!Array.isArray(values)) return [];
+    const tags = [];
+    const seen = new Set();
+    for (const value of values) {
+        if (typeof value !== "string") continue;
+        const tag = value.trim().replace(/^#+/, "");
+        if (!tag || tag.length > 100 || !/^[\p{L}\p{N}\p{M}_-]+$/u.test(tag)) continue;
+        const key = tag.toLocaleLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        tags.push(tag);
+        if (tags.length >= limit) break;
+    }
+    return tags;
+}
+
+function combinedHashtagValues(...sources) {
+    return normalizedHashtagValues(
+        sources.flatMap(values => Array.isArray(values) ? values : []),
+        100,
+    );
+}
+
+function hashtagChips(values, limit = 40) {
+    return normalizedHashtagValues(values, limit)
+        .map(tag => `<span class="tag-chip interest">#${escapeHTML(tag)}</span>`)
+        .join("");
+}
+
+function renderHashtagAnalysis(analysis) {
+    const body = document.getElementById("hashtag-analysis-body");
+    const badge = document.getElementById("hashtag-analysis-badge");
+    if (!body) return;
+
+    const details = analysis && typeof analysis === "object" ? analysis : {};
+    const rawTop = Array.isArray(details.top_hashtags) ? details.top_hashtags : [];
+    const top = rawTop.slice(0, 100).map(item => {
+        if (!item || typeof item !== "object" || typeof item.tag !== "string") return null;
+        const normalized = normalizedHashtagValues([item.tag], 1)[0];
+        return normalized ? { ...item, tag: normalized } : null;
+    }).filter(Boolean);
+    const totalUnique = boundedInteger(details.total_unique_hashtags, top.length, 0, 10000);
+    const totalMentions = boundedInteger(
+        details.total_mentions,
+        top.reduce((sum, item) => sum + boundedInteger(item.mentions, 1, 1, 10000), 0),
+        0,
+        100000,
+    );
+
+    if (badge) {
+        badge.textContent = `${totalUnique} UNIQUE · ${totalMentions} MENTIONS`;
+        badge.style.color = top.length ? "var(--accent-cyan)" : "var(--text-muted)";
+    }
+
+    if (!top.length || details.status === "no_data") {
+        body.innerHTML = "<div style='color:var(--text-muted); font-size:12px;'>No public hashtags were found in the collected profiles or posts.</div>";
+        return;
+    }
+
+    const platformLabels = {
+        instagram: "Instagram",
+        tiktok: "TikTok",
+        twitter: "X",
+        facebook: "Facebook",
+    };
+    const topHTML = top.slice(0, 30).map(item => {
+        const tag = item.tag;
+        const mentions = boundedInteger(item.mentions, 1, 1, 10000);
+        const platforms = Array.isArray(item.platforms)
+            ? item.platforms.filter(name => Object.hasOwn(platformLabels, name)).map(name => platformLabels[name])
+            : [];
+        const provenance = platforms.length ? platforms.join(", ") : "Public social content";
+        const crossPlatform = item.cross_platform === true || platforms.length > 1;
+        return `
+            <div style="background:var(--bg-panel); border:1px solid ${crossPlatform ? 'var(--accent-cyan)' : 'var(--border-divider)'}; border-radius:5px; padding:8px 10px; min-width:150px;">
+                <div style="font-size:12px; font-weight:700; color:var(--text-primary);">#${escapeHTML(tag)}</div>
+                <div style="font-size:9px; color:var(--text-muted); margin-top:3px;">${mentions} MENTION${mentions === 1 ? '' : 'S'} · ${escapeHTML(provenance)}</div>
+            </div>
+        `;
+    }).join("");
+
+    const platforms = details.platforms && typeof details.platforms === "object" ? details.platforms : {};
+    const platformRows = Object.entries(platformLabels).map(([key, label]) => {
+        const summary = platforms[key];
+        if (!summary || typeof summary !== "object") return "";
+        const tags = normalizedHashtagValues(summary.hashtags, 25);
+        const mentions = boundedInteger(summary.total_mentions, tags.length, 0, 100000);
+        return `
+            <tr>
+                <td style="width:110px; color:var(--accent-cyan); font-weight:600;">${label}</td>
+                <td>${hashtagChips(tags, 25) || "<span style='color:var(--text-muted);'>None</span>"}</td>
+                <td class="mono" style="width:90px; text-align:right; color:var(--text-muted);">${mentions} mentions</td>
+            </tr>
+        `;
+    }).filter(Boolean).join("");
+
+    const rawCrossPlatform = Array.isArray(details.cross_platform_hashtags)
+        ? details.cross_platform_hashtags
+        : top.filter(item => item.cross_platform === true || (Array.isArray(item.platforms) && item.platforms.length > 1));
+    const crossPlatformTags = normalizedHashtagValues(
+        rawCrossPlatform.map(item => item && typeof item === "object" ? item.tag : ""),
+        30,
+    );
+
+    body.innerHTML = `
+        <div style="font-size:11px; color:var(--text-secondary); margin-bottom:10px;">
+            Deterministic analysis of hashtags observed in collected public bios and content. Counts represent source items containing each hashtag.
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">${topHTML}</div>
+        <div style="margin-bottom:12px;">
+            <div style="font-size:10px; color:var(--text-muted); font-weight:700; margin-bottom:5px;">CROSS-PLATFORM HASHTAGS (${crossPlatformTags.length})</div>
+            <div>${hashtagChips(crossPlatformTags, 30) || "<span style='color:var(--text-muted); font-size:11px;'>No hashtag appeared on more than one platform.</span>"}</div>
+        </div>
+        ${platformRows ? `<table class="soc-table"><tbody>${platformRows}</tbody></table>` : ''}
+    `;
 }
 
 // 1. Consolidated Identity Profile
@@ -859,7 +980,8 @@ function renderPlatformDossiers(scraped) {
     // Instagram Dossier
     if (scraped.instagram && scraped.instagram.success !== false) {
         const ig = scraped.instagram;
-        const tagsHTML = (ig.post_hashtags || []).slice(0, 40).map(t => `<span class="tag-chip interest">#${escapeHTML(t)}</span>`).join("");
+        const igTags = combinedHashtagValues(ig.hashtags, ig.post_hashtags, ig.all_hashtags).slice(0, 40);
+        const tagsHTML = hashtagChips(igTags, 40);
         const postsCount = (ig.posts || []).length;
         const verifiedBadge = ig.is_verified ? '<span style="color:var(--status-success); font-size:10px; margin-left:6px;">&#x2714; VERIFIED</span>' : '';
         const privateBadge = ig.is_private ? '<span style="color:var(--risk-medium); font-size:10px; margin-left:6px;">PRIVATE</span>' : '';
@@ -883,7 +1005,7 @@ function renderPlatformDossiers(scraped) {
                 </table>
                 <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; padding:8px; background:var(--bg-panel); border-radius:4px;">${escapeHTML(ig.bio || 'No bio.')}</div>
                 <div>
-                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">POST HASHTAGS EXTRACTED (${(ig.post_hashtags||[]).length} UNIQUE)</div>
+                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">POST HASHTAGS EXTRACTED (${igTags.length} UNIQUE)</div>
                     <div>${tagsHTML || "<span style='color:var(--text-muted); font-size:11px;'>No hashtags extracted.</span>"}</div>
                 </div>
             </div>
@@ -893,7 +1015,8 @@ function renderPlatformDossiers(scraped) {
     // TikTok Dossier
     if (scraped.tiktok && scraped.tiktok.success !== false) {
         const tt = scraped.tiktok;
-        const tagsHTML = (tt.hashtags || []).slice(0, 40).map(t => `<span class="tag-chip interest">#${escapeHTML(t)}</span>`).join("");
+        const ttTags = combinedHashtagValues(tt.hashtags, tt.all_hashtags).slice(0, 40);
+        const tagsHTML = hashtagChips(ttTags, 40);
         const safeProfileURL = safeAbsoluteHttpURL(tt.url);
         const profileLinkRow = safeProfileURL
             ? `<tr><td style="color:var(--text-muted);">Profile URL</td><td><a href="${escapeHTML(safeProfileURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan);">${escapeHTML(safeProfileURL)}</a></td></tr>`
@@ -913,7 +1036,7 @@ function renderPlatformDossiers(scraped) {
                 </table>
                 <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; padding:8px; background:var(--bg-panel); border-radius:4px;">${escapeHTML(tt.bio || 'No TikTok bio.')}</div>
                 <div>
-                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">VIDEO HASHTAGS (${(tt.hashtags||[]).length} EXTRACTED)</div>
+                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">VIDEO HASHTAGS (${ttTags.length} EXTRACTED)</div>
                     <div>${tagsHTML || "<span style='color:var(--text-muted); font-size:11px;'>No video hashtags found.</span>"}</div>
                 </div>
             </div>
@@ -1120,6 +1243,8 @@ function renderPlatformDossiers(scraped) {
     // Twitter / X Dossier
     if (scraped.twitter && scraped.twitter.success !== false) {
         const tw = scraped.twitter;
+        const twTags = combinedHashtagValues(tw.hashtags, tw.all_hashtags).slice(0, 40);
+        const twTagsHTML = hashtagChips(twTags, 40);
         const safeTwitterImageUrl = proxiedImageURL(tw.profile_pic_url);
         const tweetsHTML = (tw.tweets || []).map(t => `
             <div style="background:var(--bg-panel); border:1px solid var(--border-divider); border-radius:4px; padding:8px 10px; margin-bottom:6px; font-size:11px; line-height:1.4;">
@@ -1148,6 +1273,10 @@ function renderPlatformDossiers(scraped) {
                     </div>
                 </div>
                 <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; padding:8px; background:var(--bg-panel); border-radius:4px;">${escapeHTML(tw.bio || 'No bio.')}</div>
+                <div style="margin-bottom:10px;">
+                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">PUBLIC POST HASHTAGS (${twTags.length} UNIQUE)</div>
+                    <div>${twTagsHTML || "<span style='color:var(--text-muted); font-size:11px;'>No X hashtags found.</span>"}</div>
+                </div>
                 ${tweetsHTML ? `
                     <div style="margin-top:10px;">
                         <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">RECENT PUBLIC TWEETS</div>
@@ -1161,6 +1290,8 @@ function renderPlatformDossiers(scraped) {
     // Facebook Dossier
     if (scraped.facebook && scraped.facebook.success !== false) {
         const fb = scraped.facebook;
+        const fbTags = combinedHashtagValues(fb.hashtags, fb.all_hashtags).slice(0, 40);
+        const fbTagsHTML = hashtagChips(fbTags, 40);
         cardsHTML += `
             <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
@@ -1169,6 +1300,10 @@ function renderPlatformDossiers(scraped) {
                 </div>
                 <div style="font-size:13px; margin-bottom:6px;"><strong>Page Title:</strong> ${escapeHTML(fb.title || fb.page_name)}</div>
                 <div style="font-size:12px; color:var(--text-secondary);">${escapeHTML(fb.bio || "Public Facebook page.")}</div>
+                <div style="margin-top:10px;">
+                    <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">PUBLIC POST HASHTAGS (${fbTags.length} UNIQUE)</div>
+                    <div>${fbTagsHTML || "<span style='color:var(--text-muted); font-size:11px;'>No Facebook hashtags found.</span>"}</div>
+                </div>
             </div>
         `;
     }

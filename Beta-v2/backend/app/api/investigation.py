@@ -33,6 +33,7 @@ from app.services.twitter_service import TwitterService
 from app.services.rocketreach_service import RocketReachService
 from app.services.wikidata_service import WikidataService
 from app.services.apify_client import ApifyActorClient
+from app.services.hashtag_analysis_service import HashtagAnalysisService
 from app.services.email_investigation_service import _redact_sensitive_payload
 from app.services.image_proxy_service import ImageProxyError, ImageProxyService
 from app.security.audit import AuditEvent, AuditUnavailable, get_audit_logger
@@ -742,9 +743,24 @@ async def run_investigation(
     # sanitized before AI filtering and deterministic account correlation.
     public_telegram_cti = _redact_sensitive_payload(telegram_cti)
 
-    # ── STEP 6: AI Behavioral Profiling ──
+    # ── STEP 6: Cross-platform hashtag + AI behavioral profiling ──
+    hashtag_analysis = HashtagAnalysisService.analyze(scraped_data)
+    hashtag_analysis_payload = hashtag_analysis.model_dump(mode="python")
+    logger.info(
+        "event=hashtag_analysis_completed status=%s unique_count=%d "
+        "total_mentions=%d platform_count=%d",
+        hashtag_analysis.status,
+        hashtag_analysis.total_unique_hashtags,
+        hashtag_analysis.total_mentions,
+        hashtag_analysis.platforms_with_hashtags,
+    )
     ai_personality_dict = await _safe(
-        AIAnalyzer().analyze_personality(scraped_data, dorking_results, ig_res),
+        AIAnalyzer().analyze_personality(
+            scraped_data,
+            dorking_results,
+            ig_res,
+            hashtag_analysis_payload,
+        ),
         "ai_personality",
     ) or {
         "summary": "AI analysis unavailable.",
@@ -816,6 +832,7 @@ async def run_investigation(
         target_query=raw_query,
         wmn_results=wmn_data,
         scraped_data=scraped_data,
+        hashtag_analysis=hashtag_analysis,
         provider_statuses=provider_statuses,
         dorking_results=dorking_results,
         telegram_cti=public_telegram_cti,

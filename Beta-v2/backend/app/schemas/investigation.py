@@ -39,6 +39,30 @@ class AiPersonality(BaseModel):
     platformCount: int = 0
 
 
+class HashtagMetric(BaseModel):
+    tag: str
+    mentions: int = Field(default=1, ge=1)
+    platforms: list[str] = Field(default_factory=list)
+    cross_platform: bool = False
+
+
+class PlatformHashtagSummary(BaseModel):
+    unique_hashtags: int = Field(default=0, ge=0)
+    total_mentions: int = Field(default=0, ge=0)
+    source_items_with_hashtags: int = Field(default=0, ge=0)
+    hashtags: list[str] = Field(default_factory=list)
+
+
+class HashtagAnalysis(BaseModel):
+    status: Literal["completed", "no_data"] = "no_data"
+    total_unique_hashtags: int = Field(default=0, ge=0)
+    total_mentions: int = Field(default=0, ge=0)
+    platforms_with_hashtags: int = Field(default=0, ge=0)
+    top_hashtags: list[HashtagMetric] = Field(default_factory=list)
+    cross_platform_hashtags: list[HashtagMetric] = Field(default_factory=list)
+    platforms: dict[str, PlatformHashtagSummary] = Field(default_factory=dict)
+
+
 class InvestigationResponse(BaseModel):
     investigation_id: str
     status: str
@@ -46,6 +70,7 @@ class InvestigationResponse(BaseModel):
     target_query: str
     wmn_results: dict[str, Any] | None = None
     scraped_data: dict[str, Any] | None = None
+    hashtag_analysis: HashtagAnalysis | None = None
     provider_statuses: dict[str, Any] | None = None
     dorking_results: dict[str, Any] | None = None
     telegram_cti: dict[str, Any] | None = None

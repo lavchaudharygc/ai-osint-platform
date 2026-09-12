@@ -740,6 +740,12 @@
         "modi",
         "BJP",
         "development"
+      ],
+      "hashtags": [
+        "india",
+        "modi",
+        "bjp",
+        "development"
       ]
     },
     "tiktok": {
@@ -906,7 +912,39 @@
       "bio": "Prime Minister of India.",
       "url": "https://www.facebook.com/narendramodi",
       "profile_pic_url": "https://scontent.fmri1-1.fna.fbcdn.net/v/t39.30808-1/459337720_1303104714517091_2841079786125894817_n.jpg?stp=dst-jpg_tt6&cstp=mx614x614&ctp=s200x200&_nc_cat=1&ccb=1-7&_nc_sid=f907e8&_nc_ohc=I5gHMCJADKUQ7kNvwHUIYp2&_nc_oc=Ado9yah8vPldNAy1_2IxbGml2mQPtkwWbGeylI-i_aMgl0p3x3Sik61Hm_kV-Ab6csA&_nc_zt=24&_nc_ht=scontent.fmri1-1.fna&_nc_gid=toNx65DdTle7LpFB3AdEkQ&_nc_ss=7c289&oh=00_AQFfQ1x9E8R8uRGCukyn6cIMR-FSBJouL1GYL42dpu1JGQ&oe=6A81D25E",
+      "hashtags": ["india", "development"],
+      "all_hashtags": ["india", "development"],
       "source": "apify_facebook"
+    }
+  },
+  "hashtag_analysis": {
+    "status": "completed",
+    "total_unique_hashtags": 4,
+    "total_mentions": 8,
+    "platforms_with_hashtags": 2,
+    "top_hashtags": [
+      {"tag": "india", "mentions": 3, "platforms": ["facebook", "instagram"], "cross_platform": true},
+      {"tag": "development", "mentions": 2, "platforms": ["facebook", "instagram"], "cross_platform": true},
+      {"tag": "bjp", "mentions": 2, "platforms": ["instagram"], "cross_platform": false},
+      {"tag": "modi", "mentions": 1, "platforms": ["instagram"], "cross_platform": false}
+    ],
+    "cross_platform_hashtags": [
+      {"tag": "india", "mentions": 3, "platforms": ["facebook", "instagram"], "cross_platform": true},
+      {"tag": "development", "mentions": 2, "platforms": ["facebook", "instagram"], "cross_platform": true}
+    ],
+    "platforms": {
+      "instagram": {
+        "unique_hashtags": 4,
+        "total_mentions": 6,
+        "source_items_with_hashtags": 4,
+        "hashtags": ["india", "development", "bjp", "modi"]
+      },
+      "facebook": {
+        "unique_hashtags": 2,
+        "total_mentions": 2,
+        "source_items_with_hashtags": 1,
+        "hashtags": ["development", "india"]
+      }
     }
   },
   "dorking_results": {

@@ -7,6 +7,10 @@ from datetime import UTC, datetime
 from typing import Any, Dict
 from app.config import settings
 from app.services.apify_client import ApifyActorClient, ApifyClientError
+from app.services.hashtag_analysis_service import (
+    extract_hashtags_from_text,
+    normalize_hashtag_values,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +61,13 @@ class TikTokService:
                         author = item["authorMeta"]
                     if item.get("text"):
                         text = item["text"]
+                        video_hashtags = sorted(
+                            {
+                                *extract_hashtags_from_text(text),
+                                *normalize_hashtag_values(item.get("hashtags")),
+                                *normalize_hashtag_values(item.get("hashtagsMeta")),
+                            }
+                        )
                         videos.append({
                             "id": item.get("id"),
                             "text": text,
@@ -65,10 +76,9 @@ class TikTokService:
                             "share_count": item.get("shareCount"),
                             "comment_count": item.get("commentCount"),
                             "url": item.get("webVideoUrl"),
+                            "hashtags": video_hashtags,
                         })
-                        for word in text.split():
-                            if word.startswith("#") and len(word) > 1:
-                                hashtags.add(word.lstrip("#").rstrip(".,:;!?"))
+                        hashtags.update(video_hashtags)
 
             return {
                 "success": True,
