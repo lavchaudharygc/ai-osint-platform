@@ -949,42 +949,65 @@
   },
   "dorking_results": {
     "status": "completed",
-    "queries_run": 3,
-    "results_count": 17,
+    "provider": "serpapi",
+    "queries_planned": 5,
+    "queries_attempted": 5,
+    "queries_run": 5,
+    "calls_made": 5,
+    "raw_results_count": 13,
+    "duplicates_removed": 8,
+    "results_truncated": 0,
+    "results_count": 5,
+    "fallback_used": false,
     "results": [
       {
         "title": "Narendra Modi (@narendramodi)",
-        "link": "",
+        "url": "https://www.instagram.com/narendramodi",
+        "domain": "instagram.com",
         "snippet": "106M followers \u00b7 0 following \u00b7 1468 posts \u00b7 @narendramodi: \u201cPrime Minister of India \u201d",
-        "query": "\"narendramodi\" site:linkedin.com OR site:twitter.com OR site:github.com OR site:instagram.com",
+        "query": "\"narendramodi\" (site:instagram.com OR site:facebook.com OR site:tiktok.com OR site:youtube.com OR site:reddit.com OR site:t.me)",
+        "query_category": "Social and community profiles",
+        "matched_queries": ["Exact username mentions", "Social and community profiles"],
         "category": "Social Profiles"
       },
       {
         "title": "Narendra Modi (@narendramodi) / Posts / X",
-        "link": "",
+        "url": "https://x.com/narendramodi",
+        "domain": "x.com",
         "snippet": "Narendra Modi\u2713. narendramodi. Location: India. Website: http://www.narendramodi.in. Joined: Jan 10, 2009. 52396Posts. 26",
-        "query": "\"narendramodi\" site:linkedin.com OR site:twitter.com OR site:github.com OR site:instagram.com",
+        "query": "\"narendramodi\" (site:linkedin.com OR site:github.com OR site:gitlab.com OR site:x.com OR site:twitter.com)",
+        "query_category": "Professional and code profiles",
+        "matched_queries": ["Exact username mentions", "Professional and code profiles"],
         "category": "Social Profiles"
       },
       {
         "title": "Narendra Modi - Prime Minister of India",
-        "link": "",
+        "url": "https://www.narendramodi.in",
+        "domain": "narendramodi.in",
         "snippet": "Websites. Personal Website: http://www.narendramodi.in. PMO: http://pmindia.gov.in/en/",
-        "query": "\"narendramodi\" site:linkedin.com OR site:twitter.com OR site:github.com OR site:instagram.com",
-        "category": "Social Profiles"
+        "query": "\"narendramodi\"",
+        "query_category": "Exact username mentions",
+        "matched_queries": ["Exact username mentions"],
+        "category": "Public Records"
       },
       {
         "title": "Post",
-        "link": "",
+        "url": "https://www.facebook.com/narendramodi",
+        "domain": "facebook.com",
         "snippet": "@narendramodi. For decades, the Indian farmer was bound by various constraints and bullied by middlemen. The bills passe",
-        "query": "\"narendramodi\" site:linkedin.com OR site:twitter.com OR site:github.com OR site:instagram.com",
+        "query": "\"narendramodi\" (site:instagram.com OR site:facebook.com OR site:tiktok.com OR site:youtube.com OR site:reddit.com OR site:t.me)",
+        "query_category": "Social and community profiles",
+        "matched_queries": ["Social and community profiles"],
         "category": "Social Profiles"
       },
       {
         "title": "VIDEO | Prime Minister Narendra Modi (@narendramodi) ...",
-        "link": "",
+        "url": "https://www.youtube.com/@NarendraModi",
+        "domain": "youtube.com",
         "snippet": "VIDEO | Prime Minister Narendra Modi ( @narendramodi) lands in Tel Aviv. He is on a two-day visit to Israel aimed at str",
-        "query": "\"narendramodi\" site:linkedin.com OR site:twitter.com OR site:github.com OR site:instagram.com",
+        "query": "\"narendramodi\" (site:instagram.com OR site:facebook.com OR site:tiktok.com OR site:youtube.com OR site:reddit.com OR site:t.me)",
+        "query_category": "Social and community profiles",
+        "matched_queries": ["Social and community profiles"],
         "category": "Social Profiles"
       }
     ]

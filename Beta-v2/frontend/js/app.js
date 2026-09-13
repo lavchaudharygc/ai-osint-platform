@@ -792,31 +792,111 @@ function renderGoogleDorking(dorking) {
     const body = document.getElementById("dorking-results-body");
     const badge = document.getElementById("dorking-count-badge");
     if (!body) return;
-    const results = dorking?.results || [];
+    const details = dorking && typeof dorking === "object" ? dorking : {};
+    const rawResults = Array.isArray(details.results) ? details.results : [];
+    const results = rawResults.filter(row => row && typeof row === "object").slice(0, 100);
+    const knownStatuses = new Set([
+        "completed", "no_results", "partial", "not_configured", "disabled",
+        "skipped", "rate_limited", "quota_exhausted", "authentication_error",
+        "timeout", "network_error", "invalid_response", "configuration_error",
+        "provider_error", "error",
+    ]);
+    const rawStatus = String(details.status || (results.length ? "completed" : "no_results")).toLowerCase();
+    const dorkStatus = knownStatuses.has(rawStatus) ? rawStatus : "error";
+    const provider = String(details.provider || "serpapi").slice(0, 30).toUpperCase();
+    const queriesRun = boundedInteger(details.queries_run, 0, 0, 100);
+    const queriesAttempted = boundedInteger(
+        details.queries_attempted ?? details.calls_made,
+        queriesRun,
+        queriesRun,
+        100,
+    );
+    const queriesPlanned = boundedInteger(
+        details.queries_planned,
+        queriesAttempted,
+        queriesAttempted,
+        100,
+    );
+    const duplicateCount = boundedInteger(details.duplicates_removed, 0, 0, 10000);
+    const truncatedCount = boundedInteger(details.results_truncated, 0, 0, 10000);
+    const reportedCount = boundedInteger(details.results_count, results.length, 0, 10000);
+    const statusMessages = {
+        completed: "Google discovery completed.",
+        no_results: "Google discovery completed, but no organic results matched the bounded query plan.",
+        partial: "Some Google searches completed before the provider stopped. The results below are incomplete.",
+        not_configured: "SERPAPI_KEY is not configured, so Google discovery was not started.",
+        disabled: "Google discovery is disabled by server policy.",
+        skipped: "Google discovery was skipped because no valid target or query budget was available.",
+        rate_limited: "SerpAPI rate limited the request. No additional searches were attempted.",
+        quota_exhausted: "SerpAPI search quota is exhausted. No additional searches were attempted.",
+        authentication_error: "SerpAPI rejected its configured credential. Check SERPAPI_KEY.",
+        timeout: "SerpAPI timed out. No additional searches were attempted.",
+        network_error: "SerpAPI could not be reached. No additional searches were attempted.",
+        invalid_response: "SerpAPI returned an invalid response.",
+        configuration_error: "Google discovery is not configured correctly.",
+        provider_error: "SerpAPI returned an error and remaining searches were stopped.",
+        error: "Google discovery failed before a complete result was available.",
+    };
+    const statusColor = dorkStatus === "completed" || dorkStatus === "no_results"
+        ? "var(--status-success)"
+        : (dorkStatus === "partial" || dorkStatus === "not_configured" || dorkStatus === "disabled"
+            ? "var(--risk-medium)"
+            : "var(--risk-high)");
 
-    if (badge) badge.textContent = `${results.length} HITS RESOLVED`;
+    if (badge) {
+        badge.textContent = `${results.length} HITS · ${queriesRun}/${queriesAttempted || queriesPlanned} QUERIES`;
+        badge.style.color = statusColor;
+    }
+
+    const countNote = reportedCount !== results.length
+        ? ` Backend reported ${reportedCount}; ${results.length} safe rows are displayable.`
+        : "";
+    const metrics = [
+        `${provider} ONLY`,
+        `${queriesRun}/${queriesAttempted || queriesPlanned} QUERIES COMPLETED`,
+        duplicateCount ? `${duplicateCount} DUPLICATES REMOVED` : "",
+        truncatedCount ? `${truncatedCount} RESULTS CAPPED` : "",
+    ].filter(Boolean).map(value => `<span class="tag-chip mono">${escapeHTML(value)}</span>`).join("");
+    const statusPanel = `
+        <div style="border:1px solid ${statusColor}; background:var(--bg-panel); border-radius:4px; padding:8px 10px; margin-bottom:10px;">
+            <div style="font-size:10px; font-weight:700; color:${statusColor}; margin-bottom:5px;">${escapeHTML(dorkStatus.toUpperCase().replaceAll("_", " "))}</div>
+            <div style="font-size:11px; color:var(--text-secondary);">${escapeHTML(statusMessages[dorkStatus])}${escapeHTML(countNote)}</div>
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-top:7px;">${metrics}</div>
+        </div>
+    `;
 
     if (!results.length) {
-        body.innerHTML = "<div style='color:var(--text-muted); font-size:12px;'>No organic search hits.</div>";
+        body.innerHTML = `${statusPanel}<div style="color:var(--text-muted); font-size:12px;">No displayable organic search hits.</div>`;
         return;
     }
 
     const rows = results.map(r => {
-        const safeURL = safeAbsoluteHttpURL(r.url);
+        const safeURL = safeAbsoluteHttpURL(r.url || r.link);
+        const title = String(r.title || r.domain || safeURL || "Untitled public result").slice(0, 300);
+        const domain = String(r.domain || (safeURL ? new URL(safeURL).hostname : "Unknown domain")).slice(0, 300);
+        const snippet = String(r.snippet || r.description || r.text || "").slice(0, 1000);
+        const query = String(r.query || "").slice(0, 1000);
+        const queryCategory = String(r.query_category || "").slice(0, 100);
+        const matchCount = Array.isArray(r.matched_queries)
+            ? Math.min(100, r.matched_queries.filter(value => typeof value === "string").length)
+            : 0;
         const titleHTML = safeURL
-            ? `<a href="${escapeHTML(safeURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--text-primary); font-weight:600; text-decoration:none;">${escapeHTML(r.title)} &#x2197;</a>`
-            : `<span style="color:var(--text-primary); font-weight:600;">${escapeHTML(r.title)}</span>`;
+            ? `<a href="${escapeHTML(safeURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--text-primary); font-weight:600; text-decoration:none;">${escapeHTML(title)} &#x2197;</a>`
+            : `<span style="color:var(--text-primary); font-weight:600;">${escapeHTML(title)}</span>`;
         return `
         <tr>
             <td style="white-space:nowrap;"><span class="tag-chip interest">${escapeHTML(r.category || "Public Records")}</span></td>
-            <td>${titleHTML}<br><span class="mono" style="font-size:10px; color:var(--text-muted);">${escapeHTML(r.domain)}</span></td>
-            <td style="color:var(--text-secondary); font-size:11px; max-width:260px;">${escapeHTML(r.snippet)}</td>
-            <td class="mono" style="font-size:10px; color:var(--accent-cyan); white-space:nowrap;">${escapeHTML(r.query)}</td>
+            <td>${titleHTML}<br><span class="mono" style="font-size:10px; color:var(--text-muted);">${escapeHTML(domain)}</span></td>
+            <td style="color:var(--text-secondary); font-size:11px; max-width:320px;">${escapeHTML(snippet)}</td>
+            <td class="mono" style="font-size:10px; color:var(--accent-cyan); white-space:normal; min-width:220px; max-width:360px; overflow-wrap:anywhere;">
+                ${queryCategory ? `<span style="display:block; color:var(--text-muted); margin-bottom:3px;">${escapeHTML(queryCategory)}${matchCount > 1 ? ` · ${matchCount} QUERY MATCHES` : ""}</span>` : ""}
+                ${escapeHTML(query)}
+            </td>
         </tr>
     `;
     }).join("");
 
-    body.innerHTML = `<div class="table-scroll">
+    body.innerHTML = `${statusPanel}<div class="table-scroll">
         <table class="soc-table">
             <thead><tr><th>Category</th><th>Title / Domain</th><th>Snippet Preview</th><th>Query Used</th></tr></thead>
             <tbody>${rows}</tbody>
@@ -1527,11 +1607,27 @@ function renderDiagnosticsPanel(data) {
 
     // Dorking
     const dork = data.dorking_results || {};
-    if (dork.status === "success" || dork.status === "completed") {
+    const dorkStatus = String(dork.status || "error").toLowerCase();
+    const dorkResultCount = boundedInteger(
+        dork.results_count,
+        Array.isArray(dork.results) ? dork.results.length : 0,
+        0,
+        10000,
+    );
+    const dorkRecovery = {
+        not_configured: "Set SERPAPI_KEY in backend/.env, then restart the backend.",
+        quota_exhausted: "Review SerpAPI search usage or wait for its quota cycle; remaining queries were already stopped.",
+        rate_limited: "Wait before retrying; remaining queries were already stopped.",
+        authentication_error: "Replace or correct SERPAPI_KEY, then restart the backend.",
+        timeout: "Check internet access and SerpAPI availability before retrying.",
+        network_error: "Check internet/DNS access and SerpAPI availability before retrying.",
+        disabled: "Set DORKING_ENABLED=true if Google discovery is approved for this deployment.",
+    };
+    if (dorkStatus === "success" || dorkStatus === "completed" || dorkStatus === "no_results") {
         items.push({
             name: "Web Dorking Engine",
             status: "OK",
-            details: `Found ${dork.results_count || (dork.results || []).length || 0} search results.`,
+            details: `Found ${dorkResultCount} unique search results across ${boundedInteger(dork.queries_run, 0, 0, 100)} completed queries.`,
             recovery: null
         });
     } else {
@@ -1539,8 +1635,11 @@ function renderDiagnosticsPanel(data) {
         items.push({
             name: "Web Dorking Engine",
             status: "WARNING",
-            details: dork.error || "Search rate limit or connection issue.",
-            recovery: "Check search provider credentials."
+            details: dorkStatus === "partial"
+                ? `Partial Google discovery retained ${dorkResultCount} unique results.`
+                : "Google discovery did not complete.",
+            recovery: dorkRecovery[dork.error_code || dorkStatus]
+                || "Review the Google discovery status and operational log."
         });
     }
 

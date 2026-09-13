@@ -145,8 +145,22 @@ window.LeaPdfExporter = {
     const aiPersonality = data.ai_personality || {};
     const wmnData = data.wmn_results || {};
     const wmnHits = wmnData.hits || [];
-    const dorking = data.dorking_results || {};
-    const dorkHits = dorking.results || [];
+    const dorking = data.dorking_results && typeof data.dorking_results === "object"
+      ? data.dorking_results
+      : {};
+    const dorkHits = Array.isArray(dorking.results)
+      ? dorking.results.filter(row => row && typeof row === "object").slice(0, 100)
+      : [];
+    const dorkingStatus = String(dorking.status || (dorkHits.length ? "completed" : "no_results"))
+      .toUpperCase()
+      .replaceAll("_", " ");
+    const dorkingSummary = [
+      `Status: ${dorkingStatus}`,
+      `Provider: ${String(dorking.provider || "serpapi").toUpperCase().slice(0, 30)}`,
+      `Unique hits: ${dorkHits.length}`,
+      `Queries: ${boundedInteger(dorking.queries_run, 0, 0, 100)}/${boundedInteger(dorking.queries_attempted ?? dorking.calls_made, 0, 0, 100)}`,
+      `Duplicates removed: ${boundedInteger(dorking.duplicates_removed, 0, 0, 10000)}`,
+    ].join(" | ");
     const ctiData = data.telegram_cti || {};
     const ctiResults = ctiData.results || [];
     const ctiStatus = String(ctiData.status || (ctiResults.length ? "success" : "no_results")).toLowerCase();
@@ -396,9 +410,9 @@ window.LeaPdfExporter = {
     let dorkingRows = dorkHits.map(r => `
       <tr>
         <td><strong>${esc(r.category || "Web Search")}</strong></td>
-        <td>${safeAnchor(r.url, r.title || "Hit", r.title || "Unavailable")}<br><small>${esc(r.domain || "")}</small></td>
-        <td>${esc(r.snippet || "")}</td>
-        <td><small>${esc(r.query || "")}</small></td>
+        <td>${safeAnchor(r.url || r.link, r.title || r.domain || "Hit", r.title || r.domain || "Unavailable")}<br><small>${esc(r.domain || "")}</small></td>
+        <td>${esc(r.snippet || r.description || r.text || "")}</td>
+        <td><small>${esc(r.query_category || "")}${r.query_category ? "<br>" : ""}${esc(r.query || "")}</small></td>
       </tr>
     `).join("");
 
@@ -617,6 +631,7 @@ window.LeaPdfExporter = {
     </table>
 
     <h4>5.2 Google Search Dorking Discovery</h4>
+    <p class="small muted">${esc(dorkingSummary)}</p>
     <table>
         <thead>
             <tr>

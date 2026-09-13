@@ -117,8 +117,8 @@ fallback, then keep the replacement only in `backend/.env`.
 
 ## Apify social scrapers and account quota
 
-Instagram, TikTok, public Facebook Pages, X timelines, LinkedIn, and optional
-Apify dorking now use the same asynchronous Actor client. Before a paid Actor is
+Instagram, TikTok, public Facebook Pages, X timelines, and LinkedIn use the same
+asynchronous Actor client. Before a paid Actor is
 started, the backend makes one read-only `/users/me/limits` request and caches
 the result for five minutes. If monthly usage is at the account limit, every
 paid launch is skipped and diagnostics report `quota_exhausted`; the app resumes
@@ -148,9 +148,41 @@ are no longer relabelled as tweets. Facebook collection is intentionally
 described as public Page collection because the configured Actors do not promise
 personal-profile access.
 
-When `SERPAPI_KEY` is configured, Google dorking uses SerpAPI directly instead
-of spending Apify Actor capacity. Apify Google Search is used only when SerpAPI
-is unavailable.
+Google dorking uses SerpAPI only. It never launches an Apify Actor or switches
+to another provider when SerpAPI is missing, exhausted, or unavailable.
+
+## Target Scan Google dorking
+
+Target Scan now prepares five target-type-aware Google searches for usernames,
+names, email addresses, phone numbers, or domains. Each query keeps the target
+bound to its `OR` clauses and covers a different evidence category: exact web
+mentions, professional/code profiles, social/community profiles, contact or
+directory references, and public documents. A single SerpAPI call requests up
+to ten organic rows, so the default plan can examine up to 50 raw rows without
+pagination or hidden provider calls.
+
+The backend normalizes public HTTP(S) URLs, removes common tracking parameters,
+de-duplicates repeated links, and round-robins query buckets before applying the
+40-result display ceiling. A quota, authentication, rate-limit, timeout, or
+provider error stops further searches immediately; results from earlier
+successful queries are retained with `partial` status. The dashboard displays
+the provider, successful/attempted query counts, removed duplicates, truncation,
+and the real failure state instead of describing every failure as zero hits.
+
+The non-secret server ceilings are documented in `backend/.env.example`:
+
+```dotenv
+DORKING_ENABLED=true
+DORKING_TIMEOUT_SECONDS=15
+DORKING_MAX_QUERIES=5
+DORKING_RESULTS_PER_QUERY=10
+DORKING_MAX_RESULTS=40
+DORKING_COUNTRY_CODE=in
+```
+
+Operational logs use `event=dorking_provider_failed` and
+`event=dorking_completed`. They contain only provider status and counters, not
+the searched value, generated dorks, API key, titles, snippets, or URLs.
 
 ## Cross-platform hashtag analysis
 

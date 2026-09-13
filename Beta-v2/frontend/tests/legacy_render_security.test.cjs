@@ -352,6 +352,62 @@ async function runAppTests() {
     assertLinksAreSafe(html, sandbox.hostnameIsClearlyNonPublic, "app dork results");
     assert(html.includes(`href="${VALID_LINKS.public.replace(/&/g, "&amp;")}"`));
 
+    sandbox.renderGoogleDorking({
+        status: "partial",
+        provider: "serpapi",
+        queries_planned: 5,
+        queries_attempted: 2,
+        queries_run: 1,
+        results_count: 2,
+        duplicates_removed: 4,
+        results_truncated: 3,
+        error: MARKUP_PAYLOAD,
+        results: [
+            null,
+            {
+                link: VALID_LINKS.github,
+                title: MARKUP_PAYLOAD,
+                domain: "github.com",
+                description: MARKUP_PAYLOAD,
+                query: `"fixture" (${MARKUP_PAYLOAD})`,
+                query_category: "Professional and code profiles",
+                matched_queries: ["Exact mentions", "Professional and code profiles"],
+            },
+        ],
+    });
+    html = nodeFor("dorking-results-body").innerHTML;
+    assertLinksAreSafe(html, sandbox.hostnameIsClearlyNonPublic, "app partial dork results");
+    assert(html.includes(`href="${VALID_LINKS.github}"`), "dork link alias was not rendered");
+    assert(html.includes("PARTIAL"), "partial dorking status was hidden");
+    assert(html.includes("4 DUPLICATES REMOVED"), "dork deduplication metric was hidden");
+    assert(html.includes("3 RESULTS CAPPED"), "dork result cap metric was hidden");
+    assert(html.includes("white-space:normal"), "long Google queries are still forced onto one line");
+    assert(!html.includes(MARKUP_PAYLOAD), "dork result markup reached the dashboard");
+    assert.equal(nodeFor("dorking-count-badge").textContent, "1 HITS · 1/2 QUERIES");
+
+    sandbox.renderGoogleDorking({
+        status: "not_configured",
+        provider: "serpapi",
+        queries_planned: 5,
+        queries_attempted: 0,
+        queries_run: 0,
+        results: { malformed: true },
+    });
+    html = nodeFor("dorking-results-body").innerHTML;
+    assert(html.includes("SERPAPI_KEY is not configured"), "missing dorking key looked like zero hits");
+    assert(html.includes("No displayable organic search hits"));
+    assert.equal(nodeFor("dorking-count-badge").textContent, "0 HITS · 0/5 QUERIES");
+
+    sandbox.renderGoogleDorking({
+        status: "quota_exhausted",
+        error: MARKUP_PAYLOAD,
+        calls_made: 1,
+        results: [],
+    });
+    html = nodeFor("dorking-results-body").innerHTML;
+    assert(html.includes("search quota is exhausted"), "quota exhaustion was hidden");
+    assert(!html.includes(MARKUP_PAYLOAD), "raw dorking provider error reached the dashboard");
+
     sandbox.renderAssociatedAccounts([...BAD_URLS, VALID_LINKS.github].map((url, index) => ({
         platform: "fixture",
         category: "public",
@@ -661,11 +717,17 @@ function validExporterData() {
         }],
         wmn_results: { hits: [{ site: "X", handle: "valid_profile", ms: 1, url: VALID_LINKS.x }] },
         dorking_results: {
+            status: "completed",
+            provider: "serpapi",
+            queries_attempted: 1,
+            queries_run: 1,
+            duplicates_removed: 2,
             results: [{
                 category: "public",
-                url: VALID_LINKS.public,
+                link: VALID_LINKS.public,
                 title: "Valid public result",
                 domain: "public.example.org",
+                query_category: "Exact mentions",
             }],
         },
         scraped_data: {
@@ -717,6 +779,10 @@ function runExporterTests() {
     ]) {
         assert(html.includes(`href="${url.replace(/&/g, "&amp;")}"`), `valid PDF link disappeared: ${url}`);
     }
+    assert(html.includes("Status: COMPLETED"), "PDF omitted dorking status");
+    assert(html.includes("Provider: SERPAPI"), "PDF omitted dorking provider");
+    assert(html.includes("Duplicates removed: 2"), "PDF omitted dorking deduplication count");
+    assert(html.includes("Exact mentions"), "PDF omitted dork query category");
     assertImagesUseAuthenticatedProxy(html, safeURL, "valid PDF media", 8);
 
     const ctiFailureData = validExporterData();

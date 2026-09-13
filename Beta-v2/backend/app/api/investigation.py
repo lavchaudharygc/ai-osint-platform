@@ -207,7 +207,25 @@ async def get_keys_diagnostics(
         "apify": apify_diagnostics,
         "groq": {"configured": bool(settings.groq_api_key), "status": "Active" if settings.groq_api_key else "Missing"},
         "gemini": {"configured": bool(settings.gemini_api_key), "status": "Active" if settings.gemini_api_key else "Missing"},
-        "serpapi": {"configured": bool(settings.serpapi_key), "status": "Active" if settings.serpapi_key else "Missing"},
+        "serpapi": {
+            "configured": bool(settings.serpapi_key),
+            "enabled": settings.dorking_enabled,
+            "available": bool(settings.serpapi_key and settings.dorking_enabled),
+            "status": (
+                "Disabled"
+                if not settings.dorking_enabled
+                else "Active"
+                if settings.serpapi_key
+                else "Missing"
+            ),
+            "limits": {
+                "queries_per_scan": settings.dorking_max_queries,
+                "results_per_query": settings.dorking_results_per_query,
+                "results_per_scan": settings.dorking_max_results,
+                "timeout_seconds": settings.dorking_timeout_seconds,
+                "country_code": settings.dorking_country_code,
+            },
+        },
         "email_breach": {
             "configured": bool(
                 settings.email_investigation_breach_enabled
@@ -476,7 +494,7 @@ async def run_investigation(
     ig_service = InstagramService(client=apify_client)
     tiktok_service = TikTokService(client=apify_client)
     twitter_service = TwitterService(client=apify_client)
-    dork_service = DorkingService(client=apify_client)
+    dork_service = DorkingService()
     wmn_service = WhatsMyNameService()
     wikidata_service = WikidataService()
 

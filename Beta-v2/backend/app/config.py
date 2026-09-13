@@ -83,6 +83,16 @@ class Settings(BaseSettings):
     leakosint_api_key: str | None = Field(default_factory=lambda: os.getenv("LEAKOSINT_API_KEY"))
     serpapi_key: str | None = Field(default_factory=lambda: os.getenv("SERPAPI_KEY"))
 
+    # Target Scan Google discovery is SerpAPI-only. These server-owned ceilings
+    # bound paid calls while allowing ten organic rows per call. Callers may
+    # lower the query count but cannot raise these limits.
+    dorking_enabled: bool = True
+    dorking_timeout_seconds: float = Field(default=15.0, ge=2.0, le=30.0)
+    dorking_max_queries: int = Field(default=5, ge=1, le=5)
+    dorking_results_per_query: int = Field(default=10, ge=1, le=10)
+    dorking_max_results: int = Field(default=40, ge=1, le=50)
+    dorking_country_code: str = Field(default="in", min_length=2, max_length=2)
+
     # Isolated full-name public-profile discovery. Request values may only lower
     # these ceilings, and this capability never falls back to another provider.
     person_search_enabled: bool = True
