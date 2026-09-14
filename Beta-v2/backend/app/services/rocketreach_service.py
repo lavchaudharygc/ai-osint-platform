@@ -16,7 +16,16 @@ class RocketReachService:
 
     async def lookup_by_linkedin_url(self, linkedin_url: str) -> Dict[str, Any]:
         if not self.api_key or not linkedin_url:
-            return {"success": False, "configured": bool(self.api_key), "emails": [], "phones": []}
+            return {
+                "success": False,
+                "configured": bool(self.api_key),
+                "provider": "rocketreach",
+                "source": "rocketreach",
+                "status": "skipped",
+                "error_code": "missing_identifier" if self.api_key else "not_configured",
+                "emails": [],
+                "phones": [],
+            }
 
         # Normalize input (URL or handle) to standard LinkedIn profile URL
         formatted_url = linkedin_url.strip()
@@ -89,6 +98,9 @@ class RocketReachService:
                     )
                     return {
                         "success": True,
+                        "configured": True,
+                        "provider": "rocketreach",
+                        "status": "success",
                         "source": "rocketreach",
                         "full_name": data.get("name"),
                         "current_title": data.get("current_title"),
@@ -108,14 +120,24 @@ class RocketReachService:
                         "reason=http_error http_status=%d",
                         res.status_code,
                     )
-                    error_msg = f"HTTP {res.status_code} Error"
-                    try:
-                        error_data = res.json()
-                        if isinstance(error_data, dict):
-                            error_msg = error_data.get("detail") or error_data.get("message") or error_msg
-                    except Exception:
-                        pass
-                    return {"success": False, "error": error_msg, "emails": [], "phones": []}
+                    error_code = {
+                        401: "authentication_failed",
+                        402: "quota_exhausted",
+                        403: "access_denied",
+                        429: "rate_limited",
+                    }.get(res.status_code, "http_error")
+                    return {
+                        "success": False,
+                        "configured": True,
+                        "provider": "rocketreach",
+                        "source": "rocketreach",
+                        "status": "error",
+                        "error": "RocketReach lookup was not completed",
+                        "error_code": error_code,
+                        "http_status": res.status_code,
+                        "emails": [],
+                        "phones": [],
+                    }
         except Exception as exc:
             logger.warning(
                 "event=contact_provider_failed provider=rocketreach "
@@ -124,9 +146,24 @@ class RocketReachService:
             )
             return {
                 "success": False,
+                "configured": True,
+                "provider": "rocketreach",
+                "source": "rocketreach",
+                "status": "error",
                 "error": "RocketReach request failed",
+                "error_code": "request_failed",
                 "emails": [],
                 "phones": [],
             }
 
-        return {"success": False, "emails": [], "phones": []}
+        return {
+            "success": False,
+            "configured": True,
+            "provider": "rocketreach",
+            "source": "rocketreach",
+            "status": "error",
+            "error": "RocketReach lookup was not completed",
+            "error_code": "unknown_error",
+            "emails": [],
+            "phones": [],
+        }

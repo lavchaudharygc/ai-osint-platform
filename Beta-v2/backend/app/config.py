@@ -114,6 +114,10 @@ class Settings(BaseSettings):
     zerobounce_api_key: str | None = Field(default_factory=lambda: os.getenv("ZEROBOUNCE_API_KEY"))
     rapidapi_key: str | None = Field(default_factory=lambda: os.getenv("RAPIDAPI_KEY"))
     rocketreach_api_key: str | None = Field(default_factory=lambda: os.getenv("ROCKETREACH_API_KEY"))
+    # Successful paid contact-enrichment and mailbox-verification results may
+    # be reused briefly in memory. Raw identifiers are never used as cache keys.
+    contact_result_cache_ttl_seconds: int = Field(default=900, ge=0, le=3_600)
+    contact_result_cache_max_entries: int = Field(default=256, ge=0, le=512)
 
     telegram_api_id: int = 0
     telegram_api_hash: str | None = Field(default_factory=lambda: os.getenv("TELEGRAM_API_HASH"))

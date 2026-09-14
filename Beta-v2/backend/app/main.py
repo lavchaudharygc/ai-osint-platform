@@ -33,6 +33,7 @@ from app.operational_logging import (
     reset_request_id,
     shutdown_operational_logging,
 )
+from app.services.contact_result_cache import reset_contact_result_cache
 
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     global _last_readiness_state
 
+    reset_contact_result_cache()
     with _readiness_lock:
         _last_readiness_state = None
     log_status = configure_operational_logging()
@@ -148,6 +150,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             settings.telegram_cti_cooldown_seconds,
             settings.cti_external_ai_filtering_enabled,
         )
+        logger.info(
+            "event=contact_cache_policy ttl_seconds=%d max_entries=%d "
+            "storage=process_memory response_cache=no_store",
+            settings.contact_result_cache_ttl_seconds,
+            settings.contact_result_cache_max_entries,
+        )
         _log_readiness_transition(_readiness_failure())
         yield
     except Exception as exc:
@@ -158,6 +166,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         )
         raise
     finally:
+        reset_contact_result_cache()
         logger.info("event=application_stopped")
         shutdown_operational_logging()
 

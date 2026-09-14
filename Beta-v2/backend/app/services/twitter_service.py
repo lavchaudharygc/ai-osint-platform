@@ -158,6 +158,18 @@ class TwitterService:
                 user.get("description"),
                 first.get("authorBio"),
             )
+            email = _first_value(
+                user.get("email"),
+                user.get("businessEmail"),
+                user.get("publicEmail"),
+                first.get("authorEmail"),
+            )
+            phone = _first_value(
+                user.get("phone"),
+                user.get("phoneNumber"),
+                user.get("businessPhoneNumber"),
+                first.get("authorPhone"),
+            )
             profile_picture = _first_value(
                 user.get("profilePicture"),
                 user.get("profileImageUrl"),
@@ -190,6 +202,8 @@ class TwitterService:
                 "username": str(resolved_username).lstrip("@"),
                 "full_name": full_name,
                 "bio": bio,
+                "email": email,
+                "phone": phone,
                 "profile_pic_url": profile_picture,
                 "follower_count": followers,
                 "following_count": following,

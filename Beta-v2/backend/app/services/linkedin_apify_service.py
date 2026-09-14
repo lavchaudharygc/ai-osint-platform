@@ -31,6 +31,109 @@ def _slug_from_url(value: Any) -> str | None:
     return match.group(1) if match else None
 
 
+def _contact_scalars(value: Any, fields: tuple[str, ...]) -> list[str]:
+    """Flatten only allowlisted contact fields from provider-controlled data."""
+
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return [cleaned] if cleaned else []
+    if isinstance(value, (list, tuple)):
+        values: list[str] = []
+        for child in value:
+            values.extend(_contact_scalars(child, fields))
+        return values
+    if isinstance(value, dict):
+        values = []
+        for field in fields:
+            if field in value:
+                values.extend(_contact_scalars(value[field], fields))
+        return values
+    return []
+
+
+def _linkedin_contacts(item: dict[str, Any], contact_info: Any) -> tuple[list[str], list[str]]:
+    """Extract stable email/phone lists across known LinkedIn Actor shapes."""
+
+    email_fields = (
+        "email",
+        "emails",
+        "email_address",
+        "emailAddress",
+        "address",
+    )
+    phone_fields = (
+        "phone",
+        "phones",
+        "phone_number",
+        "phone_numbers",
+        "phoneNumber",
+        "phoneNumbers",
+        "mobile",
+        "number",
+        "e164",
+    )
+    emails: list[str] = []
+    phones: list[str] = []
+
+    for field in email_fields:
+        if field in item:
+            emails.extend(_contact_scalars(item[field], (*email_fields, "value")))
+    for field in phone_fields:
+        if field in item:
+            phones.extend(_contact_scalars(item[field], (*phone_fields, "value")))
+
+    containers: list[Any] = []
+    if isinstance(contact_info, list):
+        containers.extend(contact_info)
+    elif isinstance(contact_info, dict):
+        for field in email_fields:
+            if field in contact_info:
+                emails.extend(
+                    _contact_scalars(contact_info[field], (*email_fields, "value"))
+                )
+        for field in phone_fields:
+            if field in contact_info:
+                phones.extend(
+                    _contact_scalars(contact_info[field], (*phone_fields, "value"))
+                )
+        nested = contact_info.get("contacts")
+        containers.extend(nested if isinstance(nested, list) else [nested])
+
+    direct_contacts = item.get("contacts")
+    containers.extend(
+        direct_contacts if isinstance(direct_contacts, list) else [direct_contacts]
+    )
+    for contact in containers:
+        if not isinstance(contact, dict):
+            continue
+        contact_type = str(
+            contact.get("type") or contact.get("contactType") or ""
+        ).casefold()
+        if "email" in contact_type:
+            emails.extend(
+                _contact_scalars(contact, (*email_fields, "value", "contact"))
+            )
+        elif contact_type in {"phone", "mobile", "telephone"} or "phone" in contact_type:
+            phones.extend(
+                _contact_scalars(contact, (*phone_fields, "value", "contact"))
+            )
+        else:
+            emails.extend(_contact_scalars(contact, email_fields))
+            phones.extend(_contact_scalars(contact, phone_fields))
+
+    seen_emails: set[str] = set()
+    stable_emails = [
+        value
+        for value in emails
+        if not (
+            value.casefold() in seen_emails
+            or seen_emails.add(value.casefold())
+        )
+    ]
+    stable_phones = list(dict.fromkeys(phones))
+    return stable_emails, stable_phones
+
+
 def normalize_linkedin_item(item: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(item, dict):
         item = {}
@@ -43,9 +146,8 @@ def normalize_linkedin_item(item: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(stats, dict):
         stats = {}
 
-    contact_info = item.get("contact_info") or item.get("contactInfo")
-    if not isinstance(contact_info, dict):
-        contact_info = {}
+    raw_contact_info = item.get("contact_info") or item.get("contactInfo")
+    contact_info = raw_contact_info if isinstance(raw_contact_info, dict) else {}
 
     first_name = (
         basic_info.get("firstName")
@@ -143,8 +245,9 @@ def normalize_linkedin_item(item: dict[str, Any]) -> dict[str, Any]:
     raw_edu = item.get("education") or item.get("educations") or basic_info.get("education")
     education = raw_edu if isinstance(raw_edu, list) else ([raw_edu] if isinstance(raw_edu, dict) else [])
 
-    email = contact_info.get("email") or item.get("email")
-    phone = contact_info.get("phone") or item.get("phone")
+    emails, phones = _linkedin_contacts(item, raw_contact_info)
+    email = emails[0] if emails else None
+    phone = phones[0] if phones else None
     websites = contact_info.get("websites") or item.get("websites") or []
 
     profile_url = (
@@ -185,7 +288,10 @@ def normalize_linkedin_item(item: dict[str, Any]) -> dict[str, Any]:
         "organizations": item.get("organizations") or [],
         "projects": item.get("projects") or [],
         "email": email,
+        "emails": emails,
         "phone": phone,
+        "phones": phones,
+        "phone_numbers": phones,
         "websites": websites,
         "contact_info": contact_info or {"email": email, "phone": phone, "websites": websites},
         "basic_info": basic_info or {
@@ -316,7 +422,14 @@ async def fetch_linkedin(
             "status": "provider_error",
             "source": "apify",
             "actor_id": primary_actor,
-            "error": last_exc.as_dict() if isinstance(last_exc, ApifyClientError) else {"message": str(last_exc)},
+            "error": (
+                last_exc.as_dict()
+                if isinstance(last_exc, ApifyClientError)
+                else {
+                    "message": "LinkedIn provider request failed",
+                    "error_type": type(last_exc).__name__,
+                }
+            ),
             "recent_posts": [],
         }
 

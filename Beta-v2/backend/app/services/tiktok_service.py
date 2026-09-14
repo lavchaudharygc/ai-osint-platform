@@ -86,6 +86,18 @@ class TikTokService:
                 "username": author.get("name") or clean_handle,
                 "full_name": author.get("nickName"),
                 "bio": author.get("signature"),
+                "email": (
+                    author.get("email")
+                    or author.get("businessEmail")
+                    or author.get("business_email")
+                    or author.get("publicEmail")
+                ),
+                "phone": (
+                    author.get("phone")
+                    or author.get("phoneNumber")
+                    or author.get("businessPhoneNumber")
+                    or author.get("business_phone_number")
+                ),
                 "profile_pic_url": author.get("avatar"),
                 "follower_count": author.get("fans"),
                 "following_count": author.get("following"),

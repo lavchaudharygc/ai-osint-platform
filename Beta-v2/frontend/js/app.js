@@ -64,10 +64,18 @@ window.addEventListener("soc:unauthenticated", clearLegacyInvestigationState);
 /* ---------- Smart Input Classifier ---------- */
 function classifyInput(raw) {
     const s = raw.trim();
+    if (/^@[^\s@]+$/.test(s)) return { kind: "username", raw: s.slice(1) };
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return { kind: "email", raw: s };
+    const ipv4Parts = s.split(".");
+    const isIPv4 = ipv4Parts.length === 4
+        && ipv4Parts.every(part => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+    const isIPv6 = s.includes(":")
+        && /^[0-9a-f:]+$/i.test(s)
+        && (s.match(/:/g) || []).length >= 2;
+    if (isIPv4 || isIPv6) return { kind: "domain", raw: s };
     if (/^\+?[0-9][0-9\s().\-]{6,}$/.test(s)) return { kind: "phone", raw: s.replace(/[^\d+]/g, "") };
     const isUrl = /^https?:\/\//i.test(s);
-    const isDomain = /^[a-z0-9-]+\.(?:com|org|net|io|co|ai|app|dev|info|biz|edu|gov|in|uk|us|me|xyz)$/i.test(s);
+    const isDomain = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})\.?$/i.test(s);
     if (isUrl || isDomain) return { kind: "domain", raw: s.replace(/^https?:\/\//i, "").replace(/\/.*$/, "") };
     if (/\s/.test(s)) return { kind: "name", raw: s };
     return { kind: "username", raw: s.replace(/^@/, "") };
@@ -114,6 +122,163 @@ function boundedInteger(value, fallback = 0, minimum = 0, maximum = Number.MAX_S
 
 function formattedCount(value, fallback = 0) {
     return boundedInteger(value, fallback).toLocaleString();
+}
+
+function contactValueGroups(...values) {
+    const flattened = [];
+    values.forEach(value => {
+        if (Array.isArray(value)) flattened.push(...value);
+        else if (value !== null && value !== undefined && value !== "") flattened.push(value);
+    });
+    return flattened;
+}
+
+function safeContactMetaToken(value, fallback, maximum = 48) {
+    const candidate = String(value ?? "").trim().replaceAll("_", " ");
+    if (!candidate || candidate.length > maximum || !/^[a-z0-9][a-z0-9 .+&()\/-]*$/i.test(candidate)) {
+        return fallback;
+    }
+    return candidate;
+}
+
+function contactSourceLabels(entry, defaultSource = "") {
+    const rawSources = contactValueGroups(
+        entry?.sources,
+        entry?.source_platforms,
+        entry?.platforms,
+        entry?.source,
+        entry?.provider,
+    );
+    if (!rawSources.length && defaultSource) rawSources.push(defaultSource);
+    const labels = [];
+    rawSources.forEach(rawSource => {
+        const candidate = rawSource && typeof rawSource === "object"
+            ? (rawSource.source || rawSource.platform || rawSource.provider || rawSource.name)
+            : rawSource;
+        const label = safeContactMetaToken(candidate, "", 64);
+        if (label && !labels.some(existing => existing.toLowerCase() === label.toLowerCase())) {
+            labels.push(label);
+        }
+    });
+    return labels.slice(0, 8);
+}
+
+function normalizeContactStatus(entry, contactType = "email") {
+    const rawStatus = entry?.status ?? entry?.smtp_valid ?? entry?.validation_status;
+    if (rawStatus === true) return contactType === "phone" ? "valid" : "verified";
+    if (rawStatus === false) return "invalid";
+    let candidate = safeContactMetaToken(rawStatus, "unknown", 32).toLowerCase();
+    if (contactType === "email" && ["valid", "deliverable"].includes(candidate)) candidate = "verified";
+    if (["not valid", "not-valid", "undeliverable"].includes(candidate)) candidate = "invalid";
+    const allowed = new Set([
+        "verified", "invalid", "likely", "unknown", "resolved", "observed",
+        "provided", "unverified", "risky", "accept all", "generated guess",
+        "valid", "possible",
+    ]);
+    return allowed.has(candidate) ? candidate : "unknown";
+}
+
+function normalizeContactEntries(values, contactType, defaultSource = "", limit = 100) {
+    const type = contactType === "phone" ? "phone" : "email";
+    const entries = new Map();
+    contactValueGroups(values).slice(0, Math.max(1, limit * 4)).forEach(rawEntry => {
+        const entry = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
+        let rawValue = rawEntry;
+        if (rawEntry && typeof rawEntry === "object") {
+            rawValue = type === "email"
+                ? (entry.email ?? entry.address ?? entry.email_address ?? entry.value)
+                : (entry.phone ?? entry.number ?? entry.phone_number ?? entry.e164 ?? entry.value);
+        }
+        let displayValue = String(rawValue ?? "").trim();
+        let dedupeKey = "";
+        if (type === "email") {
+            displayValue = displayValue.replace(/^mailto:/i, "").trim().toLowerCase();
+            if (
+                displayValue.length > 320
+                || !/^[^\s@<>]{1,64}@[^\s@<>]{1,253}$/.test(displayValue)
+                || !displayValue.split("@")[1]?.includes(".")
+            ) return;
+            dedupeKey = displayValue;
+        } else {
+            if (
+                displayValue.length > 40
+                || !/^\+?[\d\s().-]+(?:\s*(?:x|ext\.?)\s*\d+)?$/i.test(displayValue)
+            ) return;
+            const digits = displayValue.replace(/\D/g, "");
+            if (digits.length < 7 || digits.length > 20) return;
+            dedupeKey = digits;
+        }
+
+        const sources = contactSourceLabels(entry, defaultSource);
+        const reason = String(entry.reason || "").trim().slice(0, 240);
+        const provenanceEntry = contactValueGroups(entry.sources, entry.provenance)
+            .find(value => value && typeof value === "object");
+        const inferredKind = (
+            /(?:pattern|generated).*guess/i.test(reason)
+            || sources.some(source => /(?:pattern|generated).*guess/i.test(source))
+        ) ? "generated guess" : "discovered";
+        const kind = safeContactMetaToken(
+            entry.kind || entry.type || entry.contact_type || provenanceEntry?.collection_method,
+            inferredKind,
+            40,
+        ).toLowerCase();
+        const sourceCount = boundedInteger(entry.source_count, sources.length, sources.length, 1000);
+        const normalized = {
+            value: displayValue,
+            status: normalizeContactStatus(entry, type),
+            kind,
+            sources,
+            sourceCount,
+            deliverable: entry.deliverable === true,
+            verificationProvider: safeContactMetaToken(
+                entry.verification_provider || entry.verificationProvider,
+                "",
+                50,
+            ),
+            reason,
+        };
+        const existing = entries.get(dedupeKey);
+        if (!existing) {
+            entries.set(dedupeKey, normalized);
+            return;
+        }
+        normalized.sources.forEach(source => {
+            if (!existing.sources.some(current => current.toLowerCase() === source.toLowerCase())) {
+                existing.sources.push(source);
+            }
+        });
+        existing.sources = existing.sources.slice(0, 8);
+        existing.sourceCount = Math.max(existing.sourceCount, normalized.sourceCount, existing.sources.length);
+        const statusPriority = { verified: 8, valid: 7, invalid: 6, resolved: 5, observed: 4, provided: 4, possible: 3, likely: 3, unverified: 2, unknown: 1 };
+        if ((statusPriority[normalized.status] ?? 1) > (statusPriority[existing.status] ?? 1)) {
+            existing.status = normalized.status;
+        }
+        if (existing.kind === "discovered" && normalized.kind !== "discovered") existing.kind = normalized.kind;
+        existing.deliverable ||= normalized.deliverable;
+        if (!existing.verificationProvider && normalized.verificationProvider) {
+            existing.verificationProvider = normalized.verificationProvider;
+        }
+        if (!existing.reason && normalized.reason) existing.reason = normalized.reason;
+    });
+    return [...entries.values()].slice(0, limit);
+}
+
+function isGeneratedContact(entry) {
+    const kind = String(entry?.kind || "").toLowerCase();
+    return kind.includes("guess") || kind.includes("generated") || kind.includes("pattern");
+}
+
+function contactEntryHTML(entry) {
+    const sources = entry.sources.slice(0, 3);
+    const remainingSources = Math.max(0, entry.sourceCount - sources.length);
+    const sourceText = sources.length
+        ? `${sources.join(", ")}${remainingSources ? ` +${remainingSources}` : ""}`
+        : "source unavailable";
+    const verificationText = entry.verificationProvider
+        ? ` \u00b7 verification: ${entry.verificationProvider}`
+        : "";
+    const meta = `${entry.status} \u00b7 ${entry.kind}${verificationText} \u00b7 ${sourceText}`;
+    return `<span class="tag-chip mono ${entry.deliverable || ["verified", "valid"].includes(entry.status) ? "interest" : ""}" title="${escapeHTML(entry.reason || meta)}">${escapeHTML(entry.value)} <small>(${escapeHTML(meta)})</small></span>`;
 }
 
 function hostnameIsClearlyNonPublic(value) {
@@ -503,7 +668,7 @@ async function executeScan(fromHero = false) {
 
 /* ---------- Rendering Engine ---------- */
 function renderResults(data) {
-    renderConsolidatedIdentity(data.consolidated_identity);
+    renderConsolidatedIdentity(data.consolidated_identity, data.contact_discovery);
     renderAiPersonality(data.ai_personality, data.gemini_reasoning);
     renderHashtagAnalysis(data.hashtag_analysis);
     renderAssociatedAccounts(data.associated_accounts);
@@ -633,11 +798,12 @@ function renderHashtagAnalysis(analysis) {
 }
 
 // 1. Consolidated Identity Profile
-function renderConsolidatedIdentity(ci) {
+function renderConsolidatedIdentity(ci, contactDiscovery = null) {
     const body = document.getElementById("consolidated-identity-body");
     const badge = document.getElementById("consolidated-confidence-badge");
     if (!body) return;
     if (!ci) { body.innerHTML = "<div style='color:var(--text-muted);'>No consolidated identity generated.</div>"; return; }
+    const discovery = contactDiscovery && typeof contactDiscovery === "object" ? contactDiscovery : {};
 
     const pct = boundedInteger(ci.confidence_percentage, 0, 0, 100);
     if (badge) {
@@ -645,15 +811,35 @@ function renderConsolidatedIdentity(ci) {
         badge.style.color = pct >= 70 ? "var(--status-success)" : (pct >= 45 ? "var(--risk-medium)" : "var(--risk-high)");
     }
 
-    const emailsHTML = (ci.emails || []).map(e => {
-        const statusCandidate = String(e?.status || "unknown").trim().toLowerCase();
-        const emailStatus = ["verified", "invalid", "likely", "unknown", "resolved"].includes(statusCandidate)
-            ? statusCandidate
-            : "unknown";
-        return `
-        <span class="tag-chip mono ${e?.deliverable ? 'interest' : ''}">${escapeHTML(e?.email)} <small>(${escapeHTML(emailStatus)})</small></span>
+    const observedEmailEntries = normalizeContactEntries(
+        contactValueGroups(discovery.emails, ci.emails, ci.email_addresses, ci.email),
+        "email",
+    );
+    const explicitEmailGuesses = normalizeContactEntries(
+        contactValueGroups(discovery.email_guesses, ci.email_guesses, ci.generated_emails, ci.guessed_emails),
+        "email",
+        "Generated pattern",
+    ).map(entry => ({ ...entry, kind: "generated guess" }));
+    const phones = normalizeContactEntries(
+        contactValueGroups(discovery.phones, ci.phones, ci.phone_numbers, ci.phone),
+        "phone",
+    );
+    const discoveredEmails = observedEmailEntries.filter(entry => !isGeneratedContact(entry));
+    const generatedEmails = normalizeContactEntries(
+        [
+            ...observedEmailEntries.filter(isGeneratedContact),
+            ...explicitEmailGuesses,
+        ],
+        "email",
+    ).map(entry => ({ ...entry, kind: "generated guess" }));
+    const discoveredPhones = phones.filter(entry => !isGeneratedContact(entry));
+    const generatedPhones = phones.filter(isGeneratedContact);
+    const contactSection = (label, entries, emptyText) => `
+        <div style="margin-top:12px;">
+            <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">${escapeHTML(label)} (${entries.length})</div>
+            <div>${entries.map(contactEntryHTML).join("") || `<span style='color:var(--text-muted);'>${escapeHTML(emptyText)}</span>`}</div>
+        </div>
     `;
-    }).join("");
 
     const linksHTML = (ci.links || []).map(value => {
         const safeURL = safeAbsoluteHttpURL(value);
@@ -690,10 +876,10 @@ function renderConsolidatedIdentity(ci) {
                 </table>
             </div>
         </div>
-        <div style="margin-top:10px;">
-            <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">VERIFIED & GUESS TARGET EMAILS (${(ci.emails||[]).length} DETECTED)</div>
-            <div>${emailsHTML || "<span style='color:var(--text-muted);'>None</span>"}</div>
-        </div>
+        ${contactSection("DISCOVERED / PROVIDED EMAILS", discoveredEmails, "No observed or provided email addresses.")}
+        ${generatedEmails.length ? contactSection("GENERATED EMAIL CANDIDATES — NOT CONFIRMED", generatedEmails, "") : ""}
+        ${contactSection("DISCOVERED / PROVIDED PHONE NUMBERS", discoveredPhones, "No observed or provided phone numbers.")}
+        ${generatedPhones.length ? contactSection("GENERATED PHONE CANDIDATES — NOT CONFIRMED", generatedPhones, "") : ""}
         <div style="margin-top:14px;">
             <div style="font-size:10px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">INTELLIGENCE TARGET DOSSIER LINKS (${(ci.links||[]).length} RESOLVED)</div>
             <div>${linksHTML || "<span style='color:var(--text-muted);'>None</span>"}</div>
@@ -1124,9 +1310,52 @@ function renderPlatformDossiers(scraped) {
     }
 
     // LinkedIn Dossier
-    if (scraped.linkedin && (scraped.linkedin.success || scraped.linkedin.full_name || scraped.linkedin.headline || scraped.linkedin.basic_info)) {
+    if (scraped.linkedin && (scraped.linkedin.success || scraped.linkedin.full_name || scraped.linkedin.headline || scraped.linkedin.basic_info || scraped.linkedin.rocketreach)) {
         const li = scraped.linkedin;
         const info = li.basic_info || li || {};
+        const topLevelRocketReach = scraped.rocketreach && typeof scraped.rocketreach === "object"
+            ? scraped.rocketreach
+            : null;
+        const nestedRocketReach = !topLevelRocketReach && li.rocketreach && typeof li.rocketreach === "object"
+            ? li.rocketreach
+            : null;
+        const linkedEnrichment = topLevelRocketReach || nestedRocketReach;
+        const linkedEnrichmentEmails = linkedEnrichment ? normalizeContactEntries(
+            contactValueGroups(
+                linkedEnrichment.emails,
+                linkedEnrichment.email_addresses,
+                linkedEnrichment.email,
+                linkedEnrichment.raw_emails,
+            ),
+            "email",
+            "RocketReach",
+        ) : [];
+        const linkedEnrichmentPhones = linkedEnrichment ? normalizeContactEntries(
+            contactValueGroups(
+                linkedEnrichment.phones,
+                linkedEnrichment.phone_numbers,
+                linkedEnrichment.phone,
+                linkedEnrichment.raw_phones,
+            ),
+            "phone",
+            "RocketReach",
+        ) : [];
+        const linkedEnrichmentEmailValues = new Set(
+            linkedEnrichmentEmails.map(entry => entry.value.toLowerCase()),
+        );
+        const linkedEnrichmentPhoneValues = new Set(
+            linkedEnrichmentPhones.map(entry => entry.value.replace(/\D/g, "")),
+        );
+        const liEmails = normalizeContactEntries(
+            contactValueGroups(li.emails, li.email_addresses, li.email),
+            "email",
+            "LinkedIn / contact enrichment",
+        ).filter(entry => !linkedEnrichmentEmailValues.has(entry.value.toLowerCase()));
+        const liPhones = normalizeContactEntries(
+            contactValueGroups(li.phones, li.phone_numbers, li.phone),
+            "phone",
+            "LinkedIn / contact enrichment",
+        ).filter(entry => !linkedEnrichmentPhoneValues.has(entry.value.replace(/\D/g, "")));
         const fullname = info.fullname || info.full_name || "N/A";
         const headline = info.headline || "N/A";
         const companyName = info.current_company || li.current_company || li.company || "N/A";
@@ -1206,36 +1435,29 @@ function renderPlatformDossiers(scraped) {
         }
 
         let rrHTML = "";
-        if (li.rocketreach && li.rocketreach.success) {
-            const rr = li.rocketreach;
-            const rrEmailsHTML = (rr.raw_emails || (rr.emails || []).map(e => ({email: e}))).map(e => {
-                const addr = typeof e === 'string' ? e : e.email;
-                const status = typeof e === 'object' && e.smtp_valid ? e.smtp_valid : '';
-                const typeStr = typeof e === 'object' && e.type ? ` (${e.type})` : '';
-                const isGood = status === 'valid' || !status;
-                return `<span class="tag-chip mono ${isGood ? 'interest' : ''}">${escapeHTML(addr)}${escapeHTML(typeStr)}</span>`;
-            }).join("");
+        if (nestedRocketReach) {
+            const rr = nestedRocketReach;
+            const rrEmails = linkedEnrichmentEmails;
+            const rrPhones = linkedEnrichmentPhones;
+            const rrEmailsHTML = rrEmails.map(contactEntryHTML).join("");
+            const rrPhonesHTML = rrPhones.map(contactEntryHTML).join("");
 
-            const rrPhonesHTML = (rr.raw_phones || (rr.phones || []).map(p => ({number: p}))).map(p => {
-                const num = typeof p === 'string' ? p : (p.number || p.e164);
-                const typeStr = typeof p === 'object' && p.type ? ` [${p.type}]` : '';
-                return `<span class="tag-chip mono" style="color:var(--status-success); border-color:var(--status-success);">${escapeHTML(num)}${escapeHTML(typeStr)}</span>`;
-            }).join("");
-
-            rrHTML = `
+            if (rrEmails.length || rrPhones.length || rr.full_name || rr.current_title || rr.current_employer) {
+                rrHTML = `
                 <div style="margin-top:12px; padding:10px; background:rgba(0,220,255,0.04); border:1px solid rgba(0,220,255,0.2); border-radius:4px;">
                     <div style="font-size:10px; font-weight:700; color:var(--accent-cyan); margin-bottom:6px; letter-spacing:0.05em; display:flex; justify-content:space-between;">
                         <span>🚀 CONTACT ENRICHMENT</span>
-                        <span>CONFIRMED MATCH</span>
+                        <span>${rrEmails.length || rrPhones.length ? "CONTACT DATA RETURNED" : "PROFILE DATA RETURNED"}</span>
                     </div>
                     ${rr.full_name ? `<div style="font-size:11px; color:var(--text-primary);"><strong>Full Name:</strong> ${escapeHTML(rr.full_name)} ${rr.current_title ? `· <em>${escapeHTML(rr.current_title)}</em>` : ''}</div>` : ''}
                     ${rr.current_employer ? `<div style="font-size:11px; color:var(--text-secondary);"><strong>Employer:</strong> ${escapeHTML(rr.current_employer)} ${rr.location ? `(${escapeHTML(rr.location)})` : ''}</div>` : ''}
                     <div style="font-size:10px; margin-top:6px;">
-                        <strong>Direct Emails (${(rr.emails||[]).length}):</strong> ${rrEmailsHTML || "<span style='color:var(--text-muted);'>None</span>"}<br>
-                        <strong>Phone Numbers (${(rr.phones||[]).length}):</strong> ${rrPhonesHTML || "<span style='color:var(--text-muted);'>None</span>"}
+                        <strong>Emails (${rrEmails.length}):</strong> ${rrEmailsHTML || "<span style='color:var(--text-muted);'>None returned</span>"}<br>
+                        <strong>Phone Numbers (${rrPhones.length}):</strong> ${rrPhonesHTML || "<span style='color:var(--text-muted);'>None returned</span>"}
                     </div>
                 </div>
             `;
+            }
         }
 
         cardsHTML += `
@@ -1256,8 +1478,8 @@ function renderPlatformDossiers(scraped) {
                 </div>
                 <div style="font-size:11px; margin-top:6px; color:var(--text-secondary);">
                     <strong>Followers:</strong> ${followers}<br>
-                    <strong>Emails:</strong> ${(li.emails || []).map(e => `<span class="tag-chip interest">${escapeHTML(e)}</span>`).join("") || "<span style='color:var(--text-muted);'>None</span>"}<br>
-                    <strong>Phone Numbers:</strong> ${(li.phone_numbers || li.phones || []).map(p => `<span class="tag-chip mono" style="color:var(--status-success); border-color:var(--status-success);">${escapeHTML(p)}</span>`).join("") || "<span style='color:var(--text-muted);'>None</span>"}
+                    <strong>Emails:</strong> ${liEmails.map(contactEntryHTML).join("") || "<span style='color:var(--text-muted);'>None returned</span>"}<br>
+                    <strong>Phone Numbers:</strong> ${liPhones.map(contactEntryHTML).join("") || "<span style='color:var(--text-muted);'>None returned</span>"}
                 </div>
                 ${rrHTML}
                 ${expHTML}
@@ -1268,22 +1490,32 @@ function renderPlatformDossiers(scraped) {
     }
 
     // Standalone Enrichment Card
-    const rrData = scraped.rocketreach || (scraped.linkedin && scraped.linkedin.rocketreach);
-    if (rrData && (rrData.success || (rrData.emails && rrData.emails.length > 0) || (rrData.phones && rrData.phones.length > 0) || rrData.full_name)) {
+    const topLevelRRData = scraped.rocketreach && typeof scraped.rocketreach === "object"
+        ? scraped.rocketreach
+        : null;
+    const nestedRRData = scraped.linkedin?.rocketreach && typeof scraped.linkedin.rocketreach === "object"
+        ? scraped.linkedin.rocketreach
+        : null;
+    const rrData = topLevelRRData || nestedRRData;
+    const nestedRRIsRendered = Boolean(!topLevelRRData && nestedRRData);
+    const standaloneRREmails = rrData ? normalizeContactEntries(
+        contactValueGroups(rrData.emails, rrData.email_addresses, rrData.email, rrData.raw_emails),
+        "email",
+        "RocketReach",
+    ) : [];
+    const standaloneRRPhones = rrData ? normalizeContactEntries(
+        contactValueGroups(rrData.phones, rrData.phone_numbers, rrData.phone, rrData.raw_phones),
+        "phone",
+        "RocketReach",
+    ) : [];
+    if (
+        rrData
+        && !nestedRRIsRendered
+        && (standaloneRREmails.length || standaloneRRPhones.length || rrData.full_name || rrData.current_title || rrData.current_employer)
+    ) {
         const rr = rrData;
-        const rrEmails = (rr.raw_emails || (rr.emails || []).map(e => ({email: e}))).map(e => {
-            const addr = typeof e === 'string' ? e : e.email;
-            const status = typeof e === 'object' && e.smtp_valid ? e.smtp_valid : '';
-            const typeStr = typeof e === 'object' && e.type ? ` (${e.type})` : '';
-            const isGood = status === 'valid' || !status;
-            return `<span class="tag-chip mono ${isGood ? 'interest' : ''}">${escapeHTML(addr)}${escapeHTML(typeStr)}</span>`;
-        }).join("");
-
-        const rrPhones = (rr.raw_phones || (rr.phones || []).map(p => ({number: p}))).map(p => {
-            const num = typeof p === 'string' ? p : (p.number || p.e164);
-            const typeStr = typeof p === 'object' && p.type ? ` [${p.type}]` : '';
-            return `<span class="tag-chip mono" style="color:var(--status-success); border-color:var(--status-success);">${escapeHTML(num)}${escapeHTML(typeStr)}</span>`;
-        }).join("");
+        const rrEmails = standaloneRREmails.map(contactEntryHTML).join("");
+        const rrPhones = standaloneRRPhones.map(contactEntryHTML).join("");
 
         let rrExp = "";
         if (rr.job_history && rr.job_history.length > 0) {
@@ -1306,14 +1538,14 @@ function renderPlatformDossiers(scraped) {
             <div style="background:var(--bg-elevated); border:1px solid rgba(0,220,255,0.3); border-radius:6px; padding:14px; margin-bottom:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <span style="font-weight:600; color:var(--accent-cyan);">🚀 CONTACT ENRICHMENT DOSSIER</span>
-                    <span class="mono" style="font-size:11px; color:var(--status-success);">CONFIRMED MATCH</span>
+                    <span class="mono" style="font-size:11px; color:var(--status-success);">${standaloneRREmails.length || standaloneRRPhones.length ? "CONTACT DATA RETURNED" : "PROFILE DATA RETURNED"}</span>
                 </div>
                 <div style="font-size:14px; font-weight:700; color:var(--text-primary);">${escapeHTML(rr.full_name || 'N/A')}</div>
                 <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">${escapeHTML(rr.current_title || 'N/A')} ${rr.current_employer ? `at ${escapeHTML(rr.current_employer)}` : ''}</div>
                 <div style="font-size:11px; color:var(--text-muted); margin-top:4px;"><strong>Location:</strong> ${escapeHTML(rr.location || 'N/A')}</div>
                 <div style="font-size:11px; margin-top:10px; color:var(--text-secondary);">
-                    <strong>Verified Emails:</strong> ${rrEmails || "<span style='color:var(--text-muted);'>None</span>"}<br>
-                    <strong>Phone Numbers:</strong> ${rrPhones || "<span style='color:var(--text-muted);'>None</span>"}
+                    <strong>Emails:</strong> ${rrEmails || "<span style='color:var(--text-muted);'>None returned</span>"}<br>
+                    <strong>Phone Numbers:</strong> ${rrPhones || "<span style='color:var(--text-muted);'>None returned</span>"}
                 </div>
                 ${rrExp}
             </div>
@@ -1450,6 +1682,7 @@ async function fetchApiKeysStatus() {
                 "zerobounce": "EMAIL VALIDATOR",
                 "telegram_cti": "CTI BREACH LOOKUP",
                 "hunter": "ASSOCIATED MAIL LOOKUP",
+                "signalhire": "SIGNALHIRE CONTACT ENRICHMENT",
                 "rocketreach": "CONTACT ENRICHMENT"
             };
             const label = labelMap[keyName] || String(keyName).toUpperCase().replaceAll("_", " ");
@@ -1514,6 +1747,15 @@ function renderDiagnosticsPanel(data) {
             details: `Scanned site templates. Found ${wmn.hits_count || 0} hits.`,
             recovery: null
         });
+    } else if (wmn.status === "skipped") {
+        items.push({
+            name: "Identifier Discovery Engine",
+            status: "SKIPPED",
+            details: wmn.error_code === "identifier_not_username"
+                ? "Non-username targets are not sent to username discovery sites."
+                : "Identifier discovery was intentionally skipped.",
+            recovery: null
+        });
     } else {
         errorsCount++;
         items.push({
@@ -1568,17 +1810,46 @@ function renderDiagnosticsPanel(data) {
         { key: "tiktok", name: "TikTok Scraper" },
         { key: "twitter", name: "X Timeline Scraper" },
         { key: "linkedin", name: "LinkedIn Scraper" },
-        { key: "rocketreach", name: "Contact Enrichment Engine" }
+        { key: "signalhire", name: "SignalHire Contact Enrichment" },
+        { key: "rocketreach", name: "RocketReach Contact Enrichment" }
     ];
 
     scrapersList.forEach(s => {
         const sd = scraped[s.key] || providerStatuses[s.key];
+        const requiredProviderKey = s.key === "signalhire"
+            ? "SIGNALHIRE_API_KEY"
+            : s.key === "rocketreach"
+            ? "ROCKETREACH_API_KEY"
+            : "APIFY_API_TOKEN";
         if (sd) {
             if (sd.success || sd.status === "completed" || sd.status === "success") {
+                const creditsRemaining = Number(sd.credits_remaining);
+                const creditDetails = Number.isInteger(creditsRemaining) && creditsRemaining >= 0
+                    ? ` Provider credits remaining: ${creditsRemaining}.`
+                    : "";
+                const cacheDetails = sd.cache_outcome === "hit" || sd.cache_outcome === "shared"
+                    ? " Reused a recent in-memory result; no new provider call was made."
+                    : "";
                 items.push({
                     name: s.name,
                     status: "OK",
-                    details: `Data fetched successfully.`,
+                    details: `Data fetched successfully.${cacheDetails}${creditDetails}`,
+                    recovery: null
+                });
+            } else if (sd.status === "skipped" && sd.error_code !== "not_configured") {
+                const skipDetails = {
+                    linkedin_contacts_already_available: "RocketReach was unnecessary because the same confirmed LinkedIn profile supplied both email and phone data.",
+                    exact_contact_routed_to_signalhire: "An exact contact lookup was routed only to SignalHire.",
+                    linkedin_profile_routed_to_rocketreach: "The confirmed LinkedIn profile was routed only to RocketReach.",
+                    no_supported_identifier: "No provider-supported exact identifier was confirmed.",
+                    no_confirmed_linkedin_profile: "No confirmed LinkedIn profile URL was available.",
+                    identifier_not_routed: "This provider was not selected for the contact lookup.",
+                    identifier_not_username: "This non-username target was not sent to username-oriented scrapers.",
+                };
+                items.push({
+                    name: s.name,
+                    status: "SKIPPED",
+                    details: skipDetails[sd.error_code] || "Paid lookup was intentionally skipped by contact routing policy.",
                     recovery: null
                 });
             } else {
@@ -1586,11 +1857,15 @@ function renderDiagnosticsPanel(data) {
                 items.push({
                     name: s.name,
                     status: "WARNING",
-                    details: sd.error || "Empty response or configuration mismatch.",
+                    details: sd.error_code === "not_configured"
+                        ? "Provider key is not configured; no external request was made."
+                        : (sd.error || "Empty response or configuration mismatch."),
                     recovery: sd.error_code === "quota_exhausted"
                         ? "Raise the Apify monthly usage limit or wait for its cycle to reset; do not repeatedly retry."
                         : sd.error_code === "access_denied"
                         ? "Give the token Actor Run permission and review any Actor approval/subscription requirement in Apify Console."
+                        : sd.error_code === "not_configured"
+                        ? `Configure ${requiredProviderKey} only if this provider route is approved.`
                         : "Verify the public target exists and review the provider status and Actor configuration."
                 });
             }

@@ -12,6 +12,7 @@ from app.config import settings
 from app.services.apify_client import ApifyActorRun, ApifyClientError
 from app.services.facebook_service import FacebookService
 from app.services.instagram_service import InstagramService
+from app.services.linkedin_apify_service import normalize_linkedin_item
 from app.services.tiktok_service import TikTokService
 from app.services.twitter_service import TwitterService
 
@@ -30,6 +31,29 @@ def _run(actor_id: str, items: list[dict[str, Any]]) -> ApifyActorRun:
         items=items,
         fetched_at="2030-01-01T00:00:00+00:00",
     )
+
+
+def test_linkedin_normalizer_preserves_contact_arrays_and_typed_entries() -> None:
+    result = normalize_linkedin_item(
+        {
+            "fullName": "Alice Analyst",
+            "emails": ["Alice@Example.org", {"email": "work@example.org"}],
+            "phoneNumbers": [{"number": "+91 98765 43210"}],
+            "contactInfo": [
+                {"type": "work_email", "value": "WORK@example.org"},
+                {"contactType": "mobile", "contact": "+91 99887 76655"},
+                {"type": "linkedin", "value": "not-a-contact"},
+            ],
+        }
+    )
+
+    assert result["email"] == "Alice@Example.org"
+    assert result["emails"] == ["Alice@Example.org", "work@example.org"]
+    assert result["phone"] == "+91 98765 43210"
+    assert result["phone_numbers"] == [
+        "+91 98765 43210",
+        "+91 99887 76655",
+    ]
 
 
 class FakeApifyClient:
@@ -81,6 +105,8 @@ async def test_instagram_uses_shared_actors_and_normalizes_profile_posts_hashtag
                         "postsCount": 7,
                         "verified": True,
                         "profilePicUrl": "https://images.example/alice.jpg",
+                        "businessEmail": "alice.public@example.org",
+                        "businessPhoneNumber": "+91 98765 43210",
                     }
                 ],
             ),
@@ -110,6 +136,8 @@ async def test_instagram_uses_shared_actors_and_normalizes_profile_posts_hashtag
     assert result["hashtags"] == ["cybersafe", "uppolice"]
     assert result["posts"][0]["hashtags"] == ["cybersafe", "uppolice"]
     assert result["posts"][0]["id"] == "ig-1"
+    assert result["business_email"] == "alice.public@example.org"
+    assert result["business_phone_number"] == "+91 98765 43210"
     assert fake.calls == [
         (profile_actor, {"usernames": ["alice"]}, 2),
         (
@@ -145,6 +173,8 @@ async def test_tiktok_uses_shared_actor_and_returns_run_provenance() -> None:
                             "name": "alice",
                             "nickName": "Alice Analyst",
                             "signature": "Public safety",
+                            "businessEmail": "alice.tiktok@example.org",
+                            "businessPhoneNumber": "+91 98765 43210",
                             "fans": 75,
                             "following": 9,
                             "heart": 900,
@@ -164,6 +194,8 @@ async def test_tiktok_uses_shared_actor_and_returns_run_provenance() -> None:
     assert result["hashtags"] == ["cybersafe"]
     assert result["videos"][0]["hashtags"] == ["cybersafe"]
     assert result["videos"][0]["id"] == "video-1"
+    assert result["email"] == "alice.tiktok@example.org"
+    assert result["phone"] == "+91 98765 43210"
     assert result["actor_run"]["run_status"] == "SUCCEEDED"
     assert "items" not in result["actor_run"]
     assert fake.calls == [
@@ -228,6 +260,8 @@ async def test_facebook_uses_shared_page_and_post_actors_and_normalizes_results(
                         "facebookUrl": "https://www.facebook.com/alice.unit",
                         "title": "Alice Unit",
                         "intro": "Official public page",
+                        "email": "alice.facebook@example.org",
+                        "phone": "+44 20 7946 0958",
                         "followers": 300,
                         "likes": 250,
                     }
@@ -253,6 +287,8 @@ async def test_facebook_uses_shared_page_and_post_actors_and_normalizes_results(
     assert result["success"] is True
     assert result["username"] == "alice.unit"
     assert result["full_name"] == "Alice Unit"
+    assert result["email"] == "alice.facebook@example.org"
+    assert result["phone"] == "+44 20 7946 0958"
     assert result["posts"][0]["id"] == "fb-1"
     assert result["all_hashtags"] == ["cybersafe"]
     assert result["hashtags"] == ["cybersafe"]
@@ -299,6 +335,8 @@ async def test_x_actor_returns_real_tweets_and_never_relabels_follower_rows() ->
                             "username": "alice",
                             "name": "Alice Analyst",
                             "description": "Public safety analyst",
+                            "email": "alice.x@example.org",
+                            "phoneNumber": "+1 202 555 0123",
                             "profileImageUrl": "https://images.example/alice-x.jpg",
                             "followersCount": 321,
                             "followingCount": 42,
@@ -330,6 +368,8 @@ async def test_x_actor_returns_real_tweets_and_never_relabels_follower_rows() ->
     assert result["username"] == "alice"
     assert result["full_name"] == "Alice Analyst"
     assert result["bio"] == "Public safety analyst"
+    assert result["email"] == "alice.x@example.org"
+    assert result["phone"] == "+1 202 555 0123"
     assert result["follower_count"] == 321
     assert result["following_count"] == 42
     assert result["post_count"] == 55

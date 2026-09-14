@@ -322,6 +322,44 @@ SOC environment. Optional `APP_LOG_*` controls are documented in
 `backend/.env.example`; keep Uvicorn access logging disabled because raw URLs
 can contain sensitive query parameters.
 
+Contact discovery emits count-only operational events. Search for
+`event=contact_enrichment_routed` to see which paid resolver was selected and
+how many resolver calls were made; search for
+`event=contact_discovery_completed` to see observed email/phone counts, email
+guess counts, verification provider-call counts, and cache-reuse counts. These rows never include
+the email address, phone number, lookup identifier, or provider key.
+
+Target Scan normalizes and de-duplicates contacts from the request, LinkedIn,
+Facebook, Instagram, TikTok, X, SignalHire, and RocketReach before verification.
+Generated email patterns remain separate, explicitly unverified candidates.
+Local syntax checks never claim that a mailbox is deliverable. Provider national
+phone numbers remain unverified unless a country code is present; only a
+user-supplied local phone uses the platform's `IN` default.
+
+The route makes at most one contact-enrichment call: an exact email/phone can use
+SignalHire, while a collector-confirmed LinkedIn `/in/` URL can use RocketReach.
+Exact contacts are not sent to username-oriented WMN or Apify collectors. The
+route skips RocketReach only when the same confirmed LinkedIn profile already
+provides both email and phone data; contacts on unrelated same-handle profiles
+do not suppress an exact lookup. It never falls through to a second paid
+provider after an error.
+Bio/about-only contacts remain visible but do not automatically consume
+verification or CTI quota. Failed provider envelopes cannot contribute stale
+contact values.
+
+With request `cache_mode: "use"` (the dashboard default), successful
+SignalHire, RocketReach, Hunter, and ZeroBounce results are reused for a short
+TTL (15 minutes by default). The cache is bounded, held only in backend process
+memory, keyed by an HMAC fingerprint rather than the raw identifier, and
+cleared on restart.
+`"refresh"` forces and replaces a lookup; `"bypass"` neither reads nor writes
+the cache. CTI/breach responses, full investigation responses, and failed
+provider results are never cached. Browser responses remain `no-store`.
+
+Prefix a dotted social handle with `@` (for example, `@john.doe`). Unprefixed
+hostname-shaped values are treated as domains so modern or internationalized
+domains do not accidentally launch paid username collectors.
+
 ## Restricted disclosure boundary
 
 The gated dashboard can display provider-attributed email, full name, phone,

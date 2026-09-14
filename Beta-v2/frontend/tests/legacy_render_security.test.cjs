@@ -9,9 +9,11 @@ const frontendRoot = path.resolve(__dirname, "..");
 const appPath = path.join(frontendRoot, "js", "app.js");
 const exporterPath = path.join(frontendRoot, "js", "lea_pdf_exporter.js");
 const indexPath = path.join(frontendRoot, "index.html");
+const demoPath = path.join(frontendRoot, "demo_data.json");
 const appSource = fs.readFileSync(appPath, "utf8");
 const exporterSource = fs.readFileSync(exporterPath, "utf8");
 const indexSource = fs.readFileSync(indexPath, "utf8");
+const demoData = JSON.parse(fs.readFileSync(demoPath, "utf8"));
 
 const API_BASE = "http://127.0.0.1:8010";
 const VALID_LINKS = {
@@ -247,6 +249,19 @@ async function runAppTests() {
     assert.match(indexSource, /id="hashtag-analysis-badge"/);
     assert.match(indexSource, /id="hashtag-analysis-body"/);
     assertBadURLsRejected(safeURL, "app.safeAbsoluteHttpURL");
+    assert.equal(sandbox.classifyInput("alice@example.org").kind, "email");
+    assert.equal(sandbox.classifyInput("+91 98765 43210").kind, "phone");
+    assert.equal(sandbox.classifyInput("john.doe").kind, "domain");
+    assert.equal(sandbox.classifyInput("@john.doe").kind, "username");
+    assert.equal(sandbox.classifyInput("John Doe").kind, "name");
+    assert.equal(sandbox.classifyInput("example.com").kind, "domain");
+    assert.equal(sandbox.classifyInput("sub.example.co.in").kind, "domain");
+    assert.equal(sandbox.classifyInput("https://sub.example.tech/path").kind, "domain");
+    assert.equal(sandbox.classifyInput("example.tech").kind, "domain");
+    assert.equal(sandbox.classifyInput("example.online").kind, "domain");
+    assert.equal(sandbox.classifyInput("example.xn--p1ai").kind, "domain");
+    assert.equal(sandbox.classifyInput("192.168.1.1").kind, "domain");
+    assert.equal(sandbox.classifyInput("2001:db8::1").kind, "domain");
     assert.equal(sandbox.proxiedImageURL(BAD_URLS[0]), "", "app image helper accepted active scheme");
     assert.equal(sandbox.proxiedImageURL("http://10.0.0.1/private.png"), "", "app image helper accepted private host");
     assert.match(sandbox.proxiedImageURL(VALID_IMAGES.twitter), /\/api\/v1\/investigation\/proxy_image\?url=/);
@@ -264,7 +279,60 @@ async function runAppTests() {
     assert(html.includes(`href="${VALID_LINKS.public.replace(/&/g, "&amp;")}"`));
     assert.equal(imageSources(html).length, 0, "invalid consolidated image was rendered");
     assert(!html.includes(MARKUP_PAYLOAD), "email status markup reached consolidated HTML");
-    assert.match(html, /<small>\(unknown\)<\/small>/, "unknown email status was not normalized");
+    assert.match(html, /<small>\(unknown · discovered · source unavailable\)<\/small>/, "unknown email status was not normalized");
+
+    sandbox.renderConsolidatedIdentity({
+        confidence_percentage: 75,
+        overall_confidence: "high",
+        likely_name: "Contact Fixture",
+        emails: [
+            {
+                email: "Observed@Example.org",
+                status: "observed",
+                sources: [{ source: "linkedin", provider: "apify", field: "email", collection_method: "public_profile" }],
+            },
+            {
+                address: "observed@example.org",
+                status: "verified",
+                verification_provider: "hunter",
+                sources: [{ provider: "RocketReach", field: "emails", collection_method: "enrichment_provider" }],
+            },
+            { email: MARKUP_PAYLOAD, status: "verified" },
+        ],
+        email_guesses: [{
+            email: "candidate@example.org",
+            status: "likely",
+            reason: "Generated pattern candidate; not provider-observed",
+            sources: [{ source: "pattern generator", field: "candidate", collection_method: "generated_pattern" }],
+        }],
+        phones: [
+            {
+                phone: "+91 98765 43210",
+                normalized: "+919876543210",
+                status: "valid",
+                sources: [{ provider: "SignalHire", field: "phones", collection_method: "enrichment_provider" }],
+            },
+            {
+                e164: "+919876543210",
+                status: "possible",
+                sources: [{ source: "linkedin", field: "phone", collection_method: "public_profile" }],
+            },
+        ],
+        links: [],
+    });
+    html = nodeFor("consolidated-identity-body").innerHTML;
+    assert(html.includes("DISCOVERED / PROVIDED EMAILS (1)"), "observed email count was not de-duplicated");
+    assert.equal((html.match(/observed@example\.org/g) || []).length, 1, "duplicate email was rendered more than once");
+    assert(html.includes("GENERATED EMAIL CANDIDATES — NOT CONFIRMED (1)"), "email guesses were not kept separate");
+    assert(html.includes("candidate@example.org"), "generated email candidate was omitted");
+    assert(html.includes("DISCOVERED / PROVIDED PHONE NUMBERS (1)"), "canonical phone count was not rendered");
+    assert.equal((html.match(/98765 43210/g) || []).length, 1, "duplicate phone was rendered more than once");
+    assert(html.includes("RocketReach"), "email provenance was omitted");
+    assert(html.includes("SignalHire"), "phone provenance was omitted");
+    assert(html.includes("linkedin"), "platform provenance was hidden by the generic provider label");
+    assert(html.includes("verification: hunter"), "email verification provider was omitted");
+    assert(!html.includes("[object Object]"), "contact object leaked through string rendering");
+    assert(!html.includes(MARKUP_PAYLOAD), "malformed contact value reached consolidated HTML");
 
     sandbox.renderConsolidatedIdentity({
         confidence_percentage: 50,
@@ -325,6 +393,18 @@ async function runAppTests() {
 
     sandbox.renderResults({
         hashtag_analysis: hashtagFixture,
+        consolidated_identity: {
+            confidence_percentage: 50,
+            overall_confidence: "moderate",
+            likely_name: "Wiring Fixture",
+            emails: [],
+            phones: [],
+            links: [],
+        },
+        contact_discovery: {
+            emails: [{ email: "wired@example.org", status: "observed" }],
+            phones: [{ phone: "+91 99887 76655", normalized: "+919988776655", status: "possible" }],
+        },
         scraped_data: {},
         associated_accounts: [],
         dorking_results: { results: [] },
@@ -333,6 +413,11 @@ async function runAppTests() {
     assert(
         nodeFor("hashtag-analysis-body").innerHTML.includes("#CyberSafe"),
         "renderResults did not invoke hashtag analysis rendering",
+    );
+    assert(
+        nodeFor("consolidated-identity-body").innerHTML.includes("wired@example.org")
+        && nodeFor("consolidated-identity-body").innerHTML.includes("+91 99887 76655"),
+        "renderResults did not pass canonical contact discovery to the identity renderer",
     );
 
     sandbox.renderHashtagAnalysis({ status: "no_data", top_hashtags: [] });
@@ -469,6 +554,15 @@ async function runAppTests() {
         },
         linkedin: {
             success: true,
+            emails: { malformed: true },
+            phone_numbers: MARKUP_PAYLOAD,
+            rocketreach: {
+                success: false,
+                raw_emails: { malformed: true },
+                raw_phones: { malformed: true },
+                emails: [MARKUP_PAYLOAD],
+                phones: [MARKUP_PAYLOAD],
+            },
             basic_info: {
                 full_name: "Fixture",
                 profile_url: "data:text/html,linkedin",
@@ -548,6 +642,54 @@ async function runAppTests() {
     assert(html.includes("$5.08 / $5.00"), "Apify quota counters were omitted");
     assert(html.includes("skipped paid Actor launches"), "Apify recovery guidance was omitted");
 
+    sandbox.renderDiagnosticsPanel({
+        wmn_results: { status: "skipped", error_code: "identifier_not_username" },
+        provider_statuses: {
+            apify: { state: "not_checked" },
+            instagram: { status: "skipped", error_code: "identifier_not_username" },
+            facebook: { status: "skipped", error_code: "identifier_not_username" },
+            tiktok: { status: "skipped", error_code: "identifier_not_username" },
+            twitter: { status: "skipped", error_code: "identifier_not_username" },
+            linkedin: { status: "skipped", error_code: "identifier_not_username" },
+            signalhire: { success: true, status: "success", credits_remaining: 42 },
+            rocketreach: { status: "skipped", error_code: "exact_contact_routed_to_signalhire" },
+        },
+        scraped_data: {},
+        dorking_results: { status: "completed", results_count: 1 },
+        telegram_cti: { status: "no_results", usage: {} },
+        internal_database_matches: { status: "not_available", matches: [] },
+    });
+    html = nodeFor("diagnostics-body").innerHTML;
+    assert(html.includes("Non-username targets are not sent to username discovery sites."));
+    assert(html.includes("non-username target was not sent to username-oriented scrapers"));
+    assert(html.includes("Provider credits remaining: 42."));
+
+    sandbox.renderDiagnosticsPanel({
+        wmn_results: { status: "success", hits_count: 0 },
+        provider_statuses: {
+            instagram: { status: "error", error_code: "not_configured" },
+        },
+        scraped_data: {},
+        dorking_results: { status: "completed", results_count: 0 },
+        telegram_cti: { status: "no_results", usage: {} },
+        internal_database_matches: { status: "not_available", matches: [] },
+    });
+    html = nodeFor("diagnostics-body").innerHTML;
+    assert(html.includes("Configure APIFY_API_TOKEN only if this provider route is approved."));
+
+    const rrContactFixture = {
+        success: false,
+        full_name: "Contact Fixture",
+        raw_emails: [],
+        raw_phones: [],
+        emails: ["returned@example.org"],
+        phones: ["+91 11234 56789"],
+    };
+    const staleNestedRRFixture = {
+        ...rrContactFixture,
+        full_name: "STALE-NESTED-ROCKETREACH",
+        emails: ["stale-nested@example.org"],
+    };
     sandbox.renderPlatformDossiers({
         instagram: {
             success: true,
@@ -567,6 +709,15 @@ async function runAppTests() {
         },
         linkedin: {
             success: true,
+            emails: [
+                { email: "linkedin@example.org", status: "observed" },
+                { email: "returned@example.org", status: "observed" },
+            ],
+            phone_numbers: [
+                { phone: "+91 98765 43210", status: "possible" },
+                { phone: "+91 11234 56789", status: "possible" },
+            ],
+            rocketreach: staleNestedRRFixture,
             basic_info: {
                 full_name: "Fixture",
                 profile_url: VALID_LINKS.linkedin,
@@ -579,6 +730,7 @@ async function runAppTests() {
                 title: "Valid featured link",
             }],
         },
+        rocketreach: rrContactFixture,
         twitter: {
             success: true,
             username: "fixture",
@@ -607,6 +759,13 @@ async function runAppTests() {
     assertImagesUseAuthenticatedProxy(html, safeURL, "app valid platform images", 3);
     assert(html.includes("PUBLIC POST HASHTAGS (2 UNIQUE)"), "X/Facebook hashtag headings were omitted");
     assert(html.includes("#CyberSafe"), "X/Facebook hashtag chips were omitted");
+    assert(html.includes("returned@example.org"), "empty RocketReach raw email array masked canonical contacts");
+    assert(html.includes("+91 11234 56789"), "empty RocketReach raw phone array masked canonical contacts");
+    assert(html.includes("CONTACT DATA RETURNED"), "returned contact data was mislabeled");
+    assert(!html.includes("CONFIRMED MATCH"), "provider contact data was presented as an identity confirmation");
+    assert.equal((html.match(/returned@example\.org/g) || []).length, 1, "duplicate RocketReach cards repeated the same contact");
+    assert(!html.includes("STALE-NESTED-ROCKETREACH"), "nested RocketReach suppressed the richer top-level payload");
+    assert(!html.includes("stale-nested@example.org"), "stale nested RocketReach contacts were rendered with a top-level payload");
 
     sandbox.renderMediaGallery({
         scraped_data: {
@@ -665,7 +824,12 @@ function maliciousExporterData() {
     return {
         investigation_id: "UPP-SECURITY-TEST",
         target_query: "fixture",
-        consolidated_identity: { confidence_percentage: NUMERIC_PAYLOAD },
+        consolidated_identity: {
+            confidence_percentage: NUMERIC_PAYLOAD,
+            emails: [{ email: "safe@example.org", status: MARKUP_PAYLOAD, sources: [{ provider: MARKUP_PAYLOAD }] }],
+            phones: [{ phone: "+91 98765 43210", status: MARKUP_PAYLOAD, sources: [{ source: MARKUP_PAYLOAD }] }],
+            email_guesses: [{ email: MARKUP_PAYLOAD, status: "likely" }],
+        },
         telegram_cti: makeCtiFixture(),
         associated_accounts: BAD_URLS.map((url, index) => ({
             platform: "fixture",
@@ -709,6 +873,32 @@ function validExporterData() {
     return {
         investigation_id: "UPP-VALID-TEST",
         target_query: "fixture",
+        consolidated_identity: {
+            likely_name: "Contact Fixture",
+            confidence_percentage: 80,
+            overall_confidence: "high",
+            emails: [{
+                email: "report@example.org",
+                status: "verified",
+                verification_provider: "hunter",
+                sources: [
+                    { source: "instagram", provider: "apify", field: "email", collection_method: "public_profile" },
+                    { provider: "RocketReach", field: "emails", collection_method: "enrichment_provider" },
+                ],
+            }],
+            phones: [{
+                phone: "+91 98765 43210",
+                normalized: "+919876543210",
+                status: "valid",
+                sources: [{ provider: "SignalHire", field: "phones", collection_method: "enrichment_provider" }],
+            }],
+            email_guesses: [{
+                email: "candidate@example.org",
+                status: "likely",
+                reason: "Generated pattern candidate; not provider-observed",
+                sources: [{ source: "pattern generator", field: "candidate", collection_method: "generated_pattern" }],
+            }],
+        },
         associated_accounts: [{
             platform: "GitHub",
             username: "valid-profile",
@@ -735,6 +925,16 @@ function validExporterData() {
                 success: true,
                 profile_url: VALID_LINKS.linkedin,
                 profile_pic_url: VALID_IMAGES.linkedin,
+                emails: ["pdf-returned@example.org"],
+                phones: ["+91 11234 56789"],
+                rocketreach: {
+                    success: false,
+                    full_name: "Contact Fixture",
+                    raw_emails: [],
+                    raw_phones: [],
+                    emails: ["pdf-returned@example.org"],
+                    phones: ["+91 11234 56789"],
+                },
             },
             instagram: {
                 success: true,
@@ -783,6 +983,21 @@ function runExporterTests() {
     assert(html.includes("Provider: SERPAPI"), "PDF omitted dorking provider");
     assert(html.includes("Duplicates removed: 2"), "PDF omitted dorking deduplication count");
     assert(html.includes("Exact mentions"), "PDF omitted dork query category");
+    assert(html.includes("Discovered / Provided Email Addresses (1)"), "PDF omitted canonical observed-email count");
+    assert(html.includes("report@example.org"), "PDF omitted a canonical observed email");
+    assert(html.includes("Generated Email Candidates — Not Confirmed (1)"), "PDF did not separate generated email guesses");
+    assert(html.includes("candidate@example.org"), "PDF omitted generated email candidates");
+    assert(html.includes("Discovered / Provided Phone Numbers (1)"), "PDF omitted canonical phone count");
+    assert(html.includes("+91 98765 43210"), "PDF omitted a canonical phone number");
+    assert(html.includes("RocketReach"), "PDF omitted email provenance");
+    assert(html.includes("SignalHire"), "PDF omitted phone provenance");
+    assert(html.includes("instagram"), "PDF hid platform provenance behind the generic provider label");
+    assert(html.includes("via hunter"), "PDF omitted the email verification provider");
+    assert(html.includes("pdf-returned@example.org"), "empty RocketReach raw array masked canonical PDF contacts");
+    assert.equal((html.match(/pdf-returned@example\.org/g) || []).length, 1, "PDF repeated merged RocketReach contacts");
+    assert(html.includes("CONTACT DATA RETURNED"), "PDF overstated provider-returned contact data");
+    assert(!html.includes("CONFIRMED MATCH"), "PDF presented provider-returned contact data as identity confirmation");
+    assert(!html.includes("[object Object]"), "PDF stringified a structured contact object");
     assertImagesUseAuthenticatedProxy(html, safeURL, "valid PDF media", 8);
 
     const ctiFailureData = validExporterData();
@@ -806,9 +1021,23 @@ function runExporterTests() {
     assert(!html.includes(MARKUP_PAYLOAD), "PDF CTI error markup was not escaped");
 }
 
+function runDemoContactConsistencyTests() {
+    const discovery = demoData.contact_discovery;
+    const identity = demoData.consolidated_identity;
+    assert(discovery, "demo omitted canonical contact_discovery");
+    assert(identity, "demo omitted consolidated_identity");
+    assert.equal(discovery.email_count, discovery.emails.length);
+    assert.equal(discovery.phone_count, discovery.phones.length);
+    assert.equal(discovery.email_guess_count, discovery.email_guesses.length);
+    assert.deepEqual(discovery.emails, identity.emails);
+    assert.deepEqual(discovery.phones, identity.phones);
+    assert.deepEqual(discovery.email_guesses, identity.email_guesses);
+}
+
 async function main() {
     await runAppTests();
     runExporterTests();
+    runDemoContactConsistencyTests();
     console.log("legacy_render_security.test.cjs: all assertions passed");
 }
 

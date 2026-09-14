@@ -1165,6 +1165,98 @@
       ]
     }
   ],
+  "contact_discovery": {
+    "status": "completed",
+    "emails": [
+      {
+        "email": "narendramodi@pmo.gov.in",
+        "status": "observed",
+        "deliverable": null,
+        "reason": "Returned by configured contact enrichment provider",
+        "sources": [
+          {
+            "source": "rocketreach",
+            "field": "emails",
+            "collection_method": "enrichment_provider",
+            "provider": "RocketReach"
+          }
+        ]
+      }
+    ],
+    "phones": [
+      {
+        "phone": "+91 11-2301-2312",
+        "normalized": "+911123012312",
+        "e164": "+911123012312",
+        "status": "valid",
+        "valid": true,
+        "possible": true,
+        "region": "IN",
+        "sources": [
+          {
+            "source": "rocketreach",
+            "field": "phones",
+            "collection_method": "enrichment_provider",
+            "provider": "RocketReach"
+          }
+        ]
+      }
+    ],
+    "email_guesses": [
+      {
+        "email": "narendramodi@gmail.com",
+        "domain": "gmail.com",
+        "status": "likely",
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
+      },
+      {
+        "email": "narendramodi@yahoo.com",
+        "domain": "yahoo.com",
+        "status": "likely",
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
+      },
+      {
+        "email": "narendramodi@hotmail.com",
+        "domain": "hotmail.com",
+        "status": "likely",
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
+      },
+      {
+        "email": "narendramodi@outlook.com",
+        "domain": "outlook.com",
+        "status": "likely",
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
+      },
+      {
+        "email": "narendramodi@proton.me",
+        "domain": "proton.me",
+        "status": "likely",
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
+      },
+      {
+        "email": "narendra.modi@gmail.com",
+        "domain": "gmail.com",
+        "status": "likely",
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
+      },
+      {
+        "email": "narendra@gmail.com",
+        "domain": "gmail.com",
+        "status": "likely",
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
+      }
+    ],
+    "email_count": 1,
+    "phone_count": 1,
+    "email_guess_count": 7
+  },
   "consolidated_identity": {
     "likely_name": "Narendra Modi",
     "location": "India, Delhi, Delhi, India, IN",
@@ -1172,53 +1264,88 @@
     "profile_pic": "https://instagram.fman4-1.fna.fbcdn.net/v/t51.82787-19/671234561_18603308122037327_5982832277274728089_n.jpg?stp=dst-jpg_e0_s150x150_tt6&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby42MTQuYzIifQ&_nc_ht=instagram.fman4-1.fna.fbcdn.net&_nc_cat=1&_nc_oc=Q6cZ2gGn4t2Sf61tTuA2KCZOweTAaTivz6PJMpytpz1dZKp59LHRpAfN8GfEbkioudho-Kq_s0Blt5MQWPiRo3tj27LA&_nc_ohc=DfdRMj-j_UMQ7kNvwF1kob9&_nc_gid=RupqVHq-Jb8m2zrvEOhKZQ&edm=AOQ1c0wBAAAA&ccb=7-5&oh=00_AQE6LjfPdcwEB-8aeWrs0_qk9U_XAw6bmdWwgbrze7GqYw&oe=6A81CF08&_nc_sid=8b3546",
     "emails": [
       {
+        "email": "narendramodi@pmo.gov.in",
+        "status": "observed",
+        "deliverable": null,
+        "reason": "Returned by configured contact enrichment provider",
+        "sources": [
+          {
+            "source": "rocketreach",
+            "field": "emails",
+            "collection_method": "enrichment_provider",
+            "provider": "RocketReach"
+          }
+        ]
+      }
+    ],
+    "phones": [
+      {
+        "phone": "+91 11-2301-2312",
+        "normalized": "+911123012312",
+        "e164": "+911123012312",
+        "status": "valid",
+        "valid": true,
+        "possible": true,
+        "region": "IN",
+        "sources": [
+          {
+            "source": "rocketreach",
+            "field": "phones",
+            "collection_method": "enrichment_provider",
+            "provider": "RocketReach"
+          }
+        ]
+      }
+    ],
+    "email_guesses": [
+      {
         "email": "narendramodi@gmail.com",
         "domain": "gmail.com",
         "status": "likely",
-        "deliverable": true,
-        "reason": "Pattern guess for free-mail provider \u2014 domain resolves, not SMTP-verified"
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
       },
       {
         "email": "narendramodi@yahoo.com",
         "domain": "yahoo.com",
         "status": "likely",
-        "deliverable": true,
-        "reason": "Pattern guess for free-mail provider \u2014 domain resolves, not SMTP-verified"
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
       },
       {
         "email": "narendramodi@hotmail.com",
         "domain": "hotmail.com",
         "status": "likely",
-        "deliverable": true,
-        "reason": "Pattern guess for free-mail provider \u2014 domain resolves, not SMTP-verified"
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
       },
       {
         "email": "narendramodi@outlook.com",
         "domain": "outlook.com",
         "status": "likely",
-        "deliverable": true,
-        "reason": "Pattern guess for free-mail provider \u2014 domain resolves, not SMTP-verified"
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
       },
       {
         "email": "narendramodi@proton.me",
         "domain": "proton.me",
         "status": "likely",
-        "deliverable": true,
-        "reason": "Pattern guess for free-mail provider \u2014 domain resolves, not SMTP-verified"
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
       },
       {
         "email": "narendra.modi@gmail.com",
         "domain": "gmail.com",
         "status": "likely",
-        "deliverable": true,
-        "reason": "Pattern guess for free-mail provider \u2014 domain resolves, not SMTP-verified"
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
       },
       {
         "email": "narendra@gmail.com",
         "domain": "gmail.com",
         "status": "likely",
-        "deliverable": true,
-        "reason": "Pattern guess for free-mail provider \u2014 domain resolves, not SMTP-verified"
+        "deliverable": null,
+        "reason": "Generated email candidate; mailbox existence was not verified"
       }
     ],
     "links": [

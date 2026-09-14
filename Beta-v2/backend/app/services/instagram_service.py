@@ -80,6 +80,18 @@ class InstagramService:
                 "is_private": item.get("private"),
                 "is_business": item.get("isBusinessAccount"),
                 "business_category": item.get("businessCategoryName"),
+                "business_email": (
+                    item.get("businessEmail")
+                    or item.get("business_email")
+                    or item.get("publicEmail")
+                    or item.get("email")
+                ),
+                "business_phone_number": (
+                    item.get("businessPhoneNumber")
+                    or item.get("business_phone_number")
+                    or item.get("contactPhoneNumber")
+                    or item.get("phone")
+                ),
                 "external_url": item.get("externalUrl"),
                 "external_urls": bio_links,
             }
@@ -120,6 +132,18 @@ class InstagramService:
                 "following_count": user_obj.get("following_count") or user_obj.get("edge_follow", {}).get("count"),
                 "is_verified": bool(user_obj.get("is_verified")),
                 "profile_pic_hd": user_obj.get("profile_pic_url_hd") or user_obj.get("profile_pic_url"),
+                "business_email": (
+                    user_obj.get("business_email")
+                    or user_obj.get("businessEmail")
+                    or user_obj.get("public_email")
+                    or user_obj.get("email")
+                ),
+                "business_phone_number": (
+                    user_obj.get("business_phone_number")
+                    or user_obj.get("businessPhoneNumber")
+                    or user_obj.get("contact_phone_number")
+                    or user_obj.get("phone")
+                ),
             }
         except Exception as exc:
             logger.warning(
@@ -244,6 +268,8 @@ class InstagramService:
             "is_private": profile.get("is_private"),
             "is_business": profile.get("is_business"),
             "business_category": profile.get("business_category"),
+            "business_email": profile.get("business_email"),
+            "business_phone_number": profile.get("business_phone_number"),
             "external_url": profile.get("external_url"),
             "external_urls": profile.get("external_urls") or [],
             "posts": posts_data.get("posts") or [],
@@ -251,6 +277,7 @@ class InstagramService:
             "post_hashtags": sorted(all_hashtags),
             "hashtags": sorted(all_hashtags),
             "source": source,
+            "profile_source": self._profile_source,
             "scraped_at": datetime.now(UTC).isoformat(),
         }
         if self.provider_errors:

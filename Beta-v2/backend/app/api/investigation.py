@@ -4,11 +4,14 @@ All network I/O runs in parallel via asyncio.gather to prevent timeouts.
 """
 
 import asyncio
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from ipaddress import ip_address
 import logging
+import re
 import time
 from typing import Any
+from urllib.parse import quote, unquote, urlsplit
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Response as FastAPIResponse, status
 from fastapi.responses import JSONResponse, Response
@@ -32,8 +35,14 @@ from app.services.ai_analyzer import AIAnalyzer
 from app.services.twitter_service import TwitterService
 from app.services.rocketreach_service import RocketReachService
 from app.services.wikidata_service import WikidataService
-from app.services.apify_client import ApifyActorClient
+from app.services.apify_client import ApifyAccountCapacity, ApifyActorClient
 from app.services.hashtag_analysis_service import HashtagAnalysisService
+from app.services.contact_aggregation_service import (
+    ContactAggregationService,
+    normalize_email,
+    normalize_phone,
+)
+from app.services.contact_result_cache import CacheMode, contact_result_cache
 from app.services.email_investigation_service import _redact_sensitive_payload
 from app.services.image_proxy_service import ImageProxyError, ImageProxyService
 from app.security.audit import AuditEvent, AuditUnavailable, get_audit_logger
@@ -68,6 +77,12 @@ _CONTACT_AUDIT_FIELD_MAP = {
     "jobtitle": "job_title",
     "currenttitle": "job_title",
 }
+
+_BARE_DOMAIN_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})\.?$",
+    re.IGNORECASE,
+)
 
 
 def _contact_field_labels(value: Any, *, depth: int = 0) -> tuple[str, ...]:
@@ -106,8 +121,9 @@ def _safe_provider_status(result: Any) -> dict[str, Any]:
         and isinstance(provider_errors[0], dict)
         else {}
     )
-    return {
+    safe_status = {
         "success": result.get("success") is True,
+        "configured": result.get("configured"),
         "status": result.get("status") or ("success" if result.get("success") else "error"),
         "provider": result.get("provider") or (
             "apify" if str(result.get("source") or "").startswith("apify") else None
@@ -121,6 +137,14 @@ def _safe_provider_status(result: Any) -> dict[str, Any]:
         ),
         "http_status": result.get("http_status") or first_provider_error.get("status_code"),
     }
+    credits_remaining = result.get("credits_remaining")
+    if isinstance(credits_remaining, int) and credits_remaining >= 0:
+        safe_status["credits_remaining"] = credits_remaining
+    safe_status["cache_hit"] = result.get("cache_hit") is True
+    cache_outcome = result.get("cache_outcome")
+    if cache_outcome in {"hit", "loaded", "refreshed", "bypassed", "shared"}:
+        safe_status["cache_outcome"] = cache_outcome
+    return safe_status
 
 
 async def _record_contact_investigation_access(
@@ -261,6 +285,7 @@ async def get_keys_diagnostics(
             "external_ai_filtering": settings.cti_external_ai_filtering_enabled,
         },
         "hunter": {"configured": bool(settings.hunter_api_key), "status": "Active" if settings.hunter_api_key else "Missing"},
+        "signalhire": {"configured": bool(settings.signalhire_api_key), "status": "Active" if settings.signalhire_api_key else "Missing"},
         "rocketreach": {"configured": bool(settings.rocketreach_api_key), "status": "Active" if settings.rocketreach_api_key else "Missing"},
     }
 
@@ -341,15 +366,98 @@ def _format_string_clue(val: Any) -> str | None:
 
 def classify_input(raw: str) -> str:
     s = raw.strip()
-    if "@" in s and "." in s and " " not in s:
+    if s.startswith("@") and len(s) > 1 and not any(character.isspace() for character in s):
+        return "username"
+    if normalize_email(s):
         return "email"
-    if s.replace("+", "").replace(" ", "").replace("-", "").isdigit():
+    try:
+        ip_address(s)
+    except ValueError:
+        pass
+    else:
+        return "domain"
+    if normalize_phone(s):
         return "phone"
-    if "http://" in s or "https://" in s or (("." in s) and (" " not in s)):
+    if (
+        s
+        and any(character.isdigit() for character in s)
+        and all(character.isdigit() or character in "+ -()." for character in s)
+    ):
+        # Malformed phone-shaped input must not fan out to username collectors.
+        return "phone"
+    if s.casefold().startswith(("http://", "https://")) or _BARE_DOMAIN_RE.fullmatch(s):
         return "domain"
     if " " in s:
         return "name"
     return "username"
+
+
+def _confirmed_linkedin_profile_url(result: Any) -> str | None:
+    """Return a canonical LinkedIn profile URL only for a confirmed result."""
+
+    if not isinstance(result, dict) or result.get("success") is not True:
+        return None
+    candidates = [
+        result.get("profile_url"),
+        result.get("linkedin_url"),
+        result.get("url"),
+    ]
+    basic_info = result.get("basic_info")
+    if isinstance(basic_info, dict):
+        candidates.extend(
+            [basic_info.get("profile_url"), basic_info.get("linkedin_url")]
+        )
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        try:
+            parsed = urlsplit(candidate.strip())
+        except ValueError:
+            continue
+        try:
+            port = parsed.port
+        except ValueError:
+            continue
+        if (
+            parsed.scheme.casefold() not in {"http", "https"}
+            or parsed.username
+            or parsed.password
+            or port not in {None, 80, 443}
+        ):
+            continue
+        hostname = (parsed.hostname or "").casefold().removeprefix("www.")
+        path_parts = [unquote(part) for part in parsed.path.split("/") if part]
+        if hostname != "linkedin.com" or len(path_parts) < 2:
+            continue
+        if path_parts[0].casefold() != "in":
+            continue
+        slug = path_parts[1].strip()
+        if not 2 <= len(slug) <= 150:
+            continue
+        if any(not (character.isalnum() or character in "-_.~") for character in slug):
+            continue
+        return f"https://www.linkedin.com/in/{quote(slug, safe='-_.~')}/"
+    return None
+
+
+def _skipped_contact_provider(
+    provider: str,
+    *,
+    configured: bool,
+    reason: str,
+) -> dict[str, Any]:
+    """Describe a zero-call contact-provider decision without target data."""
+
+    return {
+        "success": False,
+        "configured": configured,
+        "provider": provider,
+        "source": provider,
+        "status": "skipped",
+        "error_code": reason,
+        "emails": [],
+        "phones": [],
+    }
 
 
 async def _safe(coro: Awaitable[Any], component: str) -> Any:
@@ -363,6 +471,97 @@ async def _safe(coro: Awaitable[Any], component: str) -> Any:
             type(exc).__name__,
         )
         return None
+
+
+async def _cached_contact_provider_lookup(
+    *,
+    provider: str,
+    identifier: str,
+    cache_mode: CacheMode,
+    operation: Callable[[], Awaitable[Any]],
+) -> Any:
+    """Run or reuse one paid contact lookup without retaining raw cache keys."""
+
+    namespace = f"contact_enrichment:{provider}"
+    resolution = await contact_result_cache.resolve(
+        namespace=namespace,
+        identifier=identifier,
+        mode=cache_mode,
+        loader=lambda: _safe(operation(), provider),
+        eligible=lambda value: (
+            isinstance(value, dict)
+            and value.get("success") is True
+            and value.get("status") == "success"
+        ),
+    )
+    result = resolution.value
+    if not isinstance(result, dict):
+        return result
+    result = dict(result)
+    result["cache_hit"] = resolution.outcome == "hit"
+    result["cache_outcome"] = resolution.outcome
+    result["provider_called"] = resolution.provider_called
+    logger.info(
+        "event=contact_enrichment_cache provider=%s mode=%s outcome=%s "
+        "provider_called=%s stored=%s",
+        provider,
+        cache_mode,
+        resolution.outcome,
+        resolution.provider_called,
+        resolution.stored,
+    )
+    return result
+
+
+def _email_verification_route() -> str | None:
+    if settings.hunter_api_key:
+        return "hunter"
+    if settings.zerobounce_api_key:
+        return "zerobounce"
+    return None
+
+
+async def _cached_email_verification(
+    email: str,
+    cache_mode: CacheMode,
+) -> dict[str, Any]:
+    """Reuse only completed external verification results; local checks stay cheap."""
+
+    provider = _email_verification_route()
+    if not provider:
+        result = await EmailVerifierService.verify_with_hunter(email)
+        output = dict(result) if isinstance(result, dict) else {}
+        output["cache_hit"] = False
+        output["cache_outcome"] = "local"
+        output["provider_called"] = False
+        return output
+
+    namespace = f"email_verification:{provider}"
+    resolution = await contact_result_cache.resolve(
+        namespace=namespace,
+        identifier=email,
+        mode=cache_mode,
+        loader=lambda: EmailVerifierService.verify_with_hunter(email),
+        eligible=lambda value: (
+            isinstance(value, dict)
+            and value.get("verification_provider") == provider
+        ),
+    )
+    result = resolution.value
+    output = dict(result) if isinstance(result, dict) else {}
+    output["cache_hit"] = resolution.outcome == "hit"
+    output["cache_outcome"] = resolution.outcome
+    output["provider_called"] = resolution.provider_called
+    logger.info(
+        "event=contact_verification_cache provider=%s mode=%s outcome=%s "
+        "provider_called=%s stored=%s",
+        provider,
+        cache_mode,
+        resolution.outcome,
+        resolution.provider_called,
+        resolution.stored,
+    )
+    return output
 
 
 def _count_cti_rows(results: Any) -> int:
@@ -489,23 +688,80 @@ async def run_investigation(
     # ── STEP 1: WMN probe + Instagram + TikTok + Twitter + Dorking + Wikidata — all start simultaneously ──
     # One shared client performs a single read-only quota preflight and shares
     # any permission denial across every Apify-backed step in this request.
+    username_collectors_enabled = kind == "username"
     apify_client = ApifyActorClient()
-    apify_capacity = await apify_client.check_account_capacity()
-    ig_service = InstagramService(client=apify_client)
-    tiktok_service = TikTokService(client=apify_client)
-    twitter_service = TwitterService(client=apify_client)
     dork_service = DorkingService()
-    wmn_service = WhatsMyNameService()
-    wikidata_service = WikidataService()
 
-    wmn_data, ig_res, tiktok_res, twitter_res, dorking_results, wikidata_res = await asyncio.gather(
-        _safe(wmn_service.probe_username(raw_query), "whatsmyname"),
-        _safe(ig_service.fetch_profile_and_posts(clean_handle), "instagram"),
-        _safe(tiktok_service.fetch_profile_and_videos(clean_handle), "tiktok"),
-        _safe(twitter_service.fetch_profile_and_tweets(clean_handle), "twitter"),
-        _safe(dork_service.run_dorks(raw_query), "dorking"),
-        _safe(wikidata_service.search_and_get_profile(raw_query), "wikidata"),
-    )
+    if username_collectors_enabled:
+        apify_capacity = await apify_client.check_account_capacity()
+        ig_service = InstagramService(client=apify_client)
+        tiktok_service = TikTokService(client=apify_client)
+        twitter_service = TwitterService(client=apify_client)
+        wmn_service = WhatsMyNameService()
+        wikidata_service = WikidataService()
+        (
+            wmn_data,
+            ig_res,
+            tiktok_res,
+            twitter_res,
+            dorking_results,
+            wikidata_res,
+        ) = await asyncio.gather(
+            _safe(wmn_service.probe_username(clean_handle), "whatsmyname"),
+            _safe(ig_service.fetch_profile_and_posts(clean_handle), "instagram"),
+            _safe(tiktok_service.fetch_profile_and_videos(clean_handle), "tiktok"),
+            _safe(twitter_service.fetch_profile_and_tweets(clean_handle), "twitter"),
+            _safe(dork_service.run_dorks(raw_query), "dorking"),
+            _safe(wikidata_service.search_and_get_profile(raw_query), "wikidata"),
+        )
+    else:
+        # Non-username targets must not fan out to username-oriented WMN or
+        # paid social Actors. Exact contact enrichment is selected below.
+        apify_capacity = ApifyAccountCapacity(
+            state="not_checked",
+            configured=bool(settings.apify_api_token),
+            checked=False,
+            can_start_runs=None,
+        )
+        if kind == "name":
+            dorking_results, wikidata_res = await asyncio.gather(
+                _safe(dork_service.run_dorks(raw_query), "dorking"),
+                _safe(
+                    WikidataService().search_and_get_profile(raw_query),
+                    "wikidata",
+                ),
+            )
+        else:
+            dorking_results = await _safe(
+                dork_service.run_dorks(raw_query),
+                "dorking",
+            )
+            wikidata_res = {"found": False, "status": "skipped"}
+        wmn_data = {
+            "status": "skipped",
+            "error_code": "identifier_not_username",
+            "scanned": 0,
+            "hits_count": 0,
+            "hits": [],
+        }
+        ig_res = _skipped_contact_provider(
+            "instagram",
+            configured=bool(settings.apify_api_token),
+            reason="identifier_not_username",
+        )
+        ig_res.update({"platform": "instagram", "posts": [], "post_hashtags": []})
+        tiktok_res = _skipped_contact_provider(
+            "tiktok",
+            configured=bool(settings.apify_api_token),
+            reason="identifier_not_username",
+        )
+        tiktok_res["platform"] = "tiktok"
+        twitter_res = _skipped_contact_provider(
+            "twitter",
+            configured=bool(settings.apify_api_token),
+            reason="identifier_not_username",
+        )
+        twitter_res["platform"] = "twitter"
 
     wmn_data = wmn_data or {"status": "error", "scanned": 0, "hits_count": 0, "hits": []}
     ig_res = ig_res or {"success": False, "platform": "instagram", "username": clean_handle, "posts": [], "post_hashtags": []}
@@ -519,28 +775,187 @@ async def run_investigation(
     # ── STEP 2: LinkedIn (Apify + SignalHire + RocketReach) + Facebook — run in parallel ──
     scraped_data: dict = {}
 
-    try:
-        from app.services.linkedin_apify_service import LinkedInApifyService
-        li_task = _safe(
-            LinkedInApifyService(client=apify_client).get_profile(clean_handle),
-            "linkedin",
-        )
-    except Exception as err:
-        logger.warning(
-            "event=target_pipeline_step_failed component=linkedin_initialization error_type=%s",
-            type(err).__name__,
-        )
-        li_task = _safe(asyncio.sleep(0, result=None), "linkedin_placeholder")
+    if username_collectors_enabled:
+        try:
+            from app.services.linkedin_apify_service import LinkedInApifyService
+            li_task = _safe(
+                LinkedInApifyService(client=apify_client).get_profile(clean_handle),
+                "linkedin",
+            )
+        except Exception as err:
+            logger.warning(
+                "event=target_pipeline_step_failed component=linkedin_initialization error_type=%s",
+                type(err).__name__,
+            )
+            li_task = _safe(asyncio.sleep(0, result=None), "linkedin_placeholder")
 
-    li_url = f"https://www.linkedin.com/in/{clean_handle}"
-    sh_task = _safe(SignalHireService().search_candidate(raw_query), "signalhire")
-    rr_task = _safe(RocketReachService().lookup_by_linkedin_url(li_url), "rocketreach")
-    fb_task = _safe(
-        FacebookService(client=apify_client).fetch_page_or_profile(clean_handle),
-        "facebook",
+        fb_task = _safe(
+            FacebookService(client=apify_client).fetch_page_or_profile(clean_handle),
+            "facebook",
+        )
+        li_res, fb_res = await asyncio.gather(li_task, fb_task)
+    else:
+        li_res = _skipped_contact_provider(
+            "linkedin",
+            configured=bool(settings.apify_api_token),
+            reason="identifier_not_username",
+        )
+        li_res["platform"] = "linkedin"
+        fb_res = _skipped_contact_provider(
+            "facebook",
+            configured=bool(settings.apify_api_token),
+            reason="identifier_not_username",
+        )
+        fb_res["platform"] = "facebook"
+    li_res = li_res or {"success": False, "platform": "linkedin"}
+    fb_res = fb_res or {"success": False, "platform": "facebook"}
+
+    signalhire_configured = bool(settings.signalhire_api_key)
+    rocketreach_configured = bool(settings.rocketreach_api_key)
+    sh_res: dict[str, Any] = _skipped_contact_provider(
+        "signalhire",
+        configured=signalhire_configured,
+        reason="identifier_not_routed",
+    )
+    rr_res: dict[str, Any] = _skipped_contact_provider(
+        "rocketreach",
+        configured=rocketreach_configured,
+        reason="identifier_not_routed",
     )
 
-    li_res, sh_res, rr_res, fb_res = await asyncio.gather(li_task, sh_task, rr_task, fb_task)
+    # Same handles on separate platforms are only identity candidates. Only
+    # contacts attached to the collector-confirmed LinkedIn profile may make a
+    # RocketReach lookup redundant; unrelated social contacts cannot suppress
+    # an exact-identifier lookup.
+    linkedin_contacts = ContactAggregationService.collect(
+        target_query="",
+        target_kind="username",
+        linkedin=li_res,
+    )
+    confirmed_li_url = _confirmed_linkedin_profile_url(li_res)
+    exact_signalhire_identifier: str | None = None
+    normalized_target_email = normalize_email(raw_query) if kind == "email" else None
+    normalized_target_phone = (
+        normalize_phone(raw_query, "IN") if kind == "phone" else None
+    )
+    normalized_request_email = normalize_email(request.email) if request.email else None
+    normalized_request_phone = (
+        normalize_phone(request.phone_number, "IN") if request.phone_number else None
+    )
+    if normalized_target_email:
+        exact_signalhire_identifier = normalized_target_email
+    elif normalized_target_phone and normalized_target_phone.get("e164"):
+        exact_signalhire_identifier = str(normalized_target_phone["e164"])
+    elif normalized_request_email:
+        exact_signalhire_identifier = normalized_request_email
+    elif normalized_request_phone and normalized_request_phone.get("e164"):
+        exact_signalhire_identifier = str(normalized_request_phone["e164"])
+
+    if exact_signalhire_identifier:
+        # SignalHire accepts exact email/phone identifiers. It is never sent an
+        # invented LinkedIn URL or an unsupported bare username/name.
+        if signalhire_configured:
+            sh_res = await _cached_contact_provider_lookup(
+                provider="signalhire",
+                identifier=exact_signalhire_identifier,
+                cache_mode=request.cache_mode,
+                operation=lambda: SignalHireService().search_candidate(
+                    exact_signalhire_identifier
+                ),
+            ) or {
+                **_skipped_contact_provider(
+                    "signalhire",
+                    configured=True,
+                    reason="provider_failed",
+                ),
+                "status": "error",
+            }
+        else:
+            sh_res = _skipped_contact_provider(
+                "signalhire",
+                configured=False,
+                reason="not_configured",
+            )
+        rr_res = _skipped_contact_provider(
+            "rocketreach",
+            configured=rocketreach_configured,
+            reason="exact_contact_routed_to_signalhire",
+        )
+    elif confirmed_li_url and linkedin_contacts.emails and linkedin_contacts.phones:
+        sh_res = _skipped_contact_provider(
+            "signalhire",
+            configured=signalhire_configured,
+            reason="linkedin_contacts_already_available",
+        )
+        rr_res = _skipped_contact_provider(
+            "rocketreach",
+            configured=rocketreach_configured,
+            reason="linkedin_contacts_already_available",
+        )
+    elif confirmed_li_url:
+        # RocketReach is the single route for a confirmed LinkedIn profile in
+        # Target Scan. A provider failure does not fan out elsewhere.
+        if rocketreach_configured:
+            rr_res = await _cached_contact_provider_lookup(
+                provider="rocketreach",
+                identifier=confirmed_li_url,
+                cache_mode=request.cache_mode,
+                operation=lambda: RocketReachService().lookup_by_linkedin_url(
+                    confirmed_li_url
+                ),
+            ) or {
+                **_skipped_contact_provider(
+                    "rocketreach",
+                    configured=True,
+                    reason="provider_failed",
+                ),
+                "status": "error",
+            }
+        else:
+            rr_res = _skipped_contact_provider(
+                "rocketreach",
+                configured=False,
+                reason="not_configured",
+            )
+        sh_res = _skipped_contact_provider(
+            "signalhire",
+            configured=signalhire_configured,
+            reason="linkedin_profile_routed_to_rocketreach",
+        )
+    else:
+        sh_res = _skipped_contact_provider(
+            "signalhire",
+            configured=signalhire_configured,
+            reason="no_supported_identifier",
+        )
+        rr_res = _skipped_contact_provider(
+            "rocketreach",
+            configured=rocketreach_configured,
+            reason="no_confirmed_linkedin_profile",
+        )
+
+    enrichment_provider = (
+        "signalhire"
+        if sh_res.get("status") != "skipped"
+        else ("rocketreach" if rr_res.get("status") != "skipped" else "none")
+    )
+    enrichment_call_count = int(sh_res.get("provider_called") is True) + int(
+        rr_res.get("provider_called") is True
+    )
+    enrichment_reuse_count = int(
+        sh_res.get("cache_outcome") in {"hit", "shared"}
+    ) + int(rr_res.get("cache_outcome") in {"hit", "shared"})
+    logger.info(
+        "event=contact_enrichment_routed provider=%s provider_call_count=%d "
+        "cache_reuse_count=%d cache_mode=%s signalhire_status=%s "
+        "rocketreach_status=%s",
+        enrichment_provider,
+        enrichment_call_count,
+        enrichment_reuse_count,
+        request.cache_mode,
+        sh_res.get("status"),
+        rr_res.get("status"),
+    )
 
     provider_statuses = {
         "apify": apify_capacity.as_dict(),
@@ -548,6 +963,9 @@ async def run_investigation(
         "tiktok": _safe_provider_status(tiktok_res),
         "twitter": _safe_provider_status(twitter_res),
         "facebook": _safe_provider_status(fb_res),
+        "linkedin": _safe_provider_status(li_res),
+        "signalhire": _safe_provider_status(sh_res),
+        "rocketreach": _safe_provider_status(rr_res),
     }
     
     linkedin_combined: dict = {}
@@ -570,7 +988,14 @@ async def run_investigation(
     linkedin_combined["phone_numbers"] = list(dict.fromkeys(str(p).strip() for p in li_phones if p))
     linkedin_combined["phones"] = linkedin_combined["phone_numbers"]
 
-    if isinstance(sh_res, dict) and sh_res.get("success"):
+    signalhire_li_url = _confirmed_linkedin_profile_url(sh_res)
+    if (
+        isinstance(sh_res, dict)
+        and sh_res.get("success")
+        and linkedin_combined.get("success")
+        and confirmed_li_url is not None
+        and signalhire_li_url == confirmed_li_url
+    ):
         for k, v in sh_res.items():
             if v and k not in ("emails", "phones", "phone_numbers") and not linkedin_combined.get(k):
                 linkedin_combined[k] = v
@@ -581,11 +1006,6 @@ async def run_investigation(
         linkedin_combined["phones"] = linkedin_combined["phone_numbers"]
     if isinstance(rr_res, dict):
         if rr_res.get("success"):
-            rr_emails = rr_res.get("emails") or []
-            rr_phones = rr_res.get("phones") or []
-            linkedin_combined["emails"] = list(dict.fromkeys([*linkedin_combined["emails"], *(str(e).strip() for e in rr_emails if e)]))
-            linkedin_combined["phone_numbers"] = list(dict.fromkeys([*linkedin_combined["phone_numbers"], *(str(p).strip() for p in rr_phones if p)]))
-            linkedin_combined["phones"] = linkedin_combined["phone_numbers"]
             linkedin_combined["rocketreach"] = rr_res
             linkedin_combined["success"] = True
             
@@ -599,14 +1019,16 @@ async def run_investigation(
             if not linkedin_combined.get("current_company") and rr_res.get("current_employer"):
                 linkedin_combined["current_company"] = rr_res["current_employer"]
             if not linkedin_combined.get("profile_url"):
-                linkedin_combined["profile_url"] = li_url
+                linkedin_combined["profile_url"] = (
+                    confirmed_li_url or rr_res.get("linkedin_url")
+                )
             if not linkedin_combined.get("experience") and rr_res.get("job_history"):
                 linkedin_combined["experience"] = rr_res["job_history"]
             if not linkedin_combined.get("education") and rr_res.get("education"):
                 linkedin_combined["education"] = rr_res["education"]
 
-        # Always expose top-level rocketreach module in scraped_data
-        scraped_data["rocketreach"] = rr_res
+            # Keep enrichment attached to its confirmed LinkedIn dossier.
+            # It is not a separately discovered social platform.
 
     # Filter only successful profiles
     if ig_res and ig_res.get("success"):
@@ -648,43 +1070,97 @@ async def run_investigation(
     wmn_data["hits_count"] = len(wmn_hits)
     wmn_data["found_count"] = len(wmn_hits)
 
+    # Consolidate explicit contacts before verification or CTI work. Provider
+    # values remain source-attributed and equivalent representations collapse
+    # to a single canonical contact.
+    contact_discovery = ContactAggregationService.collect(
+        target_query=raw_query,
+        target_kind=kind,
+        request_email=request.email,
+        request_phone=request.phone_number,
+        linkedin=li_res,
+        signalhire=sh_res,
+        rocketreach=rr_res,
+        facebook=fb_res,
+        instagram=ig_res,
+        tiktok=tiktok_res,
+        twitter=twitter_res,
+    )
+
     # ── STEP 3: Resolve full_name for email patterns ──
+    enrichment_identity_sources = [
+        payload
+        for payload in (sh_res, rr_res)
+        if isinstance(payload, dict) and payload.get("success") is True
+    ]
+    identity_sources = [
+        payload for payload in scraped_data.values() if isinstance(payload, dict)
+    ] + enrichment_identity_sources
     full_name_hint = next(
-        (p.get("full_name") for p in scraped_data.values()
-         if isinstance(p, dict) and p.get("full_name")),
+        (
+            profile.get("full_name") or profile.get("name")
+            for profile in identity_sources
+            if profile.get("full_name") or profile.get("name")
+        ),
         None,
     )
 
     # ── STEP 4: Email verification + Telegram CTI — run in parallel ──
-    pattern_emails = EmailVerifierService.process_pattern_guesses(clean_handle, full_name_hint)
+    pattern_emails = (
+        await asyncio.to_thread(
+            EmailVerifierService.process_pattern_guesses,
+            clean_handle,
+            full_name_hint,
+        )
+        if kind in {"username", "name"}
+        else []
+    )
+    ContactAggregationService.add_email_guesses(contact_discovery, pattern_emails)
 
-    # Gather extra emails from caller + RocketReach / LinkedIn
-    extra_emails: list[str] = []
-    if request.email:
-        extra_emails.append(request.email)
-    for em in (scraped_data.get("linkedin", {}).get("emails") or []):
-        extra_emails.append(em)
+    # De-duplicate before external verification and cap the paid fan-out.
+    # Remaining observed addresses are returned with status="observed".
+    emails_to_verify = [
+        item.email
+        for item in contact_discovery.emails
+        if any(
+            source.collection_method != "public_profile_text"
+            for source in item.sources
+        )
+    ][: ContactAggregationService.MAX_EMAIL_VERIFICATIONS]
 
     # RESTRICT TELEGRAM CTI ONLY TO RESOLVED EMAILS AND PHONE NUMBERS TO SAVE API QUOTA
-    raw_cti_list = []
-    if request.email:
-        raw_cti_list.append(request.email.strip().lower())
-    if request.phone_number:
-        clean_p = "".join(c for c in request.phone_number if c.isdigit() or c == "+")
-        if clean_p:
-            raw_cti_list.append(clean_p)
-        
-    for em in (scraped_data.get("linkedin", {}).get("emails") or []):
-        if em and isinstance(em, str):
-            raw_cti_list.append(em.strip().lower())
-    for ph in (scraped_data.get("linkedin", {}).get("phone_numbers") or []):
-        if ph and isinstance(ph, str):
-            clean_p = "".join(c for c in ph if c.isdigit() or c == "+")
-            if clean_p:
-                raw_cti_list.append(clean_p)
+    raw_cti_list: list[str] = []
+    cti_email_contacts = [
+        item
+        for item in contact_discovery.emails
+        if any(
+            source.collection_method != "public_profile_text"
+            for source in item.sources
+        )
+    ]
+    cti_phone_contacts = [
+        item
+        for item in contact_discovery.phones
+        if any(
+            source.collection_method != "public_profile_text"
+            for source in item.sources
+        )
+    ]
+    discovered_email_values = [item.email for item in cti_email_contacts]
+    discovered_phone_values = [
+        item.e164 for item in cti_phone_contacts if item.e164
+    ]
+    # Interleave contact types so several emails cannot crowd all phone numbers
+    # out of the deliberately small CTI seed budget.
+    for index in range(max(len(discovered_email_values), len(discovered_phone_values))):
+        if index < len(discovered_email_values):
+            raw_cti_list.append(discovered_email_values[index])
+        if index < len(discovered_phone_values):
+            raw_cti_list.append(discovered_phone_values[index])
 
-    # Fallback to handle only if no email or phone was resolved
-    if not raw_cti_list:
+    # Fallback to a non-contact query only for input kinds where that query is
+    # meaningful. Never spend CTI quota on a malformed phone-shaped value.
+    if not raw_cti_list and kind not in {"email", "phone"}:
         raw_cti_list.append(clean_handle)
 
     cti_seed_limit = int(getattr(settings, "telegram_cti_max_seed_identifiers", 3))
@@ -696,12 +1172,32 @@ async def run_investigation(
 
     # Verify extra emails + run CTI concurrently
     verify_tasks = [
-        _safe(EmailVerifierService.verify_with_hunter(e), "email_verification")
-        for e in extra_emails
+        _safe(
+            _cached_email_verification(e, request.cache_mode),
+            "email_verification",
+        )
+        for e in emails_to_verify
     ]
-    telegram_cti_task = _safe(
-        TelegramService().search_cti_breaches(cti_queries),
-        "telegram_cti",
+    telegram_cti_task = (
+        _safe(
+            TelegramService().search_cti_breaches(cti_queries),
+            "telegram_cti",
+        )
+        if cti_queries
+        else asyncio.sleep(
+            0,
+            result={
+                "status": "no_results",
+                "results": [],
+                "total_records": 0,
+                "databases": [],
+                "usage": {
+                    "logical_searches_performed": 0,
+                    "http_attempts": 0,
+                },
+                "error_code": "no_valid_identifiers",
+            },
+        )
     )
     hitek_task = _safe(
         asyncio.to_thread(HiTekService().search_records, raw_query),
@@ -719,39 +1215,33 @@ async def run_investigation(
         raw_query,
     )
 
-    # Merge and deduplicate all emails
-    seen_emails: set = set()
-    deduped_emails = []
-    for e in [*verified_extras, *pattern_emails]:
-        addr = e.get("email", "")
-        if addr:
-            cleaned_addr = addr.strip().lower()
-            if cleaned_addr not in seen_emails:
-                seen_emails.add(cleaned_addr)
-                deduped_emails.append(e)
-
-    # Fallback to append any remaining LinkedIn/RocketReach emails that missed verification
-    for em in (scraped_data.get("linkedin", {}).get("emails") or []):
-        if em and isinstance(em, str):
-            cleaned_em = em.strip().lower()
-            if cleaned_em not in seen_emails:
-                seen_emails.add(cleaned_em)
-                rr_info = None
-                if isinstance(rr_res, dict):
-                    for remail in (rr_res.get("raw_emails") or []):
-                        if isinstance(remail, dict) and str(remail.get("email")).strip().lower() == cleaned_em:
-                            rr_info = remail
-                            break
-                smtp_val = rr_info.get("smtp_valid") if (rr_info and rr_info.get("smtp_valid")) else "unknown"
-                grade_val = rr_info.get("grade") if rr_info else "B"
-                type_val = rr_info.get("type") if rr_info else "personal"
-                deduped_emails.append({
-                    "email": cleaned_em,
-                    "smtp_valid": smtp_val,
-                    "type": type_val,
-                    "grade": grade_val,
-                    "status": "resolved"
-                })
+    ContactAggregationService.apply_email_verifications(
+        contact_discovery,
+        verified_extras,
+    )
+    verification_cache_reuse_count = sum(
+        1
+        for item in verified_extras
+        if isinstance(item, dict) and item.get("cache_outcome") in {"hit", "shared"}
+    )
+    verification_provider_call_count = sum(
+        1
+        for item in verified_extras
+        if isinstance(item, dict) and item.get("provider_called") is True
+    )
+    logger.info(
+        "event=contact_discovery_completed email_count=%d phone_count=%d "
+        "email_guess_count=%d verification_check_count=%d "
+        "verification_provider_call_count=%d verification_cache_reuse_count=%d "
+        "verification_result_count=%d",
+        contact_discovery.email_count,
+        contact_discovery.phone_count,
+        contact_discovery.email_guess_count,
+        len(verify_tasks),
+        verification_provider_call_count,
+        verification_cache_reuse_count,
+        len(verified_extras),
+    )
 
     # ── STEP 5: Associated Account Discovery (multi-signal) ──
     associated_accounts = AssociatedAccountsService.verify_account_matches(
@@ -790,18 +1280,35 @@ async def run_investigation(
 
     # ── STEP 7: Consolidated Identity ──
     names = [
-        _format_string_clue(p.get("full_name") or p.get("name"))
-        for p in scraped_data.values()
-        if isinstance(p, dict) and (p.get("full_name") or p.get("name"))
+        _format_string_clue(profile.get("full_name") or profile.get("name"))
+        for profile in identity_sources
+        if profile.get("full_name") or profile.get("name")
     ]
     names = [n for n in names if n]
 
     locations = [
-        _format_string_clue(p.get("location") or p.get("address"))
-        for p in scraped_data.values()
-        if isinstance(p, dict) and (p.get("location") or p.get("address"))
+        _format_string_clue(profile.get("location") or profile.get("address"))
+        for profile in identity_sources
+        if profile.get("location") or profile.get("address")
     ]
     locations = [l for l in locations if l]
+
+    professions = [
+        _format_string_clue(
+            profile.get("headline")
+            or profile.get("current_title")
+            or profile.get("current_company")
+            or profile.get("company")
+        )
+        for profile in identity_sources
+        if (
+            profile.get("headline")
+            or profile.get("current_title")
+            or profile.get("current_company")
+            or profile.get("company")
+        )
+    ]
+    professions = [profession for profession in professions if profession]
 
     all_links: set = set()
     for h in wmn_hits:
@@ -823,21 +1330,30 @@ async def run_investigation(
     cp_pct = min(100, 40 + len(wmn_hits) * 5 + len(scraped_data) * 8 + min(len(all_links), 10))
 
     profile_pic = None
-    for p in scraped_data.values():
-        if isinstance(p, dict):
-            pic = p.get("profile_pic_url") or p.get("profile_pic_hd")
-            if not pic and p.get("basic_info"):
-                pic = p["basic_info"].get("profile_picture_url") or p["basic_info"].get("profile_pic_url")
+    for profile in identity_sources:
+        if isinstance(profile, dict):
+            pic = profile.get("profile_pic_url") or profile.get("profile_pic_hd")
+            basic_info = profile.get("basic_info")
+            if not pic and isinstance(basic_info, dict):
+                pic = basic_info.get("profile_picture_url") or basic_info.get("profile_pic_url")
             if pic:
                 profile_pic = pic
                 break
 
     consolidated_identity = ConsolidatedIdentity(
-        likely_name=names[0] if names else clean_handle,
+        likely_name=(
+            names[0]
+            if names
+            else clean_handle
+            if kind in {"username", "name"}
+            else None
+        ),
         location=locations[0] if locations else None,
-        profession=ai_personality_dict.get("primaryCategory"),
+        profession=(professions[0] if professions else ai_personality_dict.get("primaryCategory")),
         profile_pic=profile_pic,
-        emails=deduped_emails,
+        emails=contact_discovery.emails,
+        phones=contact_discovery.phones,
+        email_guesses=contact_discovery.email_guesses,
         links=sorted(all_links)[:30],
         overall_confidence="high" if cp_pct >= 70 else ("moderate" if cp_pct >= 45 else "low"),
         confidence_percentage=min(100, cp_pct),
@@ -850,6 +1366,7 @@ async def run_investigation(
         target_query=raw_query,
         wmn_results=wmn_data,
         scraped_data=scraped_data,
+        contact_discovery=contact_discovery,
         hashtag_analysis=hashtag_analysis,
         provider_statuses=provider_statuses,
         dorking_results=dorking_results,

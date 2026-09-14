@@ -82,6 +82,136 @@ window.LeaPdfExporter = {
     }
   },
 
+  normalizeContactEntries: function (values, contactType, defaultSource = "", limit = 100) {
+    const type = contactType === "phone" ? "phone" : "email";
+    const flatten = (...groups) => {
+      const output = [];
+      const append = group => {
+        if (Array.isArray(group)) group.forEach(append);
+        else if (group !== null && group !== undefined && group !== "") output.push(group);
+      };
+      groups.forEach(append);
+      return output;
+    };
+    const safeToken = (value, fallback, maximum = 48) => {
+      const candidate = String(value ?? "").trim().replaceAll("_", " ");
+      return candidate && candidate.length <= maximum && /^[a-z0-9][a-z0-9 .+&()\/-]*$/i.test(candidate)
+        ? candidate
+        : fallback;
+    };
+    const sourceLabels = entry => {
+      const rawSources = flatten(
+        entry?.sources,
+        entry?.source_platforms,
+        entry?.platforms,
+        entry?.source,
+        entry?.provider,
+      );
+      if (!rawSources.length && defaultSource) rawSources.push(defaultSource);
+      const labels = [];
+      rawSources.forEach(rawSource => {
+        const candidate = rawSource && typeof rawSource === "object"
+        ? (rawSource.source || rawSource.platform || rawSource.provider || rawSource.name)
+          : rawSource;
+        const label = safeToken(candidate, "", 64);
+        if (label && !labels.some(existing => existing.toLowerCase() === label.toLowerCase())) labels.push(label);
+      });
+      return labels.slice(0, 8);
+    };
+    const normalizeStatus = entry => {
+      const rawStatus = entry?.status ?? entry?.smtp_valid ?? entry?.validation_status;
+      if (rawStatus === true) return type === "phone" ? "valid" : "verified";
+      if (rawStatus === false) return "invalid";
+      let candidate = safeToken(rawStatus, "unknown", 32).toLowerCase();
+      if (type === "email" && ["valid", "deliverable"].includes(candidate)) candidate = "verified";
+      if (["not valid", "not-valid", "undeliverable"].includes(candidate)) candidate = "invalid";
+      return new Set([
+        "verified", "invalid", "likely", "unknown", "resolved", "observed",
+        "provided", "unverified", "risky", "accept all", "generated guess",
+        "valid", "possible",
+      ]).has(candidate) ? candidate : "unknown";
+    };
+    const normalizedByValue = new Map();
+    flatten(values).slice(0, Math.max(1, limit * 4)).forEach(rawEntry => {
+      const entry = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
+      let rawValue = rawEntry;
+      if (rawEntry && typeof rawEntry === "object") {
+        rawValue = type === "email"
+          ? (entry.email ?? entry.address ?? entry.email_address ?? entry.value)
+          : (entry.phone ?? entry.number ?? entry.phone_number ?? entry.e164 ?? entry.value);
+      }
+      let value = String(rawValue ?? "").trim();
+      let dedupeKey = "";
+      if (type === "email") {
+        value = value.replace(/^mailto:/i, "").trim().toLowerCase();
+        if (
+          value.length > 320
+          || !/^[^\s@<>]{1,64}@[^\s@<>]{1,253}$/.test(value)
+          || !value.split("@")[1]?.includes(".")
+        ) return;
+        dedupeKey = value;
+      } else {
+        if (
+          value.length > 40
+          || !/^\+?[\d\s().-]+(?:\s*(?:x|ext\.?)\s*\d+)?$/i.test(value)
+        ) return;
+        const digits = value.replace(/\D/g, "");
+        if (digits.length < 7 || digits.length > 20) return;
+        dedupeKey = digits;
+      }
+      const sources = sourceLabels(entry);
+      const reason = String(entry.reason || "").trim().slice(0, 240);
+      const provenanceEntry = flatten(entry.sources, entry.provenance)
+        .find(source => source && typeof source === "object");
+      const inferredKind = (
+        /(?:pattern|generated).*guess/i.test(reason)
+        || sources.some(source => /(?:pattern|generated).*guess/i.test(source))
+      ) ? "generated guess" : "discovered";
+      const kind = safeToken(
+        entry.kind || entry.type || entry.contact_type || provenanceEntry?.collection_method,
+        inferredKind,
+        40,
+      ).toLowerCase();
+      const parsedSourceCount = Number(entry.source_count);
+      const sourceCount = Number.isFinite(parsedSourceCount)
+        ? Math.max(sources.length, Math.min(1000, Math.trunc(parsedSourceCount)))
+        : sources.length;
+      const normalized = {
+        value,
+        status: normalizeStatus(entry),
+        kind,
+        sources,
+        sourceCount,
+        deliverable: entry.deliverable === true,
+        verificationProvider: safeToken(
+          entry.verification_provider || entry.verificationProvider,
+          "",
+          50,
+        ),
+        reason,
+      };
+      const existing = normalizedByValue.get(dedupeKey);
+      if (!existing) {
+        normalizedByValue.set(dedupeKey, normalized);
+        return;
+      }
+      sources.forEach(source => {
+        if (!existing.sources.some(current => current.toLowerCase() === source.toLowerCase())) existing.sources.push(source);
+      });
+      existing.sources = existing.sources.slice(0, 8);
+      existing.sourceCount = Math.max(existing.sourceCount, sourceCount, existing.sources.length);
+      const priority = { verified: 8, valid: 7, invalid: 6, resolved: 5, observed: 4, provided: 4, possible: 3, likely: 3, unverified: 2, unknown: 1 };
+      if ((priority[normalized.status] ?? 1) > (priority[existing.status] ?? 1)) existing.status = normalized.status;
+      if (existing.kind === "discovered" && normalized.kind !== "discovered") existing.kind = normalized.kind;
+      existing.deliverable ||= normalized.deliverable;
+      if (!existing.verificationProvider && normalized.verificationProvider) {
+        existing.verificationProvider = normalized.verificationProvider;
+      }
+      if (!existing.reason && normalized.reason) existing.reason = normalized.reason;
+    });
+    return [...normalizedByValue.values()].slice(0, limit);
+  },
+
   generateReportHtml: function (data) {
     const esc = this.escapeHTML.bind(this);
     const boundedInteger = (value, fallback = 0, minimum = 0, maximum = Number.MAX_SAFE_INTEGER) => {
@@ -142,6 +272,22 @@ window.LeaPdfExporter = {
 
     const targetQuery = data.target_query || data.username || "UNKNOWN";
     const consolidated = data.consolidated_identity || {};
+    const contactDiscovery = data.contact_discovery && typeof data.contact_discovery === "object"
+      ? data.contact_discovery
+      : {};
+    const normalizeContacts = this.normalizeContactEntries.bind(this);
+    const contactMeta = entry => {
+      const sources = entry.sources.slice(0, 3);
+      const remaining = Math.max(0, entry.sourceCount - sources.length);
+      const sourceText = sources.length
+        ? `${sources.join(", ")}${remaining ? ` +${remaining}` : ""}`
+        : "source unavailable";
+      return `${entry.status} | ${entry.kind} | ${sourceText}`;
+    };
+    const contactBadges = (entries, cssClass) => entries.map(entry => (
+      `<span class="badge ${cssClass}" title="${esc(entry.reason || contactMeta(entry))}">`
+      + `${esc(entry.value)} <small>(${esc(contactMeta(entry))})</small></span>`
+    )).join(" ");
     const aiPersonality = data.ai_personality || {};
     const wmnData = data.wmn_results || {};
     const wmnHits = wmnData.hits || [];
@@ -182,20 +328,73 @@ window.LeaPdfExporter = {
     // --- 1. Scraped Platform Dossiers Cards HTML ---
     let platformCardsHTML = "";
 
-    if (scrapedData.linkedin && scrapedData.linkedin.success) {
+    if (scrapedData.linkedin && (
+      scrapedData.linkedin.success
+      || scrapedData.linkedin.full_name
+      || scrapedData.linkedin.basic_info
+      || scrapedData.linkedin.emails
+      || scrapedData.linkedin.phones
+      || scrapedData.linkedin.phone_numbers
+      || scrapedData.linkedin.rocketreach
+    )) {
       const li = scrapedData.linkedin;
+      const topLevelRocketReach = scrapedData.rocketreach && typeof scrapedData.rocketreach === "object"
+        ? scrapedData.rocketreach
+        : null;
+      const nestedRocketReach = !topLevelRocketReach && li.rocketreach && typeof li.rocketreach === "object"
+        ? li.rocketreach
+        : null;
+      const linkedEnrichment = topLevelRocketReach || nestedRocketReach;
+      const linkedEnrichmentEmails = linkedEnrichment ? normalizeContacts(
+        [
+          linkedEnrichment.emails,
+          linkedEnrichment.email_addresses,
+          linkedEnrichment.email,
+          linkedEnrichment.raw_emails,
+        ],
+        "email",
+        "RocketReach",
+      ) : [];
+      const linkedEnrichmentPhones = linkedEnrichment ? normalizeContacts(
+        [
+          linkedEnrichment.phones,
+          linkedEnrichment.phone_numbers,
+          linkedEnrichment.phone,
+          linkedEnrichment.raw_phones,
+        ],
+        "phone",
+        "RocketReach",
+      ) : [];
+      const linkedEnrichmentEmailValues = new Set(
+        linkedEnrichmentEmails.map(entry => entry.value.toLowerCase()),
+      );
+      const linkedEnrichmentPhoneValues = new Set(
+        linkedEnrichmentPhones.map(entry => entry.value.replace(/\D/g, "")),
+      );
+      const liEmails = normalizeContacts(
+        [li.emails, li.email_addresses, li.email],
+        "email",
+        "LinkedIn / contact enrichment",
+      ).filter(entry => !linkedEnrichmentEmailValues.has(entry.value.toLowerCase()));
+      const liPhones = normalizeContacts(
+        [li.phones, li.phone_numbers, li.phone],
+        "phone",
+        "LinkedIn / contact enrichment",
+      ).filter(entry => !linkedEnrichmentPhoneValues.has(entry.value.replace(/\D/g, "")));
       const expList = (li.experience || []).map(e => `<li><strong>${esc(e.title || e.role || "Role")}</strong> at ${esc(e.company || e.organization || "")} <small>(${esc(e.duration || "")})</small></li>`).join("");
       const eduList = (li.education || []).map(e => `<li><strong>${esc(e.school || e.degree || "Education")}</strong> <small>${esc(e.field || "")}</small></li>`).join("");
       const honorsList = (li.honors || []).map(h => `<li>${esc(typeof h === "string" ? h : h.title || h.name)}</li>`).join("");
 
       let rrHTML = "";
-      if (li.rocketreach && li.rocketreach.success) {
-        const rr = li.rocketreach;
-        const rrEmailsHTML = (rr.emails || []).map(e => `<span class="badge badge-info">${esc(e)}</span>`).join(" ");
-        const rrPhonesHTML = (rr.phones || []).map(p => `<span class="badge badge-success">${esc(p)}</span>`).join(" ");
-        rrHTML = `
+      if (nestedRocketReach) {
+        const rr = nestedRocketReach;
+        const rrEmails = linkedEnrichmentEmails;
+        const rrPhones = linkedEnrichmentPhones;
+        const rrEmailsHTML = contactBadges(rrEmails, "badge-info");
+        const rrPhonesHTML = contactBadges(rrPhones, "badge-success");
+        if (rrEmails.length || rrPhones.length || rr.full_name || rr.current_title || rr.current_employer) rrHTML = `
         <div style="margin-top:10px; padding:8px; background:#f0f8ff; border:1px solid #add8e6; border-radius:4px; page-break-inside:avoid;">
-          <strong style="font-size:11px; color:#0056b3;">🚀 ROCKETREACH CONTACT ENRICHMENT (CONFIRMED MATCH)</strong>
+          <strong style="font-size:11px; color:#0056b3;">ROCKETREACH CONTACT ENRICHMENT (${rrEmails.length || rrPhones.length ? "CONTACT DATA RETURNED" : "PROFILE DATA RETURNED"})</strong>
           ${rr.full_name ? `<div style="font-size:10px; margin-top:4px;"><strong>Full Name:</strong> ${esc(rr.full_name)} ${rr.current_title ? `· <em>${esc(rr.current_title)}</em>` : ''}</div>` : ''}
           ${rr.current_employer ? `<div style="font-size:10px;"><strong>Employer:</strong> ${esc(rr.current_employer)} ${rr.location ? `(${esc(rr.location)})` : ''}</div>` : ''}
           <div style="font-size:10px; margin-top:4px;">
@@ -209,7 +408,7 @@ window.LeaPdfExporter = {
       <div class="card-box">
         <div class="card-header">
           ${this.getPlatformBadge("linkedin")}
-          <span class="card-status status-success">ACTIVE PROFILE CONFIRMED</span>
+          <span class="card-status status-success">PROFILE DATA RETURNED</span>
         </div>
         <div class="card-body">
           <table class="card-table">
@@ -217,8 +416,8 @@ window.LeaPdfExporter = {
             <tr><td>Headline</td><td>${esc(li.headline || li.basic_info?.headline || "N/A")}</td></tr>
             <tr><td>Profile URL</td><td>${safeAnchor(li.profile_url, li.profile_url || "Profile", "N/A")}</td></tr>
             <tr><td>Location</td><td>${esc(li.location || li.basic_info?.location || "N/A")}</td></tr>
-            <tr><td>Discovered Emails</td><td>${(li.emails || []).map(e => `<span class="badge badge-info">${esc(e)}</span>`).join(" ") || "None"}</td></tr>
-            <tr><td>Discovered Phones</td><td>${(li.phone_numbers || li.phones || []).map(p => `<span class="badge badge-success">${esc(p)}</span>`).join(" ") || "None"}</td></tr>
+            <tr><td>Discovered Emails</td><td>${contactBadges(liEmails, "badge-info") || "None returned"}</td></tr>
+            <tr><td>Discovered Phones</td><td>${contactBadges(liPhones, "badge-success") || "None returned"}</td></tr>
           </table>
           ${rrHTML}
           ${expList ? `<h5 style="margin:10px 0 4px 0;">Work Experience</h5><ul>${expList}</ul>` : ""}
@@ -229,17 +428,34 @@ window.LeaPdfExporter = {
     }
 
     // RocketReach Card
-    const rr = scrapedData.rocketreach || (scrapedData.linkedin && scrapedData.linkedin.rocketreach);
-    if (rr && (rr.success || (rr.emails && rr.emails.length > 0) || (rr.phones && rr.phones.length > 0) || rr.full_name)) {
-      const rrEmailsHTML = (rr.emails || []).map(e => `<span class="badge badge-info">${esc(e)}</span>`).join(" ");
-      const rrPhonesHTML = (rr.phones || []).map(p => `<span class="badge badge-success">${esc(p)}</span>`).join(" ");
+    const topLevelRR = scrapedData.rocketreach && typeof scrapedData.rocketreach === "object"
+      ? scrapedData.rocketreach
+      : null;
+    const nestedRR = scrapedData.linkedin?.rocketreach && typeof scrapedData.linkedin.rocketreach === "object"
+      ? scrapedData.linkedin.rocketreach
+      : null;
+    const rr = topLevelRR || nestedRR;
+    const nestedRRIsRendered = Boolean(!topLevelRR && nestedRR);
+    const rrEmails = rr ? normalizeContacts(
+      [rr.emails, rr.email_addresses, rr.email, rr.raw_emails],
+      "email",
+      "RocketReach",
+    ) : [];
+    const rrPhones = rr ? normalizeContacts(
+      [rr.phones, rr.phone_numbers, rr.phone, rr.raw_phones],
+      "phone",
+      "RocketReach",
+    ) : [];
+    if (rr && !nestedRRIsRendered && (rrEmails.length || rrPhones.length || rr.full_name || rr.current_title || rr.current_employer)) {
+      const rrEmailsHTML = contactBadges(rrEmails, "badge-info");
+      const rrPhonesHTML = contactBadges(rrPhones, "badge-success");
       const rrExpList = (rr.job_history || []).map(j => `<li><strong>${esc(j.title || "Role")}</strong> at ${esc(j.company || "")} <small>(${esc(j.duration || "")})</small></li>`).join("");
 
       platformCardsHTML += `
       <div class="card-box" style="border: 1px solid #add8e6; background: #f0f8ff;">
         <div class="card-header" style="background: #e6f2ff; display:flex; justify-content:space-between; align-items:center;">
           <span style="font-weight:bold; font-size:11px; color:#0056b3;">CONTACT ENRICHMENT DOSSIER</span>
-          <span class="card-status status-success" style="background:#d4edda; color:#155724; border:1px solid #c3e6cb;">CONFIRMED MATCH</span>
+          <span class="card-status status-success" style="background:#d4edda; color:#155724; border:1px solid #c3e6cb;">${rrEmails.length || rrPhones.length ? "CONTACT DATA RETURNED" : "PROFILE DATA RETURNED"}</span>
         </div>
         <div class="card-body">
           <table class="card-table">
@@ -247,8 +463,8 @@ window.LeaPdfExporter = {
             ${rr.current_title ? `<tr><td>Current Title</td><td>${esc(rr.current_title)}</td></tr>` : ""}
             ${rr.current_employer ? `<tr><td>Current Employer</td><td>${esc(rr.current_employer)}</td></tr>` : ""}
             ${rr.location ? `<tr><td>Location</td><td>${esc(rr.location)}</td></tr>` : ""}
-            <tr><td>Resolved Emails</td><td>${rrEmailsHTML || "None"}</td></tr>
-            <tr><td>Resolved Phones</td><td>${rrPhonesHTML || "None"}</td></tr>
+            <tr><td>Returned Emails</td><td>${rrEmailsHTML || "None returned"}</td></tr>
+            <tr><td>Returned Phones</td><td>${rrPhonesHTML || "None returned"}</td></tr>
           </table>
           ${rrExpList ? `<h5 style="margin:10px 0 4px 0;">Work History</h5><ul>${rrExpList}</ul>` : ""}
         </div>
@@ -420,11 +636,49 @@ window.LeaPdfExporter = {
       dorkingRows = `<tr><td colspan="4" style="text-align: center; color: #555;">No organic search results resolved via Google Dorking.</td></tr>`;
     }
 
-    // --- 7. Email deliverability list ---
-    const emailsList = consolidated.emails || [];
-    let emailsHTML = emailsList.map(e => `
-      <li><strong>${esc(e.email)}</strong> — <span style="color:${e.status === 'verified' ? '#2E9E5B' : '#d9534f'}; font-weight:bold;">${esc(e.status?.toUpperCase())}</span> <small>(${esc(e.reason || "")})</small></li>
+    // --- 7. Canonical contact discovery ---
+    const observedEmailCandidates = normalizeContacts(
+      [contactDiscovery.emails, consolidated.emails, consolidated.email_addresses, consolidated.email],
+      "email",
+    );
+    const isGenerated = entry => {
+      const kind = String(entry.kind || "").toLowerCase();
+      return kind.includes("guess") || kind.includes("generated") || kind.includes("pattern");
+    };
+    const emailsList = observedEmailCandidates.filter(entry => !isGenerated(entry));
+    const explicitEmailGuesses = normalizeContacts(
+      [contactDiscovery.email_guesses, consolidated.email_guesses, consolidated.generated_emails, consolidated.guessed_emails],
+      "email",
+      "Generated pattern",
+    ).map(entry => ({ ...entry, kind: "generated guess" }));
+    const emailGuesses = normalizeContacts(
+      [observedEmailCandidates.filter(isGenerated), explicitEmailGuesses],
+      "email",
+    ).map(entry => ({ ...entry, kind: "generated guess" }));
+    const phonesList = normalizeContacts(
+      [contactDiscovery.phones, consolidated.phones, consolidated.phone_numbers, consolidated.phone],
+      "phone",
+    );
+    const contactStatusColor = status => {
+      if (["verified", "valid"].includes(status)) return "#2E9E5B";
+      if (status === "invalid") return "#d9534f";
+      if (["likely", "possible"].includes(status)) return "#9a6700";
+      return "#245b78";
+    };
+    const contactRows = entries => entries.map(entry => `
+      <tr>
+        <td><strong>${esc(entry.value)}</strong></td>
+        <td style="color:${contactStatusColor(entry.status)}; font-weight:bold;">${esc(entry.status.toUpperCase())}${entry.verificationProvider ? `<br><small>via ${esc(entry.verificationProvider)}</small>` : ""}</td>
+        <td>${esc(entry.kind.replaceAll("_", " "))}</td>
+        <td>${esc(entry.sources.join(", ") || "Source unavailable")}${entry.sourceCount > entry.sources.length ? ` +${entry.sourceCount - entry.sources.length}` : ""}</td>
+      </tr>
     `).join("");
+    const contactTable = (entries, emptyText) => entries.length ? `
+      <table>
+        <thead><tr><th>Contact value</th><th>Status</th><th>Collection kind</th><th>Sources</th></tr></thead>
+        <tbody>${contactRows(entries)}</tbody>
+      </table>
+    ` : `<p><small style="color:#666;">${esc(emptyText)}</small></p>`;
 
     // --- 9. Risk Flags ---
     const riskFlags = aiPersonality.riskFlags || [];
@@ -577,8 +831,16 @@ window.LeaPdfExporter = {
         <tr><td style="background:#eee;"><strong>Identity Confidence Score</strong></td><td><strong style="font-size:12pt; color:#2E9E5B;">${boundedInteger(consolidated.confidence_percentage, 0, 0, 100)}%</strong> (${esc((consolidated.overall_confidence || "low").toUpperCase())})</td></tr>
     </table>
 
-    <h4 style="margin-top:14px; margin-bottom:6px;">Discovered &amp; Verified Email Addresses</h4>
-    <ul>${emailsHTML || "<li>No email addresses discovered.</li>"}</ul>
+    <h4 style="margin-top:14px; margin-bottom:6px;">Discovered / Provided Email Addresses (${emailsList.length})</h4>
+    ${contactTable(emailsList, "No observed or provided email addresses were discovered.")}
+
+    ${emailGuesses.length ? `
+      <h4 style="margin-top:14px; margin-bottom:6px;">Generated Email Candidates — Not Confirmed (${emailGuesses.length})</h4>
+      ${contactTable(emailGuesses, "")}
+    ` : ""}
+
+    <h4 style="margin-top:14px; margin-bottom:6px;">Discovered / Provided Phone Numbers (${phonesList.length})</h4>
+    ${contactTable(phonesList, "No observed or provided phone numbers were discovered.")}
 
     <div class="section-title">2. SCRAPED PLATFORM DOSSIERS &amp; CARDS</div>
     ${platformCardsHTML}
