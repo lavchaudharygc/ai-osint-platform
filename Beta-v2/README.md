@@ -132,6 +132,7 @@ APIFY_API_TOKEN=<complete Apify API token>
 APIFY_QUOTA_CHECK_TTL_SECONDS=300
 APIFY_QUOTA_CHECK_TIMEOUT_SECONDS=10
 APIFY_MAX_TOTAL_CHARGE_USD_PER_RUN=1.0
+APIFY_LINKEDIN_POSTS_LIMIT=15
 ```
 
 The dashboard integration badge performs the same read-only capacity check.
@@ -147,6 +148,16 @@ profile/timeline collector (`automation-lab/twitter-scraper`); follower records
 are no longer relabelled as tweets. Facebook collection is intentionally
 described as public Page collection because the configured Actors do not promise
 personal-profile access.
+
+For a username Target Scan, LinkedIn post collection starts only after the
+profile collector confirms a public `linkedin.com/in/...` URL. It uses the same
+request-scoped Apify client, starts at most one posts Actor, and returns at most
+`APIFY_LINKEDIN_POSTS_LIMIT` rows (15 by default, with a hard maximum of 20).
+Only rows whose public author URL matches the confirmed profile are attached to
+the dossier. A skipped, empty, or failed post search is reported separately as
+`provider_statuses.linkedin_posts` and never removes a successful profile.
+Operational logging records only status and counts under
+`event=linkedin_posts_completed`, never the search value or post content.
 
 Google dorking uses SerpAPI only. It never launches an Apify Actor or switches
 to another provider when SerpAPI is missing, exhausted, or unavailable.
@@ -186,8 +197,9 @@ the searched value, generated dorks, API key, titles, snippets, or URLs.
 
 ## Cross-platform hashtag analysis
 
-Successful Instagram, TikTok, X, and public Facebook Page collection is
-normalized into the top-level `hashtag_analysis` response. The analysis is
+Successful Instagram, TikTok, X, public Facebook Page, and attributed LinkedIn
+post collections are normalized into the top-level `hashtag_analysis` response.
+The analysis is
 deterministic and local: it makes no additional provider or AI call. Tags from
 public bios and collected posts/videos are case-normalized, counted once per
 source item, ranked, and attributed to their source platforms. The dashboard

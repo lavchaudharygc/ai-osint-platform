@@ -16,12 +16,14 @@ from app.schemas.investigation import (
 
 _PLATFORM_CONTENT_FIELDS: dict[str, tuple[str, ...]] = {
     "instagram": ("posts", "recent_posts"),
+    "linkedin": ("posts", "recent_posts"),
     "tiktok": ("videos", "recent_posts"),
     "twitter": ("tweets", "recent_posts"),
     "facebook": ("posts", "recent_posts"),
 }
 _PLATFORM_AGGREGATE_FIELDS: dict[str, tuple[str, ...]] = {
     "instagram": ("post_hashtags", "hashtags", "all_hashtags", "all_hashtags_used"),
+    "linkedin": ("all_hashtags", "hashtags", "all_hashtags_used"),
     "tiktok": ("hashtags", "all_hashtags", "all_hashtags_used"),
     "twitter": ("hashtags", "all_hashtags", "all_hashtags_used"),
     "facebook": ("all_hashtags", "hashtags", "all_hashtags_used"),

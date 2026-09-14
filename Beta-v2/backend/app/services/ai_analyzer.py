@@ -158,7 +158,13 @@ class AIAnalyzer:
         if hashtag_analysis and isinstance(hashtag_analysis, dict):
             platform_summaries = hashtag_analysis.get("platforms") or {}
             if isinstance(platform_summaries, dict):
-                for platform in ("instagram", "tiktok", "twitter", "facebook"):
+                for platform in (
+                    "instagram",
+                    "linkedin",
+                    "tiktok",
+                    "twitter",
+                    "facebook",
+                ):
                     summary = platform_summaries.get(platform)
                     if not isinstance(summary, dict):
                         continue

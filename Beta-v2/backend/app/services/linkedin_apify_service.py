@@ -5,13 +5,57 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from typing import Any, Literal
+from urllib.parse import quote, unquote, urlsplit
 
 from app.config import settings
 from app.services.apify_client import ApifyActorClient, ApifyClientError
+from app.services.hashtag_analysis_service import (
+    extract_hashtags_from_text,
+    normalize_hashtag_values,
+)
 
 
 LinkedInAction = Literal["get-profiles", "get-companies"]
 LinkedInQueryMode = Literal["keyword", "name", "url"]
+
+
+def canonical_linkedin_profile_url(value: Any) -> str | None:
+    """Return a canonical public LinkedIn member URL, rejecting lookalikes."""
+
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme.casefold() not in {"http", "https"}
+        or parsed.username
+        or parsed.password
+        or port not in {None, 80, 443}
+    ):
+        return None
+    hostname = (parsed.hostname or "").casefold().removeprefix("www.")
+    path_parts = [unquote(part) for part in parsed.path.split("/") if part]
+    if hostname != "linkedin.com" or len(path_parts) < 2:
+        return None
+    if path_parts[0].casefold() != "in":
+        return None
+    slug = path_parts[1].strip()
+    if not 2 <= len(slug) <= 150:
+        return None
+    if any(not (character.isalnum() or character in "-_.~") for character in slug):
+        return None
+    return f"https://www.linkedin.com/in/{quote(slug, safe='-_.~')}/"
+
+
+def _normalized_post_hashtags(value: Any, text: Any) -> list[str]:
+    """Normalize bounded hashtag scalars across known Actor output shapes."""
+
+    explicit_tags = normalize_hashtag_values(value)
+    text_tags = extract_hashtags_from_text(str(text or "")[:10_000])
+    return sorted(set(explicit_tags).union(text_tags))[:100]
 
 
 def _profile_slug(value: str) -> str:
@@ -454,6 +498,7 @@ class LinkedInApifyService:
     """Use API Maestro LinkedIn Profile scraper and post search."""
 
     PROFILE_MAX_PROVIDER_CALLS = 3
+    POSTS_ABSOLUTE_MAX_ITEMS = 20
 
     def __init__(self, client: ApifyActorClient | None = None) -> None:
         self.client = client or ApifyActorClient()
@@ -544,26 +589,44 @@ class LinkedInApifyService:
         sort_type: str = "relevance",
         page_number: int = 1,
         date_filter: str = "",
-        limit: int = 50,
+        limit: int = 15,
         total_posts: int | None = None,
         company_urns: str | None = None,
         author_company_urns: str | None = None,
         author_industry_urns: str | None = None,
         author_job_title: str | None = None,
         member_urns: str | None = None,
+        expected_author_profile_url: str | None = None,
     ) -> dict[str, Any]:
-        clean_keyword = keyword.strip()
+        clean_keyword = keyword.strip()[:200]
         if not clean_keyword:
             raise ValueError("LinkedIn post-search keyword cannot be empty")
+        server_limit = min(
+            self.POSTS_ABSOLUTE_MAX_ITEMS,
+            max(1, int(getattr(settings, "apify_linkedin_posts_limit", 15))),
+        )
+        bounded_limit = min(server_limit, max(1, int(limit)))
+        bounded_total_posts = (
+            min(bounded_limit, max(1, int(total_posts)))
+            if total_posts is not None
+            else None
+        )
+        canonical_expected_author = None
+        if expected_author_profile_url is not None:
+            canonical_expected_author = canonical_linkedin_profile_url(
+                expected_author_profile_url
+            )
+            if canonical_expected_author is None:
+                raise ValueError("Expected author must be a public LinkedIn profile URL")
         run_input: dict[str, Any] = {
             "keyword": clean_keyword,
             "sort_type": sort_type,
             "page_number": page_number,
             "date_filter": date_filter,
-            "limit": limit,
+            "limit": bounded_limit,
         }
         optional_values = {
-            "total_posts": total_posts,
+            "total_posts": bounded_total_posts,
             "company_urns": company_urns,
             "author_company_urns": author_company_urns,
             "author_industry_urns": author_industry_urns,
@@ -580,7 +643,7 @@ class LinkedInApifyService:
 
         if not self.is_configured():
             return self._not_configured(self.posts_actor_id, "posts")
-        dataset_limit = total_posts or limit
+        dataset_limit = min(bounded_limit, bounded_total_posts or bounded_limit)
         try:
             run = await self.client.run_actor(
                 self.posts_actor_id,
@@ -590,7 +653,22 @@ class LinkedInApifyService:
         except ApifyClientError as exc:
             return self._error(exc, self.posts_actor_id, "posts")
 
-        posts = [self._normalize_post(item) for item in run.items]
+        provider_posts = [self._normalize_post(item) for item in run.items]
+        posts = provider_posts
+        if canonical_expected_author is not None:
+            posts = [
+                post
+                for post in provider_posts
+                if (
+                    canonical_linkedin_profile_url(
+                        (post.get("author") or {}).get("profile_url")
+                        if isinstance(post.get("author"), dict)
+                        else None
+                    )
+                    or ""
+                ).casefold()
+                == canonical_expected_author.casefold()
+            ]
         hashtags = sorted(
             {
                 hashtag
@@ -598,12 +676,20 @@ class LinkedInApifyService:
                 for hashtag in post.get("hashtags", [])
                 if hashtag
             }
+        )[:100]
+        status = (
+            "completed"
+            if posts
+            else "no_attributed_posts"
+            if provider_posts and canonical_expected_author is not None
+            else "empty_dataset"
         )
         return {
-            "success": True,
+            "success": bool(posts),
             "configured": True,
+            "exists": True if posts else None,
             "platform": "linkedin",
-            "status": "completed",
+            "status": status,
             "source": "apify_linkedin_posts_search",
             "actor_id": self.posts_actor_id,
             "keyword": clean_keyword,
@@ -611,6 +697,8 @@ class LinkedInApifyService:
             "recent_posts": posts,
             "all_hashtags": hashtags,
             "total": len(posts),
+            "provider_total": len(provider_posts),
+            "attribution_filtered": canonical_expected_author is not None,
             "run": run.as_dict(include_items=False),
             "raw_data": run.items,
             "scraped_at": datetime.now(UTC).isoformat(),
@@ -664,20 +752,35 @@ class LinkedInApifyService:
             item.get("text")
             or item.get("content")
             or item.get("postText")
+            or item.get("post_text")
+            or item.get("postContent")
             or item.get("commentary")
         )
-        hashtags = item.get("hashtags")
-        if not isinstance(hashtags, list):
-            hashtags = re.findall(r"(?<!\w)#([\w-]+)", str(text or ""))
+        hashtags = _normalized_post_hashtags(item.get("hashtags"), text)
         reactions = item.get("reactions")
         return {
             "id": item.get("activityId") or item.get("activity_id") or item.get("postId") or item.get("urn"),
-            "url": item.get("postUrl") or item.get("linkedinUrl") or item.get("url"),
+            "url": (
+                item.get("postUrl")
+                or item.get("post_url")
+                or item.get("linkedinUrl")
+                or item.get("url")
+            ),
             "text": text,
             "created_at": item.get("postedAt") or item.get("posted_at") or item.get("publishedAt") or item.get("date"),
             "author": {
                 "name": item.get("authorName") or author.get("name") or author_details.get("name"),
-                "profile_url": item.get("authorProfileUrl") or author.get("profileUrl") or author_details.get("linkedinUrl"),
+                "profile_url": (
+                    item.get("authorProfileUrl")
+                    or item.get("author_profile_url")
+                    or item.get("authorUrl")
+                    or author.get("profileUrl")
+                    or author.get("profile_url")
+                    or author.get("linkedinUrl")
+                    or author.get("url")
+                    or author_details.get("linkedinUrl")
+                    or author_details.get("profileUrl")
+                ),
                 "headline": item.get("authorHeadline") or author.get("headline") or author_details.get("headline"),
                 "profile_pic_url": item.get("authorImage") or author.get("profilePicture") or author_details.get("profilePictureUrl"),
             },
@@ -700,7 +803,7 @@ class LinkedInApifyService:
             ),
             "reactions": reactions if isinstance(reactions, (dict, list)) else None,
             "media": item.get("media") or item.get("images") or item.get("attachments") or [],
-            "hashtags": [str(value).lstrip("#") for value in hashtags],
+            "hashtags": hashtags,
             "raw_data": item,
         }
 
@@ -736,8 +839,12 @@ class LinkedInApifyService:
             "source": "apify",
             "actor_id": actor_id,
             "reason": "missing APIFY_API_TOKEN",
+            "error_code": "not_configured",
             output_key: [],
+            "recent_posts": [],
+            "all_hashtags": [],
             "total": 0,
+            "provider_total": 0,
         }
 
     @staticmethod
@@ -755,6 +862,12 @@ class LinkedInApifyService:
             "source": "apify",
             "actor_id": actor_id,
             "error": exc.as_dict(),
+            "error_code": exc.code,
+            "provider_error_type": exc.provider_error_type,
+            "http_status": exc.status_code,
             output_key: [],
+            "recent_posts": [],
+            "all_hashtags": [],
             "total": 0,
+            "provider_total": 0,
         }

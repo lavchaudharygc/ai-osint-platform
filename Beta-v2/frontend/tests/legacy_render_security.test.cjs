@@ -19,6 +19,7 @@ const API_BASE = "http://127.0.0.1:8010";
 const VALID_LINKS = {
     public: "https://public.example.org/evidence?id=42",
     linkedin: "https://www.linkedin.com/in/valid-profile",
+    linkedinPost: "https://www.linkedin.com/posts/valid-profile_activity-123456789",
     instagram: "https://www.instagram.com/valid.profile/",
     tiktok: "https://www.tiktok.com/@valid.profile",
     facebook: "https://www.facebook.com/valid.profile",
@@ -348,13 +349,13 @@ async function runAppTests() {
     const hashtagFixture = {
         status: "completed",
         total_unique_hashtags: 5,
-        total_mentions: 9,
-        platforms_with_hashtags: 4,
+        total_mentions: 10,
+        platforms_with_hashtags: 5,
         top_hashtags: [
             {
                 tag: "CyberSafe",
-                mentions: 4,
-                platforms: ["instagram", "tiktok", "twitter", "facebook"],
+                mentions: 5,
+                platforms: ["instagram", "linkedin", "tiktok", "twitter", "facebook"],
                 cross_platform: true,
             },
             {
@@ -367,12 +368,13 @@ async function runAppTests() {
         ],
         cross_platform_hashtags: [{
             tag: "CyberSafe",
-            mentions: 4,
-            platforms: ["instagram", "tiktok", "twitter", "facebook"],
+            mentions: 5,
+            platforms: ["instagram", "linkedin", "tiktok", "twitter", "facebook"],
             cross_platform: true,
         }],
         platforms: {
             instagram: { total_mentions: 3, hashtags: ["CyberSafe", MARKUP_PAYLOAD] },
+            linkedin: { total_mentions: 1, hashtags: ["CyberSafe"] },
             tiktok: { total_mentions: 2, hashtags: ["CyberSafe"] },
             twitter: { total_mentions: 2, hashtags: ["CyberSafe", "DFIR"] },
             facebook: { total_mentions: 2, hashtags: ["CyberSafe", "UPPolice"] },
@@ -382,14 +384,14 @@ async function runAppTests() {
     html = nodeFor("hashtag-analysis-body").innerHTML;
     assert(html.includes("#CyberSafe"), "top hashtag was not rendered");
     assert(html.includes("CROSS-PLATFORM HASHTAGS (1)"), "cross-platform summary was omitted");
-    for (const platform of ["Instagram", "TikTok", "X", "Facebook"]) {
+    for (const platform of ["Instagram", "LinkedIn", "TikTok", "X", "Facebook"]) {
         assert(html.includes(`>${platform}<`), `hashtag platform row missing: ${platform}`);
     }
     assert(!html.includes(MARKUP_PAYLOAD), "hashtag markup reached rendered HTML");
     assert(!html.includes(NUMERIC_PAYLOAD), "hashtag count markup reached rendered HTML");
     assert(!html.includes("&lt;img"), "malformed hashtag text was not rejected");
     assert(!html.includes(">#</div>"), "empty hashtag chip was rendered");
-    assert.equal(nodeFor("hashtag-analysis-badge").textContent, "5 UNIQUE · 9 MENTIONS");
+    assert.equal(nodeFor("hashtag-analysis-badge").textContent, "5 UNIQUE · 10 MENTIONS");
 
     sandbox.renderResults({
         hashtag_analysis: hashtagFixture,
@@ -556,6 +558,17 @@ async function runAppTests() {
             success: true,
             emails: { malformed: true },
             phone_numbers: MARKUP_PAYLOAD,
+            all_hashtags: [MARKUP_PAYLOAD],
+            posts: [{
+                url: BAD_URLS[0],
+                text: MARKUP_PAYLOAD,
+                created_at: MARKUP_PAYLOAD,
+                reaction_count: NUMERIC_PAYLOAD,
+                comment_count: NUMERIC_PAYLOAD,
+                repost_count: NUMERIC_PAYLOAD,
+                hashtags: [MARKUP_PAYLOAD],
+                author: { name: MARKUP_PAYLOAD, profile_url: BAD_URLS[1] },
+            }],
             rocketreach: {
                 success: false,
                 raw_emails: { malformed: true },
@@ -651,6 +664,7 @@ async function runAppTests() {
             tiktok: { status: "skipped", error_code: "identifier_not_username" },
             twitter: { status: "skipped", error_code: "identifier_not_username" },
             linkedin: { status: "skipped", error_code: "identifier_not_username" },
+            linkedin_posts: { success: true, status: "completed" },
             signalhire: { success: true, status: "success", credits_remaining: 42 },
             rocketreach: { status: "skipped", error_code: "exact_contact_routed_to_signalhire" },
         },
@@ -662,7 +676,51 @@ async function runAppTests() {
     html = nodeFor("diagnostics-body").innerHTML;
     assert(html.includes("Non-username targets are not sent to username discovery sites."));
     assert(html.includes("non-username target was not sent to username-oriented scrapers"));
+    assert(html.includes("LinkedIn Public Posts Scraper"), "LinkedIn posts diagnostics were merged into the profile collector");
+    assert(html.includes("Bounded public LinkedIn post collection completed."), "LinkedIn posts success status lacked bounded-collection wording");
     assert(html.includes("Provider credits remaining: 42."));
+
+    sandbox.renderDiagnosticsPanel({
+        wmn_results: { status: "success", hits_count: 0 },
+        provider_statuses: {
+            linkedin_posts: { status: "skipped", error_code: "post_collection_not_selected" },
+        },
+        scraped_data: {},
+        dorking_results: { status: "completed", results_count: 0 },
+        telegram_cti: { status: "no_results", usage: {} },
+        internal_database_matches: { status: "not_available", matches: [] },
+    });
+    html = nodeFor("diagnostics-body").innerHTML;
+    assert(html.includes("Public LinkedIn posts were intentionally skipped"), "LinkedIn posts skip reason was misleading");
+    assert(html.includes("no post-search Actor call was made"), "LinkedIn posts skip status did not confirm the zero-call decision");
+
+    sandbox.renderDiagnosticsPanel({
+        wmn_results: { status: "success", hits_count: 0 },
+        provider_statuses: {
+            linkedin_posts: { status: "no_attributed_posts", success: false },
+        },
+        scraped_data: {},
+        dorking_results: { status: "completed", results_count: 0 },
+        telegram_cti: { status: "no_results", usage: {} },
+        internal_database_matches: { status: "not_available", matches: [] },
+    });
+    html = nodeFor("diagnostics-body").innerHTML;
+    assert(html.includes("no returned post was attributable"), "LinkedIn attribution filtering was reported as a provider failure");
+    assert(html.includes("unattributed posts were excluded"), "LinkedIn posts diagnostics omitted the attribution safeguard");
+
+    sandbox.renderDiagnosticsPanel({
+        wmn_results: { status: "success", hits_count: 0 },
+        provider_statuses: {
+            linkedin_posts: { status: "error", error_code: "actor_failed", error: MARKUP_PAYLOAD },
+        },
+        scraped_data: {},
+        dorking_results: { status: "completed", results_count: 0 },
+        telegram_cti: { status: "no_results", usage: {} },
+        internal_database_matches: { status: "not_available", matches: [] },
+    });
+    html = nodeFor("diagnostics-body").innerHTML;
+    assert(!html.includes(MARKUP_PAYLOAD), "LinkedIn posts diagnostic error markup reached HTML");
+    assert(html.includes("APIFY_LINKEDIN_POSTS_ACTOR_ID"), "LinkedIn posts failure recovery omitted the Actor configuration");
 
     sandbox.renderDiagnosticsPanel({
         wmn_results: { status: "success", hits_count: 0 },
@@ -709,6 +767,17 @@ async function runAppTests() {
         },
         linkedin: {
             success: true,
+            all_hashtags: ["CyberSafe", "OSINT"],
+            posts: [{
+                url: VALID_LINKS.linkedinPost,
+                text: "A public LinkedIn post about cyber safety.",
+                created_at: "2030-01-02T03:04:05Z",
+                reaction_count: 12,
+                comment_count: 3,
+                repost_count: 2,
+                hashtags: ["CyberSafe", "OSINT"],
+                author: { name: "Valid Profile", profile_url: VALID_LINKS.linkedin },
+            }],
             emails: [
                 { email: "linkedin@example.org", status: "observed" },
                 { email: "returned@example.org", status: "observed" },
@@ -756,9 +825,14 @@ async function runAppTests() {
         html.includes(`href="${VALID_LINKS.public.replace(/&/g, "&amp;")}"`),
         "valid LinkedIn featured link disappeared",
     );
+    assert(html.includes(`href="${VALID_LINKS.linkedinPost}"`), "valid LinkedIn post link disappeared");
     assertImagesUseAuthenticatedProxy(html, safeURL, "app valid platform images", 3);
     assert(html.includes("PUBLIC POST HASHTAGS (2 UNIQUE)"), "X/Facebook hashtag headings were omitted");
     assert(html.includes("#CyberSafe"), "X/Facebook hashtag chips were omitted");
+    assert(html.includes("LINKEDIN POST HASHTAGS (2 UNIQUE)"), "LinkedIn hashtag summary was omitted");
+    assert(html.includes("RECENT PUBLIC LINKEDIN POSTS (SHOWING 1)"), "LinkedIn posts section was omitted");
+    assert(html.includes("A public LinkedIn post about cyber safety."), "LinkedIn post text was omitted");
+    assert(html.includes("Reactions: 12"), "LinkedIn post metrics were omitted");
     assert(html.includes("returned@example.org"), "empty RocketReach raw email array masked canonical contacts");
     assert(html.includes("+91 11234 56789"), "empty RocketReach raw phone array masked canonical contacts");
     assert(html.includes("CONTACT DATA RETURNED"), "returned contact data was mislabeled");
@@ -766,6 +840,21 @@ async function runAppTests() {
     assert.equal((html.match(/returned@example\.org/g) || []).length, 1, "duplicate RocketReach cards repeated the same contact");
     assert(!html.includes("STALE-NESTED-ROCKETREACH"), "nested RocketReach suppressed the richer top-level payload");
     assert(!html.includes("stale-nested@example.org"), "stale nested RocketReach contacts were rendered with a top-level payload");
+
+    sandbox.renderPlatformDossiers({
+        linkedin: {
+            success: true,
+            posts: [],
+            recent_posts: Array.from({ length: 11 }, (_value, index) => ({
+                text: `BOUNDED-LINKEDIN-POST-${index}`,
+                hashtags: ["Bounded"],
+            })),
+        },
+    });
+    html = nodeFor("platform-dossiers-body").innerHTML;
+    assert(html.includes("RECENT PUBLIC LINKEDIN POSTS (SHOWING 10)"), "LinkedIn post previews were not bounded to ten");
+    assert(html.includes("BOUNDED-LINKEDIN-POST-9"), "the tenth bounded LinkedIn post was omitted");
+    assert(!html.includes("BOUNDED-LINKEDIN-POST-10"), "more than ten LinkedIn posts reached the dashboard");
 
     sandbox.renderMediaGallery({
         scraped_data: {
@@ -849,7 +938,22 @@ function maliciousExporterData() {
             })),
         },
         scraped_data: {
-            linkedin: { success: true, profile_url: BAD_URLS[0], profile_pic_url: ATTRIBUTE_BREAKER },
+            linkedin: {
+                success: true,
+                profile_url: BAD_URLS[0],
+                profile_pic_url: ATTRIBUTE_BREAKER,
+                all_hashtags: [MARKUP_PAYLOAD],
+                posts: [{
+                    url: BAD_URLS[0],
+                    text: MARKUP_PAYLOAD,
+                    created_at: MARKUP_PAYLOAD,
+                    reaction_count: NUMERIC_PAYLOAD,
+                    comment_count: NUMERIC_PAYLOAD,
+                    repost_count: NUMERIC_PAYLOAD,
+                    hashtags: [MARKUP_PAYLOAD],
+                    author: { name: MARKUP_PAYLOAD },
+                }],
+            },
             instagram: {
                 success: true,
                 external_url: BAD_URLS[1],
@@ -925,6 +1029,17 @@ function validExporterData() {
                 success: true,
                 profile_url: VALID_LINKS.linkedin,
                 profile_pic_url: VALID_IMAGES.linkedin,
+                all_hashtags: ["CyberSafe", "OSINT"],
+                posts: [{
+                    url: VALID_LINKS.linkedinPost,
+                    text: "A public LinkedIn post included in the report.",
+                    created_at: "2030-01-02T03:04:05Z",
+                    reaction_count: 12,
+                    comment_count: 3,
+                    repost_count: 2,
+                    hashtags: ["CyberSafe", "OSINT"],
+                    author: { name: "Valid Profile" },
+                }],
                 emails: ["pdf-returned@example.org"],
                 phones: ["+91 11234 56789"],
                 rocketreach: {
@@ -971,6 +1086,7 @@ function runExporterTests() {
     assertLinksAreSafe(html, exporter.hostnameIsClearlyNonPublic.bind(exporter), "valid PDF report");
     for (const url of [
         VALID_LINKS.linkedin,
+        VALID_LINKS.linkedinPost,
         VALID_LINKS.instagram,
         VALID_LINKS.facebook,
         VALID_LINKS.github,
@@ -994,11 +1110,27 @@ function runExporterTests() {
     assert(html.includes("instagram"), "PDF hid platform provenance behind the generic provider label");
     assert(html.includes("via hunter"), "PDF omitted the email verification provider");
     assert(html.includes("pdf-returned@example.org"), "empty RocketReach raw array masked canonical PDF contacts");
+    assert(html.includes("LinkedIn Post Hashtags"), "PDF omitted LinkedIn post hashtags");
+    assert(html.includes("#CyberSafe"), "PDF omitted a LinkedIn post hashtag");
+    assert(html.includes("Recent Public LinkedIn Posts (Showing 1)"), "PDF omitted LinkedIn posts");
+    assert(html.includes("A public LinkedIn post included in the report."), "PDF omitted LinkedIn post text");
+    assert(html.includes("Reactions: 12"), "PDF omitted LinkedIn post metrics");
     assert.equal((html.match(/pdf-returned@example\.org/g) || []).length, 1, "PDF repeated merged RocketReach contacts");
     assert(html.includes("CONTACT DATA RETURNED"), "PDF overstated provider-returned contact data");
     assert(!html.includes("CONFIRMED MATCH"), "PDF presented provider-returned contact data as identity confirmation");
     assert(!html.includes("[object Object]"), "PDF stringified a structured contact object");
     assertImagesUseAuthenticatedProxy(html, safeURL, "valid PDF media", 8);
+
+    const boundedLinkedInReport = validExporterData();
+    boundedLinkedInReport.scraped_data.linkedin.posts = [];
+    boundedLinkedInReport.scraped_data.linkedin.recent_posts = Array.from({ length: 11 }, (_value, index) => ({
+        text: `BOUNDED-PDF-LINKEDIN-POST-${index}`,
+        hashtags: ["Bounded"],
+    }));
+    html = exporter.generateReportHtml(boundedLinkedInReport);
+    assert(html.includes("Recent Public LinkedIn Posts (Showing 10)"), "PDF LinkedIn post previews were not bounded to ten");
+    assert(html.includes("BOUNDED-PDF-LINKEDIN-POST-9"), "PDF omitted the tenth bounded LinkedIn post");
+    assert(!html.includes("BOUNDED-PDF-LINKEDIN-POST-10"), "PDF included more than ten LinkedIn posts");
 
     const ctiFailureData = validExporterData();
     ctiFailureData.telegram_cti = {

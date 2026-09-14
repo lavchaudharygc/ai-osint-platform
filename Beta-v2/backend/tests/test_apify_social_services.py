@@ -12,7 +12,11 @@ from app.config import settings
 from app.services.apify_client import ApifyActorRun, ApifyClientError
 from app.services.facebook_service import FacebookService
 from app.services.instagram_service import InstagramService
-from app.services.linkedin_apify_service import normalize_linkedin_item
+from app.services.linkedin_apify_service import (
+    LinkedInApifyService,
+    canonical_linkedin_profile_url,
+    normalize_linkedin_item,
+)
 from app.services.tiktok_service import TikTokService
 from app.services.twitter_service import TwitterService
 
@@ -56,6 +60,18 @@ def test_linkedin_normalizer_preserves_contact_arrays_and_typed_entries() -> Non
     ]
 
 
+def test_linkedin_profile_url_canonicalizer_rejects_lookalikes() -> None:
+    assert canonical_linkedin_profile_url(
+        "https://linkedin.com/in/Alice.Analyst?trk=public"
+    ) == "https://www.linkedin.com/in/Alice.Analyst/"
+    assert canonical_linkedin_profile_url(
+        "https://linkedin.com.evil.example/in/Alice.Analyst"
+    ) is None
+    assert canonical_linkedin_profile_url(
+        "https://linkedin.com/company/alice"
+    ) is None
+
+
 class FakeApifyClient:
     """Small Actor-client fake that records bounded, non-network launches."""
 
@@ -86,6 +102,126 @@ class FakeApifyClient:
         if isinstance(response, BaseException):
             raise response
         return response
+
+
+@pytest.mark.anyio
+async def test_linkedin_posts_are_server_bounded_and_strictly_attributed() -> None:
+    actor_id = settings.apify_linkedin_posts_actor_id
+    fake = FakeApifyClient(
+        {
+            actor_id: _run(
+                actor_id,
+                [
+                    {
+                        "activityId": "matching-post",
+                        "commentary": "Public #OSINT #Research update",
+                        "hashtags": [
+                            {"text": "#OSINT"},
+                            {"tag": "Research"},
+                        ],
+                        "postUrl": "https://linkedin.com/feed/update/matching-post",
+                        "authorDetails": {
+                            "name": "Alice Analyst",
+                            "linkedinUrl": "https://linkedin.com/in/ALICE",
+                        },
+                    },
+                    {
+                        "activityId": "other-person",
+                        "commentary": "Unrelated #Noise",
+                        "authorDetails": {
+                            "linkedinUrl": "https://linkedin.com/in/bob"
+                        },
+                    },
+                    {
+                        "activityId": "missing-author-url",
+                        "commentary": "Unattributed #Noise",
+                    },
+                ],
+            )
+        }
+    )
+
+    result = await LinkedInApifyService(client=fake).search_posts(  # type: ignore[arg-type]
+        keyword=" Alice Analyst ",
+        sort_type="date_posted",
+        limit=10_000,
+        total_posts=10_000,
+        expected_author_profile_url="https://www.linkedin.com/in/alice/",
+    )
+
+    assert len(fake.calls) == 1
+    called_actor, run_input, dataset_limit = fake.calls[0]
+    assert called_actor == actor_id
+    assert run_input["keyword"] == "Alice Analyst"
+    assert run_input["limit"] == settings.apify_linkedin_posts_limit
+    assert run_input["total_posts"] == settings.apify_linkedin_posts_limit
+    assert dataset_limit == settings.apify_linkedin_posts_limit
+    assert result["success"] is True
+    assert result["status"] == "completed"
+    assert result["provider_total"] == 3
+    assert result["total"] == 1
+    assert [post["id"] for post in result["posts"]] == ["matching-post"]
+    assert result["all_hashtags"] == ["osint", "research"]
+
+
+@pytest.mark.anyio
+async def test_linkedin_posts_reports_no_attributed_rows_without_fallback() -> None:
+    actor_id = settings.apify_linkedin_posts_actor_id
+    fake = FakeApifyClient(
+        {
+            actor_id: _run(
+                actor_id,
+                [
+                    {
+                        "activityId": "different-author",
+                        "commentary": "Public #Other post",
+                        "authorProfileUrl": "https://linkedin.com/in/bob",
+                    }
+                ],
+            )
+        }
+    )
+
+    result = await LinkedInApifyService(client=fake).search_posts(  # type: ignore[arg-type]
+        keyword="Alice Analyst",
+        expected_author_profile_url="https://linkedin.com/in/alice",
+    )
+
+    assert len(fake.calls) == 1
+    assert result["success"] is False
+    assert result["status"] == "no_attributed_posts"
+    assert result["posts"] == []
+    assert result["all_hashtags"] == []
+    assert result["provider_total"] == 1
+
+
+@pytest.mark.anyio
+async def test_linkedin_posts_provider_error_is_structured_and_not_retried() -> None:
+    actor_id = settings.apify_linkedin_posts_actor_id
+    fake = FakeApifyClient(
+        {
+            actor_id: ApifyClientError(
+                "denied",
+                actor_id=actor_id,
+                code="access_denied",
+                status_code=403,
+                operation="start",
+            )
+        }
+    )
+
+    result = await LinkedInApifyService(client=fake).search_posts(  # type: ignore[arg-type]
+        keyword="Alice Analyst",
+        expected_author_profile_url="https://linkedin.com/in/alice",
+    )
+
+    assert len(fake.calls) == 1
+    assert result["success"] is False
+    assert result["status"] == "provider_error"
+    assert result["error"]["code"] == "access_denied"
+    assert result["error_code"] == "access_denied"
+    assert result["http_status"] == 403
+    assert result["posts"] == []
 
 
 @pytest.mark.anyio

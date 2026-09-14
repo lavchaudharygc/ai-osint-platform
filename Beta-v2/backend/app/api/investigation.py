@@ -460,6 +460,26 @@ def _skipped_contact_provider(
     }
 
 
+def _skipped_linkedin_posts(*, configured: bool, reason: str) -> dict[str, Any]:
+    """Describe a zero-call LinkedIn posts decision without target data."""
+
+    return {
+        "success": False,
+        "configured": configured,
+        "platform": "linkedin",
+        "provider": "apify",
+        "source": "apify",
+        "actor_id": settings.apify_linkedin_posts_actor_id,
+        "status": "skipped",
+        "error_code": reason,
+        "posts": [],
+        "recent_posts": [],
+        "all_hashtags": [],
+        "total": 0,
+        "provider_total": 0,
+    }
+
+
 async def _safe(coro: Awaitable[Any], component: str) -> Any:
     """Run a coroutine, returning None on any error."""
     try:
@@ -775,11 +795,13 @@ async def run_investigation(
     # ── STEP 2: LinkedIn (Apify + SignalHire + RocketReach) + Facebook — run in parallel ──
     scraped_data: dict = {}
 
+    linkedin_service: Any | None = None
     if username_collectors_enabled:
         try:
             from app.services.linkedin_apify_service import LinkedInApifyService
+            linkedin_service = LinkedInApifyService(client=apify_client)
             li_task = _safe(
-                LinkedInApifyService(client=apify_client).get_profile(clean_handle),
+                linkedin_service.get_profile(clean_handle),
                 "linkedin",
             )
         except Exception as err:
@@ -833,6 +855,50 @@ async def run_investigation(
         linkedin=li_res,
     )
     confirmed_li_url = _confirmed_linkedin_profile_url(li_res)
+    linkedin_posts_task: asyncio.Task[Any] | None = None
+    linkedin_posts_res: dict[str, Any]
+    if confirmed_li_url and linkedin_service is not None:
+        posts_keyword = _format_string_clue(
+            li_res.get("full_name") or li_res.get("name")
+        ) or clean_handle
+        try:
+            posts_operation = linkedin_service.search_posts(
+                keyword=posts_keyword,
+                sort_type="date_posted",
+                limit=settings.apify_linkedin_posts_limit,
+                total_posts=settings.apify_linkedin_posts_limit,
+                expected_author_profile_url=confirmed_li_url,
+            )
+        except Exception as exc:
+            logger.warning(
+                "event=target_pipeline_step_failed component=linkedin_posts_initialization "
+                "error_type=%s",
+                type(exc).__name__,
+            )
+            linkedin_posts_res = {
+                **_skipped_linkedin_posts(
+                    configured=bool(settings.apify_api_token),
+                    reason="provider_failed",
+                ),
+                "status": "error",
+            }
+        else:
+            linkedin_posts_task = asyncio.create_task(
+                _safe(posts_operation, "linkedin_posts")
+            )
+            linkedin_posts_res = _skipped_linkedin_posts(
+                configured=bool(settings.apify_api_token),
+                reason="collection_pending",
+            )
+    else:
+        linkedin_posts_res = _skipped_linkedin_posts(
+            configured=bool(settings.apify_api_token),
+            reason=(
+                "identifier_not_username"
+                if not username_collectors_enabled
+                else "no_confirmed_linkedin_profile"
+            ),
+        )
     exact_signalhire_identifier: str | None = None
     normalized_target_email = normalize_email(raw_query) if kind == "email" else None
     normalized_target_phone = (
@@ -934,6 +1000,42 @@ async def run_investigation(
             reason="no_confirmed_linkedin_profile",
         )
 
+    if linkedin_posts_task is not None:
+        raw_linkedin_posts_res = await linkedin_posts_task
+        if isinstance(raw_linkedin_posts_res, dict):
+            linkedin_posts_res = raw_linkedin_posts_res
+        else:
+            linkedin_posts_res = {
+                **_skipped_linkedin_posts(
+                    configured=bool(settings.apify_api_token),
+                    reason="provider_failed",
+                ),
+                "status": "error",
+            }
+
+    attributed_posts = linkedin_posts_res.get("posts")
+    attributed_post_count = (
+        len(attributed_posts) if isinstance(attributed_posts, list) else 0
+    )
+    linkedin_post_hashtags = linkedin_posts_res.get("all_hashtags")
+    linkedin_post_hashtag_count = (
+        len(linkedin_post_hashtags)
+        if isinstance(linkedin_post_hashtags, list)
+        else 0
+    )
+    provider_post_count = linkedin_posts_res.get("provider_total")
+    if not isinstance(provider_post_count, int) or provider_post_count < 0:
+        provider_post_count = 0
+    logger.info(
+        "event=linkedin_posts_completed status=%s routed=%s "
+        "provider_result_count=%d attributed_post_count=%d hashtag_count=%d",
+        linkedin_posts_res.get("status"),
+        linkedin_posts_task is not None,
+        provider_post_count,
+        attributed_post_count,
+        linkedin_post_hashtag_count,
+    )
+
     enrichment_provider = (
         "signalhire"
         if sh_res.get("status") != "skipped"
@@ -964,6 +1066,7 @@ async def run_investigation(
         "twitter": _safe_provider_status(twitter_res),
         "facebook": _safe_provider_status(fb_res),
         "linkedin": _safe_provider_status(li_res),
+        "linkedin_posts": _safe_provider_status(linkedin_posts_res),
         "signalhire": _safe_provider_status(sh_res),
         "rocketreach": _safe_provider_status(rr_res),
     }
@@ -971,6 +1074,70 @@ async def run_investigation(
     linkedin_combined: dict = {}
     if isinstance(li_res, dict) and li_res.get("success"):
         linkedin_combined.update(li_res)
+
+    if linkedin_combined:
+        raw_posts = linkedin_posts_res.get("posts")
+        safe_posts: list[dict[str, Any]] = []
+        if isinstance(raw_posts, list):
+            for post in raw_posts[: settings.apify_linkedin_posts_limit]:
+                if not isinstance(post, dict):
+                    continue
+                public_post: dict[str, Any] = {}
+                for field in (
+                    "id",
+                    "url",
+                    "created_at",
+                    "reaction_count",
+                    "comment_count",
+                    "repost_count",
+                ):
+                    value = post.get(field)
+                    if isinstance(value, str):
+                        field_limit = 2_048 if field == "url" else 500
+                        public_post[field] = value[:field_limit]
+                    elif isinstance(value, (int, float)) and not isinstance(
+                        value, bool
+                    ):
+                        public_post[field] = value
+                text = post.get("text")
+                if isinstance(text, str):
+                    public_post["text"] = text[:10_000]
+                author = post.get("author")
+                if isinstance(author, dict):
+                    public_post["author"] = {
+                        field: value[:2_048]
+                        for field in (
+                            "name",
+                            "profile_url",
+                            "headline",
+                            "profile_pic_url",
+                        )
+                        if isinstance((value := author.get(field)), str)
+                    }
+                hashtags = post.get("hashtags")
+                if isinstance(hashtags, list):
+                    public_post["hashtags"] = [
+                        value[:100]
+                        for value in hashtags[:100]
+                        if isinstance(value, str)
+                    ]
+                safe_posts.append(public_post)
+        linkedin_combined["posts"] = safe_posts
+        linkedin_combined["recent_posts"] = safe_posts
+        raw_linkedin_hashtags = linkedin_posts_res.get("all_hashtags")
+        linkedin_combined["all_hashtags"] = (
+            [
+                value[:100]
+                for value in raw_linkedin_hashtags[:100]
+                if isinstance(value, str)
+            ]
+            if isinstance(raw_linkedin_hashtags, list)
+            else []
+        )
+        linkedin_combined["post_count"] = len(safe_posts)
+        linkedin_combined["posts_status"] = linkedin_posts_res.get("status")
+        linkedin_combined["posts_source"] = linkedin_posts_res.get("source")
+        linkedin_combined["posts_actor_id"] = linkedin_posts_res.get("actor_id")
     
     # Standardize initial emails/phones list in linkedin_combined
     li_emails = linkedin_combined.get("emails") or []

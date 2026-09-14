@@ -741,6 +741,7 @@ function renderHashtagAnalysis(analysis) {
 
     const platformLabels = {
         instagram: "Instagram",
+        linkedin: "LinkedIn",
         tiktok: "TikTok",
         twitter: "X",
         facebook: "Facebook",
@@ -1310,9 +1311,67 @@ function renderPlatformDossiers(scraped) {
     }
 
     // LinkedIn Dossier
-    if (scraped.linkedin && (scraped.linkedin.success || scraped.linkedin.full_name || scraped.linkedin.headline || scraped.linkedin.basic_info || scraped.linkedin.rocketreach)) {
+    if (scraped.linkedin && (
+        scraped.linkedin.success
+        || scraped.linkedin.full_name
+        || scraped.linkedin.headline
+        || scraped.linkedin.basic_info
+        || scraped.linkedin.rocketreach
+        || (Array.isArray(scraped.linkedin.posts) && scraped.linkedin.posts.length)
+        || (Array.isArray(scraped.linkedin.recent_posts) && scraped.linkedin.recent_posts.length)
+    )) {
         const li = scraped.linkedin;
         const info = li.basic_info || li || {};
+        const rawLinkedInPosts = Array.isArray(li.posts) && li.posts.length
+            ? li.posts
+            : (Array.isArray(li.recent_posts) ? li.recent_posts : []);
+        const linkedInPosts = rawLinkedInPosts
+            .filter(post => post && typeof post === "object")
+            .slice(0, 10);
+        const linkedInTags = combinedHashtagValues(
+            li.all_hashtags,
+            li.post_hashtags,
+            li.hashtags,
+            ...linkedInPosts.map(post => post.hashtags),
+        ).slice(0, 40);
+        const linkedInTagsHTML = hashtagChips(linkedInTags, 40);
+        const linkedInPostsHTML = linkedInPosts.map(post => {
+            const author = post.author && typeof post.author === "object" ? post.author : {};
+            const authorName = typeof author.name === "string"
+                ? author.name.slice(0, 200)
+                : (typeof post.author_name === "string" ? post.author_name.slice(0, 200) : "LinkedIn member");
+            const safeAuthorURL = safeAbsoluteHttpURL(author.profile_url || post.author_profile_url);
+            const authorHTML = safeAuthorURL
+                ? `<a href="${escapeHTML(safeAuthorURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(authorName)}</a>`
+                : escapeHTML(authorName);
+            const safePostURL = safeAbsoluteHttpURL(post.url || post.post_url);
+            const postLinkHTML = safePostURL
+                ? `<a href="${escapeHTML(safePostURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none;">Open public post &#x2197;</a>`
+                : "";
+            const text = typeof post.text === "string"
+                ? post.text.slice(0, 1500)
+                : (typeof post.content === "string" ? post.content.slice(0, 1500) : "");
+            const createdAt = typeof post.created_at === "string"
+                ? post.created_at.slice(0, 80)
+                : "";
+            const postTags = normalizedHashtagValues(post.hashtags, 20);
+            return `
+                <div style="background:var(--bg-panel); border:1px solid var(--border-divider); border-radius:4px; padding:9px 10px; margin-bottom:7px; font-size:11px; line-height:1.4;">
+                    <div style="display:flex; justify-content:space-between; gap:10px; margin-bottom:5px;">
+                        <strong style="color:var(--text-primary);">${authorHTML}</strong>
+                        <span style="font-size:9px; color:var(--text-muted);">${escapeHTML(createdAt)}</span>
+                    </div>
+                    <div style="color:var(--text-secondary); white-space:pre-wrap; overflow-wrap:anywhere;">${escapeHTML(text || "Public LinkedIn post")}</div>
+                    ${postTags.length ? `<div style="margin-top:5px;">${hashtagChips(postTags, 20)}</div>` : ""}
+                    <div style="font-size:9px; color:var(--text-muted); margin-top:5px; display:flex; flex-wrap:wrap; gap:10px;">
+                        <span>Reactions: ${formattedCount(boundedInteger(post.reaction_count, 0, 0, 1000000000))}</span>
+                        <span>Comments: ${formattedCount(boundedInteger(post.comment_count, 0, 0, 1000000000))}</span>
+                        <span>Reposts: ${formattedCount(boundedInteger(post.repost_count, 0, 0, 1000000000))}</span>
+                        ${postLinkHTML ? `<span>${postLinkHTML}</span>` : ""}
+                    </div>
+                </div>
+            `;
+        }).join("");
         const topLevelRocketReach = scraped.rocketreach && typeof scraped.rocketreach === "object"
             ? scraped.rocketreach
             : null;
@@ -1485,6 +1544,16 @@ function renderPlatformDossiers(scraped) {
                 ${expHTML}
                 ${eduHTML}
                 ${featHTML}
+                <div style="margin-top:12px;">
+                    <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:5px; letter-spacing:0.05em;">LINKEDIN POST HASHTAGS (${linkedInTags.length} UNIQUE)</div>
+                    <div>${linkedInTagsHTML || "<span style='color:var(--text-muted); font-size:11px;'>No LinkedIn post hashtags found.</span>"}</div>
+                </div>
+                ${linkedInPostsHTML ? `
+                    <div style="margin-top:12px;">
+                        <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">RECENT PUBLIC LINKEDIN POSTS (SHOWING ${linkedInPosts.length})</div>
+                        <div>${linkedInPostsHTML}</div>
+                    </div>
+                ` : ""}
             </div>
         `;
     }
@@ -1810,6 +1879,13 @@ function renderDiagnosticsPanel(data) {
         { key: "tiktok", name: "TikTok Scraper" },
         { key: "twitter", name: "X Timeline Scraper" },
         { key: "linkedin", name: "LinkedIn Scraper" },
+        {
+            key: "linkedin_posts",
+            name: "LinkedIn Public Posts Scraper",
+            successDetails: "Bounded public LinkedIn post collection completed.",
+            skipDetails: "Public LinkedIn posts were intentionally skipped; no post-search Actor call was made.",
+            notRunDetails: "The bounded LinkedIn public-post collector did not run or returned no status.",
+        },
         { key: "signalhire", name: "SignalHire Contact Enrichment" },
         { key: "rocketreach", name: "RocketReach Contact Enrichment" }
     ];
@@ -1833,8 +1909,20 @@ function renderDiagnosticsPanel(data) {
                 items.push({
                     name: s.name,
                     status: "OK",
-                    details: `Data fetched successfully.${cacheDetails}${creditDetails}`,
+                    details: `${s.successDetails || "Data fetched successfully."}${cacheDetails}${creditDetails}`,
                     recovery: null
+                });
+            } else if (
+                s.key === "linkedin_posts"
+                && ["empty_dataset", "no_attributed_posts", "no_results"].includes(String(sd.status || "").toLowerCase())
+            ) {
+                items.push({
+                    name: s.name,
+                    status: "OK",
+                    details: sd.status === "no_attributed_posts"
+                        ? "The bounded search completed, but no returned post was attributable to the confirmed LinkedIn profile; unattributed posts were excluded."
+                        : "The bounded public LinkedIn post search completed with no attributable posts.",
+                    recovery: null,
                 });
             } else if (sd.status === "skipped" && sd.error_code !== "not_configured") {
                 const skipDetails = {
@@ -1849,7 +1937,9 @@ function renderDiagnosticsPanel(data) {
                 items.push({
                     name: s.name,
                     status: "SKIPPED",
-                    details: skipDetails[sd.error_code] || "Paid lookup was intentionally skipped by contact routing policy.",
+                    details: skipDetails[sd.error_code]
+                        || s.skipDetails
+                        || "Paid lookup was intentionally skipped by contact routing policy.",
                     recovery: null
                 });
             } else {
@@ -1859,6 +1949,8 @@ function renderDiagnosticsPanel(data) {
                     status: "WARNING",
                     details: sd.error_code === "not_configured"
                         ? "Provider key is not configured; no external request was made."
+                        : s.key === "linkedin_posts"
+                        ? "The bounded public LinkedIn post collection failed; no unverified post data was displayed."
                         : (sd.error || "Empty response or configuration mismatch."),
                     recovery: sd.error_code === "quota_exhausted"
                         ? "Raise the Apify monthly usage limit or wait for its cycle to reset; do not repeatedly retry."
@@ -1866,6 +1958,8 @@ function renderDiagnosticsPanel(data) {
                         ? "Give the token Actor Run permission and review any Actor approval/subscription requirement in Apify Console."
                         : sd.error_code === "not_configured"
                         ? `Configure ${requiredProviderKey} only if this provider route is approved.`
+                        : s.key === "linkedin_posts"
+                        ? "Review the bounded LinkedIn posts Actor status and APIFY_LINKEDIN_POSTS_ACTOR_ID configuration."
                         : "Verify the public target exists and review the provider status and Actor configuration."
                 });
             }
@@ -1874,7 +1968,7 @@ function renderDiagnosticsPanel(data) {
             items.push({
                 name: s.name,
                 status: "NOT_RUN",
-                details: "Scraper did not execute or returned no data.",
+                details: s.notRunDetails || "Scraper did not execute or returned no data.",
                 recovery: "Ensure proper configuration keys are active in backend."
             });
         }

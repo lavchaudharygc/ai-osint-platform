@@ -243,6 +243,29 @@ window.LeaPdfExporter = {
       if (!safeURL) return esc(fallback);
       return `<a href="${esc(safeURL)}" target="_blank" rel="noopener noreferrer">${esc(label || safeURL)}</a>`;
     };
+    const normalizedHashtagValues = (values, limit = 100) => {
+      if (!Array.isArray(values)) return [];
+      const tags = [];
+      const seen = new Set();
+      for (const value of values.slice(0, Math.max(1, limit * 5))) {
+        if (typeof value !== "string") continue;
+        const tag = value.trim().replace(/^#+/, "");
+        if (!tag || tag.length > 100 || !/^[\p{L}\p{N}\p{M}_-]+$/u.test(tag)) continue;
+        const key = tag.toLocaleLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        tags.push(tag);
+        if (tags.length >= limit) break;
+      }
+      return tags;
+    };
+    const combinedHashtagValues = (...sources) => normalizedHashtagValues(
+      sources.flatMap(values => Array.isArray(values) ? values.slice(0, 200) : []),
+      100,
+    );
+    const hashtagBadges = values => normalizedHashtagValues(values, 40)
+      .map(tag => `<span class="badge badge-info">#${esc(tag)}</span>`)
+      .join(" ");
     const isSensitiveFieldName = value => {
       const normalized = String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
       const exact = new Set([
@@ -336,8 +359,49 @@ window.LeaPdfExporter = {
       || scrapedData.linkedin.phones
       || scrapedData.linkedin.phone_numbers
       || scrapedData.linkedin.rocketreach
+      || (Array.isArray(scrapedData.linkedin.posts) && scrapedData.linkedin.posts.length)
+      || (Array.isArray(scrapedData.linkedin.recent_posts) && scrapedData.linkedin.recent_posts.length)
     )) {
       const li = scrapedData.linkedin;
+      const rawLinkedInPosts = Array.isArray(li.posts) && li.posts.length
+        ? li.posts
+        : (Array.isArray(li.recent_posts) ? li.recent_posts : []);
+      const linkedInPosts = rawLinkedInPosts
+        .filter(post => post && typeof post === "object")
+        .slice(0, 10);
+      const linkedInHashtags = combinedHashtagValues(
+        li.all_hashtags,
+        li.post_hashtags,
+        li.hashtags,
+        ...linkedInPosts.map(post => post.hashtags),
+      ).slice(0, 40);
+      const linkedInPostsHTML = linkedInPosts.map(post => {
+        const author = post.author && typeof post.author === "object" ? post.author : {};
+        const authorName = typeof author.name === "string"
+          ? author.name.slice(0, 200)
+          : (typeof post.author_name === "string" ? post.author_name.slice(0, 200) : "LinkedIn member");
+        const text = typeof post.text === "string"
+          ? post.text.slice(0, 1500)
+          : (typeof post.content === "string" ? post.content.slice(0, 1500) : "");
+        const createdAt = typeof post.created_at === "string" ? post.created_at.slice(0, 80) : "";
+        const safePostURL = this.safeAbsoluteHttpURL(post.url || post.post_url);
+        const postTags = normalizedHashtagValues(post.hashtags, 20);
+        return `
+          <div style="margin-top:7px; padding:8px; border:1px solid #d9e2ec; border-radius:4px; page-break-inside:avoid;">
+            <div style="display:flex; justify-content:space-between; gap:10px; font-size:9px; color:#555;">
+              <strong style="color:#0A66C2;">${esc(authorName)}</strong>
+              <span>${esc(createdAt)}</span>
+            </div>
+            <div style="font-size:9.5px; margin-top:4px; white-space:pre-wrap; overflow-wrap:anywhere;">${esc(text || "Public LinkedIn post")}</div>
+            ${postTags.length ? `<div style="margin-top:4px;">${hashtagBadges(postTags)}</div>` : ""}
+            <div style="font-size:8.5px; color:#666; margin-top:4px;">
+              Reactions: ${boundedInteger(post.reaction_count, 0, 0, 1000000000)} |
+              Comments: ${boundedInteger(post.comment_count, 0, 0, 1000000000)} |
+              Reposts: ${boundedInteger(post.repost_count, 0, 0, 1000000000)}
+              ${safePostURL ? ` | ${safeAnchor(safePostURL, "Open public post")}` : ""}
+            </div>
+          </div>`;
+      }).join("");
       const topLevelRocketReach = scrapedData.rocketreach && typeof scrapedData.rocketreach === "object"
         ? scrapedData.rocketreach
         : null;
@@ -418,11 +482,13 @@ window.LeaPdfExporter = {
             <tr><td>Location</td><td>${esc(li.location || li.basic_info?.location || "N/A")}</td></tr>
             <tr><td>Discovered Emails</td><td>${contactBadges(liEmails, "badge-info") || "None returned"}</td></tr>
             <tr><td>Discovered Phones</td><td>${contactBadges(liPhones, "badge-success") || "None returned"}</td></tr>
+            <tr><td>LinkedIn Post Hashtags</td><td>${hashtagBadges(linkedInHashtags) || "None returned"}</td></tr>
           </table>
           ${rrHTML}
           ${expList ? `<h5 style="margin:10px 0 4px 0;">Work Experience</h5><ul>${expList}</ul>` : ""}
           ${eduList ? `<h5 style="margin:10px 0 4px 0;">Education</h5><ul>${eduList}</ul>` : ""}
           ${honorsList ? `<h5 style="margin:10px 0 4px 0;">Honors &amp; Awards</h5><ul>${honorsList}</ul>` : ""}
+          ${linkedInPostsHTML ? `<h5 style="margin:10px 0 4px 0;">Recent Public LinkedIn Posts (Showing ${linkedInPosts.length})</h5>${linkedInPostsHTML}` : ""}
         </div>
       </div>`;
     }

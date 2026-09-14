@@ -9,6 +9,7 @@ import pytest
 from fastapi import Response
 
 from app.api import investigation
+from app.config import settings
 from app.schemas.investigation import InvestigationRequest, InvestigationResponse
 from app.security.auth import AuthenticatedUser
 from app.services.apify_client import ApifyAccountCapacity
@@ -107,6 +108,34 @@ def test_analysis_counts_and_attributes_all_four_platforms() -> None:
     ]
 
 
+def test_analysis_includes_attributed_linkedin_posts() -> None:
+    profiles = _profiles()
+    profiles["linkedin"] = {
+        "success": True,
+        "posts": [
+            {
+                "text": "Public #CyberSafe #LinkedInOnly update",
+                "hashtags": ["CyberSafe", "LinkedInOnly"],
+            },
+            {"text": "Follow-up #LinkedInOnly"},
+        ],
+        "all_hashtags": ["CyberSafe", "LinkedInOnly", "AggregateOnly"],
+    }
+
+    analysis = HashtagAnalysisService.analyze(profiles)
+
+    assert analysis.platforms_with_hashtags == 5
+    assert analysis.platforms["linkedin"].hashtags == [
+        "linkedinonly",
+        "aggregateonly",
+        "cybersafe",
+    ]
+    assert analysis.platforms["linkedin"].total_mentions == 4
+    metrics = {metric.tag: metric for metric in analysis.top_hashtags}
+    assert "linkedin" in metrics["cybersafe"].platforms
+    assert metrics["linkedinonly"].mentions == 2
+
+
 def test_analysis_rejects_markup_and_returns_stable_empty_state() -> None:
     malformed = {
         "instagram": {
@@ -141,6 +170,10 @@ async def test_all_platform_hashtags_reach_ai_corpus_without_network(
 
     monkeypatch.setattr(analyzer, "_run_groq_analysis", capture_corpus)
     profiles = _profiles()
+    profiles["linkedin"] = {
+        "success": True,
+        "posts": [{"text": "Public #LinkedInOnly update"}],
+    }
     analysis = HashtagAnalysisService.analyze(profiles)
     result = await analyzer.analyze_personality(
         profiles,
@@ -152,6 +185,7 @@ async def test_all_platform_hashtags_reach_ai_corpus_without_network(
     corpus = captured["corpus"]
     for marker in (
         "[instagram-hashtags]",
+        "[linkedin-hashtags]",
         "[tiktok-hashtags]",
         "[twitter-hashtags]",
         "[facebook-hashtags]",
@@ -159,6 +193,7 @@ async def test_all_platform_hashtags_reach_ai_corpus_without_network(
     ):
         assert marker in corpus
     assert "#cybersafe" in corpus
+    assert "#linkedinonly" in corpus
     assert "#tiktokonly" in corpus
     assert "#xonly" in corpus
     assert "#fbonly" in corpus
@@ -191,6 +226,9 @@ async def test_investigation_propagates_collector_hashtags_to_ai_and_response(
 
     profiles = _profiles()
     captured: dict[str, Any] = {}
+    shared_apify_clients: list[Any] = []
+    linkedin_post_calls: list[dict[str, Any]] = []
+    linkedin_post_failure = {"enabled": False}
 
     class FakeApifyClient:
         async def check_account_capacity(self) -> ApifyAccountCapacity:
@@ -202,8 +240,8 @@ async def test_investigation_propagates_collector_hashtags_to_ai_and_response(
             )
 
     class FakeInstagramService:
-        def __init__(self, **_kwargs: Any) -> None:
-            pass
+        def __init__(self, **kwargs: Any) -> None:
+            shared_apify_clients.append(kwargs.get("client"))
 
         async def fetch_profile_and_posts(self, _username: str) -> dict[str, Any]:
             return profiles["instagram"]  # type: ignore[return-value]
@@ -245,11 +283,46 @@ async def test_investigation_propagates_collector_hashtags_to_ai_and_response(
             return {"found": False}
 
     class FakeLinkedInService:
-        def __init__(self, **_kwargs: Any) -> None:
-            pass
+        def __init__(self, **kwargs: Any) -> None:
+            shared_apify_clients.append(kwargs.get("client"))
 
         async def get_profile(self, _username: str) -> dict[str, Any]:
-            return {"success": False, "platform": "linkedin"}
+            return {
+                "success": True,
+                "configured": True,
+                "status": "completed",
+                "platform": "linkedin",
+                "full_name": "Alice Analyst",
+                "profile_url": "https://www.linkedin.com/in/alice/",
+            }
+
+        async def search_posts(self, **kwargs: Any) -> dict[str, Any]:
+            linkedin_post_calls.append(kwargs)
+            if linkedin_post_failure["enabled"]:
+                raise RuntimeError("offline LinkedIn posts failure")
+            post = {
+                "id": "linkedin-post-1",
+                "url": "https://www.linkedin.com/posts/alice_public-update-1",
+                "text": "Public #CyberSafe #LinkedInOnly update",
+                "hashtags": ["CyberSafe", "LinkedInOnly"],
+                "author": {
+                    "name": "Alice Analyst",
+                    "profile_url": "https://www.linkedin.com/in/alice/",
+                },
+            }
+            return {
+                "success": True,
+                "configured": True,
+                "status": "completed",
+                "platform": "linkedin",
+                "source": "apify_linkedin_posts_search",
+                "actor_id": "test/linkedin-posts",
+                "posts": [post],
+                "recent_posts": [post],
+                "all_hashtags": ["CyberSafe", "LinkedInOnly"],
+                "total": 1,
+                "provider_total": 1,
+            }
 
     class FakeSignalHireService:
         async def search_candidate(self, _query: str) -> dict[str, Any]:
@@ -308,7 +381,7 @@ async def test_investigation_propagates_collector_hashtags_to_ai_and_response(
                 "evidence": ["cybersafe"],
                 "secondaryCategories": [],
                 "crossPlatformNote": "Cross-platform hashtag evidence",
-                "platformCount": 4,
+                "platformCount": 5,
             }
 
     async def no_audit(**_kwargs: Any) -> None:
@@ -350,12 +423,64 @@ async def test_investigation_propagates_collector_hashtags_to_ai_and_response(
     )
 
     assert result.hashtag_analysis is not None
-    assert result.hashtag_analysis.platforms_with_hashtags == 4
+    assert len(linkedin_post_calls) == 1
+    assert linkedin_post_calls[0] == {
+        "keyword": "Alice Analyst",
+        "sort_type": "date_posted",
+        "limit": settings.apify_linkedin_posts_limit,
+        "total_posts": settings.apify_linkedin_posts_limit,
+        "expected_author_profile_url": "https://www.linkedin.com/in/alice/",
+    }
+    assert len(shared_apify_clients) == 2
+    assert shared_apify_clients[0] is shared_apify_clients[1]
+    linkedin_dossier = (result.scraped_data or {})["linkedin"]
+    assert [post["id"] for post in linkedin_dossier["posts"]] == [
+        "linkedin-post-1"
+    ]
+    assert linkedin_dossier["post_count"] == 1
+    assert linkedin_dossier["posts_status"] == "completed"
+    assert result.provider_statuses is not None
+    assert result.provider_statuses["linkedin_posts"]["status"] == "completed"
+    assert result.hashtag_analysis.platforms_with_hashtags == 5
     assert result.hashtag_analysis.top_hashtags[0].tag == "cybersafe"
-    assert captured["hashtag_analysis"]["platforms_with_hashtags"] == 4
+    assert captured["hashtag_analysis"]["platforms_with_hashtags"] == 5
     assert set(captured["hashtag_analysis"]["platforms"]) == {
         "instagram",
+        "linkedin",
         "tiktok",
         "twitter",
         "facebook",
     }
+
+    linkedin_post_failure["enabled"] = True
+    failure_result = await investigation.run_investigation(
+        InvestigationRequest(username="alice"),
+        Response(),
+        user,
+        user,
+    )
+    assert failure_result.status == "completed"
+    assert len(linkedin_post_calls) == 2
+    failed_linkedin = (failure_result.scraped_data or {})["linkedin"]
+    assert failed_linkedin["full_name"] == "Alice Analyst"
+    assert failed_linkedin["posts"] == []
+    assert failed_linkedin["posts_status"] == "error"
+    assert failure_result.provider_statuses is not None
+    assert failure_result.provider_statuses["linkedin"]["success"] is True
+    assert failure_result.provider_statuses["linkedin_posts"]["status"] == "error"
+
+    calls_before_non_username = len(linkedin_post_calls)
+    non_username_result = await investigation.run_investigation(
+        InvestigationRequest(username="Alice Analyst"),
+        Response(),
+        user,
+        user,
+    )
+    assert non_username_result.status == "completed"
+    assert len(linkedin_post_calls) == calls_before_non_username
+    assert non_username_result.provider_statuses is not None
+    assert non_username_result.provider_statuses["linkedin_posts"]["status"] == "skipped"
+    assert (
+        non_username_result.provider_statuses["linkedin_posts"]["error_code"]
+        == "identifier_not_username"
+    )

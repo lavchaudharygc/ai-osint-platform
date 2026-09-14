@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     apify_twitter_actor_id: str = "automation-lab/twitter-scraper"
     apify_linkedin_profile_actor_id: str = "apimaestro/linkedin-profile-detail"
     apify_linkedin_posts_actor_id: str = "bebity/linkedin-post-search-scraper"
+    apify_linkedin_posts_limit: int = Field(default=15, ge=1, le=20)
     signalhire_api_key: str | None = Field(default_factory=lambda: os.getenv("SIGNALHIRE_API_KEY"))
     leakosint_api_key: str | None = Field(default_factory=lambda: os.getenv("LEAKOSINT_API_KEY"))
     serpapi_key: str | None = Field(default_factory=lambda: os.getenv("SERPAPI_KEY"))

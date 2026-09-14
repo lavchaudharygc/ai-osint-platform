@@ -491,6 +491,8 @@ def test_investigation_verifies_each_canonical_email_once_and_returns_contacts(
     audit_calls: list[dict[str, object]] = []
     signalhire_calls: list[str] = []
     rocketreach_calls: list[str] = []
+    linkedin_post_calls: list[tuple[object, dict[str, object]]] = []
+    ai_hashtag_payloads: list[dict[str, object]] = []
     monkeypatch.setattr(investigation.settings, "hunter_api_key", "hunter-test-key")
 
     class FakeCapacity:
@@ -646,12 +648,16 @@ def test_investigation_verifies_each_canonical_email_once_and_returns_contacts(
         "AssociatedAccountsService",
         SimpleNamespace(verify_account_matches=lambda *_args: []),
     )
-    monkeypatch.setattr(
-        investigation,
-        "AIAnalyzer",
-        lambda: async_service(
-            "analyze_personality",
-            {
+    class FakeAnalyzer:
+        async def analyze_personality(
+            self,
+            _scraped: dict[str, object],
+            _dorking: dict[str, object],
+            _instagram: dict[str, object],
+            hashtag_analysis: dict[str, object],
+        ) -> dict[str, object]:
+            ai_hashtag_payloads.append(hashtag_analysis)
+            return {
                 "summary": "Offline contact test",
                 "traits": [],
                 "interests": [],
@@ -664,9 +670,9 @@ def test_investigation_verifies_each_canonical_email_once_and_returns_contacts(
                 "secondaryCategories": [],
                 "crossPlatformNote": None,
                 "platformCount": 0,
-            },
-        ),
-    )
+            }
+
+    monkeypatch.setattr(investigation, "AIAnalyzer", FakeAnalyzer)
 
     async def fake_audit(**kwargs: object) -> None:
         audit_calls.append(kwargs)
@@ -675,10 +681,44 @@ def test_investigation_verifies_each_canonical_email_once_and_returns_contacts(
 
     from app.services import linkedin_apify_service
 
+    class FakeLinkedInService:
+        def __init__(self, *, client: object) -> None:
+            self.client = client
+
+        async def get_profile(self, _username: str) -> dict[str, object]:
+            return linkedin
+
+        async def search_posts(self, **kwargs: object) -> dict[str, object]:
+            linkedin_post_calls.append((self.client, kwargs))
+            return {
+                "success": True,
+                "configured": True,
+                "status": "completed",
+                "source": "apify_linkedin_posts_search",
+                "actor_id": "fixture/linkedin-posts",
+                "posts": [
+                    {
+                        "id": "linkedin-post-1",
+                        "url": "https://www.linkedin.com/feed/update/linkedin-post-1",
+                        "text": "Public fixture #LinkedInOnly",
+                        "author": {
+                            "name": "Alice Analyst",
+                            "profile_url": "https://www.linkedin.com/in/alice/",
+                        },
+                        "hashtags": ["LinkedInOnly"],
+                        "raw_data": {"not": "returned by target scan"},
+                    }
+                ],
+                "recent_posts": [],
+                "all_hashtags": ["LinkedInOnly"],
+                "total": 1,
+                "provider_total": 1,
+            }
+
     monkeypatch.setattr(
         linkedin_apify_service,
         "LinkedInApifyService",
-        lambda **_kwargs: async_service("get_profile", linkedin),
+        FakeLinkedInService,
     )
 
     user = AuthenticatedUser(
@@ -716,6 +756,30 @@ def test_investigation_verifies_each_canonical_email_once_and_returns_contacts(
     ]
     assert signalhire_calls == []
     assert rocketreach_calls == []
+    assert len(linkedin_post_calls) == 2
+    for client, call in linkedin_post_calls:
+        assert isinstance(client, FakeApifyClient)
+        assert call == {
+            "keyword": "Alice Analyst",
+            "sort_type": "date_posted",
+            "limit": investigation.settings.apify_linkedin_posts_limit,
+            "total_posts": investigation.settings.apify_linkedin_posts_limit,
+            "expected_author_profile_url": "https://www.linkedin.com/in/alice/",
+        }
+    linkedin_dossier = (result.scraped_data or {})["linkedin"]
+    assert linkedin_dossier["post_count"] == 1
+    assert linkedin_dossier["posts_status"] == "completed"
+    assert linkedin_dossier["posts_source"] == "apify_linkedin_posts_search"
+    assert linkedin_dossier["recent_posts"] == linkedin_dossier["posts"]
+    assert "raw_data" not in linkedin_dossier["posts"][0]
+    assert result.provider_statuses is not None
+    assert result.provider_statuses["linkedin_posts"]["success"] is True
+    assert result.hashtag_analysis is not None
+    assert result.hashtag_analysis.platforms["linkedin"].hashtags == [
+        "linkedinonly"
+    ]
+    assert len(ai_hashtag_payloads) == 2
+    assert "linkedin" in ai_hashtag_payloads[-1]["platforms"]
     assert result.contact_discovery is not None
     assert result.contact_discovery.email_count == 1
     assert result.contact_discovery.phone_count == 1
@@ -754,6 +818,7 @@ def test_investigation_verifies_each_canonical_email_once_and_returns_contacts(
     assert "outcome=hit" in logs
     assert email_sentinel not in logs
     assert phone_sentinel not in logs
+    assert "Public fixture" not in logs
 
 
 @pytest.mark.parametrize(
