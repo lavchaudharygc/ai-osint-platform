@@ -260,6 +260,56 @@ async def test_investigation_propagates_collector_hashtags_to_ai_and_response(
         async def fetch_profile_and_tweets(self, _username: str) -> dict[str, Any]:
             return profiles["twitter"]  # type: ignore[return-value]
 
+    class FakeGitHubService:
+        async def fetch_profile_and_activity(self, _username: str) -> dict[str, Any]:
+            return {
+                "success": False,
+                "found": False,
+                "configured": True,
+                "status": "no_results",
+                "platform": "github",
+                "provider": "github_rest",
+                "repositories": [],
+                "recent_activity": [],
+                "usage": {"calls_made": 0},
+            }
+
+    class FakeYouTubeService:
+        async def fetch_channel_and_videos(self, _username: str) -> dict[str, Any]:
+            return {
+                "success": False,
+                "found": False,
+                "configured": False,
+                "status": "disabled",
+                "platform": "youtube",
+                "provider": "youtube_data_api_v3",
+                "videos": [],
+                "all_hashtags": [],
+                "usage": {"calls_made": 0, "quota_units_used": 0},
+            }
+
+    class FakeGitHubService:
+        async def fetch_profile_and_activity(self, _username: str) -> dict[str, Any]:
+            return {
+                "success": False,
+                "configured": False,
+                "status": "disabled",
+                "platform": "github",
+                "repositories": [],
+                "recent_activity": [],
+            }
+
+    class FakeYouTubeService:
+        async def fetch_channel_and_videos(self, _username: str) -> dict[str, Any]:
+            return {
+                "success": False,
+                "configured": False,
+                "status": "disabled",
+                "platform": "youtube",
+                "videos": [],
+                "all_hashtags": [],
+            }
+
     class FakeFacebookService:
         def __init__(self, **_kwargs: Any) -> None:
             pass
@@ -391,6 +441,10 @@ async def test_investigation_propagates_collector_hashtags_to_ai_and_response(
     monkeypatch.setattr(investigation, "InstagramService", FakeInstagramService)
     monkeypatch.setattr(investigation, "TikTokService", FakeTikTokService)
     monkeypatch.setattr(investigation, "TwitterService", FakeTwitterService)
+    monkeypatch.setattr(investigation, "GitHubService", FakeGitHubService)
+    monkeypatch.setattr(investigation, "YouTubeService", FakeYouTubeService)
+    monkeypatch.setattr(investigation, "GitHubService", FakeGitHubService)
+    monkeypatch.setattr(investigation, "YouTubeService", FakeYouTubeService)
     monkeypatch.setattr(investigation, "FacebookService", FakeFacebookService)
     monkeypatch.setattr(investigation, "DorkingService", FakeDorkingService)
     monkeypatch.setattr(investigation, "WhatsMyNameService", FakeWhatsMyNameService)

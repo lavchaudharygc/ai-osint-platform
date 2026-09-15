@@ -115,6 +115,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         logger.info(
             "event=provider_configuration apify=%s serpapi=%s signalhire=%s "
             "rocketreach=%s hunter=%s zerobounce=%s telegram_cti=%s "
+            "github_enabled=%s github_authenticated=%s youtube=%s "
             "groq=%s gemini=%s deepseek=%s email_breach=%s",
             bool(settings.apify_api_token),
             bool(settings.serpapi_key),
@@ -123,6 +124,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             bool(settings.hunter_api_key),
             bool(settings.zerobounce_api_key),
             bool(settings.telegram_cti_enabled and settings.telegram_cti_api_key),
+            settings.github_enabled,
+            bool(settings.github_api_token),
+            bool(settings.youtube_enabled and settings.youtube_api_key),
             bool(settings.groq_api_key),
             bool(settings.gemini_api_key),
             bool(settings.deepseek_api_key),

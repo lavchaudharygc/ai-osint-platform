@@ -31,6 +31,18 @@ window.LeaPdfExporter = {
         TikTok Account
       </span>`;
     }
+    if (p.includes("github")) {
+      return `<span style="display:inline-flex;align-items:center;gap:6px;background:#24292f;color:#fff;padding:4px 10px;border-radius:4px;font-weight:bold;font-size:11px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.24c-3.21.7-3.89-1.36-3.89-1.36-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.26-1.28-5.26-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.96 10.96 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.7 5.39-5.27 5.68.41.36.78 1.06.78 2.14v3.26c0 .31.21.67.79.56A11.5 11.5 0 0 0 12 .7z"/></svg>
+        GitHub Public Profile
+      </span>`;
+    }
+    if (p.includes("youtube")) {
+      return `<span style="display:inline-flex;align-items:center;gap:6px;background:#FF0000;color:#fff;padding:4px 10px;border-radius:4px;font-weight:bold;font-size:11px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8zM9.6 15.6V8.4L15.8 12l-6.2 3.6z"/></svg>
+        YouTube Public Channel
+      </span>`;
+    }
     if (p.includes("telegram") || p.includes("cti")) {
       return `<span style="display:inline-flex;align-items:center;gap:6px;background:#24A1DE;color:#fff;padding:4px 10px;border-radius:4px;font-weight:bold;font-size:11px;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
@@ -493,6 +505,177 @@ window.LeaPdfExporter = {
       </div>`;
     }
 
+    // GitHub Card
+    if (scrapedData.github && typeof scrapedData.github === "object") {
+      const gh = scrapedData.github;
+      const nestedProfile = gh.profile && typeof gh.profile === "object" ? gh.profile : {};
+      const profile = { ...gh, ...nestedProfile };
+      const repositories = (Array.isArray(gh.repositories)
+        ? gh.repositories
+        : Array.isArray(gh.repos)
+        ? gh.repos
+        : [])
+        .filter(repository => repository && typeof repository === "object")
+        .slice(0, 10);
+      const recentActivity = (Array.isArray(gh.recent_activity) ? gh.recent_activity : [])
+        .filter(activity => activity && typeof activity === "object")
+        .slice(0, 10);
+      const hasGitHubData = gh.success === true
+        || profile.username
+        || profile.full_name
+        || profile.profile_url
+        || repositories.length
+        || recentActivity.length;
+
+      if (hasGitHubData) {
+        const username = typeof profile.username === "string" ? profile.username.slice(0, 100) : "";
+        const safeProfileURL = this.safeAbsoluteHttpURL(profile.profile_url || profile.url);
+        const profileWebsite = profile.website || profile.blog;
+        const safeBlogURL = this.safeAbsoluteHttpURL(profileWebsite);
+        const publicRepoCount = profile.public_repo_count
+          ?? profile.public_repository_count
+          ?? profile.public_repos
+          ?? gh.repository_count;
+        const metric = (value, fallback = "N/A") => value === null || value === undefined || value === ""
+          ? fallback
+          : String(boundedInteger(value, 0, 0, 1000000000));
+        const relationshipCountsSuppressed = profile.relationship_counts_suppressed === true;
+        const followerCount = relationshipCountsSuppressed
+          ? "Suppressed (public-only)"
+          : metric(profile.follower_count ?? profile.followers);
+        const followingCount = relationshipCountsSuppressed
+          ? "Suppressed (public-only)"
+          : metric(profile.following_count ?? profile.following);
+        const rateLimit = gh.rate_limit && typeof gh.rate_limit === "object" ? gh.rate_limit : {};
+        const rateRemaining = Number(rateLimit.remaining);
+        const rateTotal = Number(rateLimit.limit);
+        const rateLimitText = Number.isInteger(rateRemaining) && rateRemaining >= 0
+          ? `${rateRemaining}${Number.isInteger(rateTotal) && rateTotal >= 0 ? `/${rateTotal}` : ""} requests remaining`
+          : "Not returned";
+        const repositoryRows = repositories.map(repository => {
+          const name = typeof repository.name === "string"
+            ? repository.name.slice(0, 300)
+            : (typeof repository.full_name === "string" ? repository.full_name.slice(0, 300) : "Repository");
+          const topics = Array.isArray(repository.topics)
+            ? repository.topics.filter(topic => typeof topic === "string").slice(0, 12)
+            : [];
+          return `
+            <tr>
+              <td>${safeAnchor(repository.url || repository.html_url, name, name)}</td>
+              <td>${esc(typeof repository.description === "string" ? repository.description.slice(0, 1000) : "No description returned.")}</td>
+              <td>${esc(typeof repository.language === "string" ? repository.language.slice(0, 100) : "N/A")}</td>
+              <td>${metric(repository.stars ?? repository.stargazers_count, "0")} stars | ${metric(repository.forks ?? repository.forks_count, "0")} forks${repository.archived === true || repository.is_archived === true ? " | ARCHIVED" : ""}</td>
+              <td>${topics.length ? topics.map(topic => `<span class="badge badge-info">${esc(topic)}</span>`).join(" ") : "None"}</td>
+            </tr>`;
+        }).join("");
+        const activityRows = recentActivity.map(activity => {
+          const title = typeof activity.title === "string"
+            ? activity.title.slice(0, 300)
+            : (typeof activity.type === "string" ? activity.type.slice(0, 100) : "Public activity");
+          const detail = typeof activity.description === "string"
+            ? activity.description.slice(0, 1000)
+            : (typeof (activity.text || activity.message) === "string"
+              ? String(activity.text || activity.message).slice(0, 1000)
+              : (typeof activity.repository === "string" ? activity.repository.slice(0, 300) : ""));
+          const timestamp = typeof (activity.created_at || activity.timestamp) === "string"
+            ? String(activity.created_at || activity.timestamp).slice(0, 80)
+            : "";
+          return `<tr><td>${safeAnchor(activity.url || activity.html_url, title, title)}</td><td>${esc(detail || "N/A")}</td><td>${esc(timestamp || "N/A")}</td></tr>`;
+        }).join("");
+
+        platformCardsHTML += `
+        <div class="card-box">
+          <div class="card-header">
+            ${this.getPlatformBadge("github")}
+            <span class="card-status status-success">PUBLIC DATA RETURNED</span>
+          </div>
+          <div class="card-body">
+            <table class="card-table">
+              <tr><td style="width:25%;">Username</td><td><strong>${esc(username ? `@${username}` : "N/A")}</strong></td></tr>
+              <tr><td>Full Name</td><td>${esc(typeof profile.full_name === "string" ? profile.full_name.slice(0, 300) : "N/A")}</td></tr>
+              <tr><td>Profile URL</td><td>${safeProfileURL ? safeAnchor(safeProfileURL, safeProfileURL) : "Unavailable"}</td></tr>
+              <tr><td>Bio</td><td>${esc(typeof profile.bio === "string" ? profile.bio.slice(0, 2000) : "N/A")}</td></tr>
+              <tr><td>Company / Location</td><td>${esc(typeof profile.company === "string" ? profile.company.slice(0, 300) : "N/A")} | ${esc(typeof profile.location === "string" ? profile.location.slice(0, 300) : "N/A")}</td></tr>
+              <tr><td>Public Website</td><td>${safeBlogURL ? safeAnchor(safeBlogURL, safeBlogURL) : esc(typeof profileWebsite === "string" && profileWebsite ? profileWebsite.slice(0, 500) : "N/A")}</td></tr>
+              <tr><td>Public Email</td><td>${esc(typeof profile.email === "string" && profile.email ? profile.email.slice(0, 320) : "None returned")}</td></tr>
+              <tr><td>Metrics</td><td>${followerCount} Followers | ${followingCount} Following | ${metric(publicRepoCount, String(repositories.length))} Public Repositories</td></tr>
+              <tr><td>API Rate Limit</td><td>${esc(rateLimitText)}</td></tr>
+            </table>
+            ${repositoryRows ? `<h5 style="margin:10px 0 4px 0;">Public Repositories (Showing ${repositories.length})</h5><table><thead><tr><th>Repository</th><th>Description</th><th>Language</th><th>Metrics</th><th>Topics</th></tr></thead><tbody>${repositoryRows}</tbody></table>` : ""}
+            ${activityRows ? `<h5 style="margin:10px 0 4px 0;">Recent Public GitHub Activity (Showing ${recentActivity.length})</h5><table><thead><tr><th>Activity</th><th>Details</th><th>Timestamp</th></tr></thead><tbody>${activityRows}</tbody></table>` : ""}
+          </div>
+        </div>`;
+      }
+    }
+
+    // YouTube Card
+    if (scrapedData.youtube && typeof scrapedData.youtube === "object") {
+      const yt = scrapedData.youtube;
+      const nestedChannel = yt.channel && typeof yt.channel === "object" ? yt.channel : {};
+      const channel = { ...yt, ...nestedChannel };
+      const rawVideos = Array.isArray(yt.videos) && yt.videos.length
+        ? yt.videos
+        : Array.isArray(yt.recent_videos) && yt.recent_videos.length
+        ? yt.recent_videos
+        : (Array.isArray(yt.recent_posts) ? yt.recent_posts : []);
+      const videos = rawVideos.filter(video => video && typeof video === "object").slice(0, 10);
+      const hasYouTubeData = yt.success === true
+        || channel.channel_id
+        || channel.username
+        || channel.full_name
+        || channel.profile_url
+        || videos.length;
+
+      if (hasYouTubeData) {
+        const username = typeof (channel.username || channel.handle) === "string"
+          ? String(channel.username || channel.handle).replace(/^@+/, "").slice(0, 100)
+          : "";
+        const youtubeTags = combinedHashtagValues(
+          yt.all_hashtags,
+          yt.hashtags,
+          ...videos.map(video => video.hashtags),
+        ).slice(0, 40);
+        const metric = (value, fallback = "N/A") => value === null || value === undefined || value === ""
+          ? fallback
+          : String(boundedInteger(value, 0, 0, 1000000000000));
+        const videoRows = videos.map(video => {
+          const title = typeof video.title === "string" ? video.title.slice(0, 500) : "Public YouTube video";
+          const description = typeof video.description === "string" ? video.description.slice(0, 1200) : "";
+          const publishedAt = typeof video.published_at === "string" ? video.published_at.slice(0, 80) : "";
+          return `
+            <tr>
+              <td>${safeAnchor(video.url || video.video_url, title, title)}</td>
+              <td>${esc(description || "N/A")}</td>
+              <td>${esc(publishedAt || "N/A")}</td>
+              <td>${hashtagBadges(video.hashtags) || "None"}</td>
+            </tr>`;
+        }).join("");
+        const quotaUnits = Number(yt.quota_units_used);
+        const quotaText = Number.isInteger(quotaUnits) && quotaUnits >= 0 ? String(quotaUnits) : "Not returned";
+
+        platformCardsHTML += `
+        <div class="card-box">
+          <div class="card-header">
+            ${this.getPlatformBadge("youtube")}
+            <span class="card-status status-success">CHANNEL DATA RETURNED</span>
+          </div>
+          <div class="card-body">
+            <table class="card-table">
+              <tr><td style="width:25%;">Channel / Handle</td><td><strong>${esc(typeof (channel.full_name || channel.channel_name) === "string" ? String(channel.full_name || channel.channel_name).slice(0, 300) : "N/A")}${username ? ` (@${esc(username)})` : ""}</strong></td></tr>
+              <tr><td>Channel ID</td><td>${esc(typeof channel.channel_id === "string" ? channel.channel_id.slice(0, 100) : "N/A")}</td></tr>
+              <tr><td>Channel URL</td><td>${safeAnchor(channel.profile_url || channel.url, channel.profile_url || channel.url || "Channel", "Unavailable")}</td></tr>
+              <tr><td>Description</td><td>${esc(typeof (channel.description || channel.bio) === "string" ? String(channel.description || channel.bio).slice(0, 2500) : "N/A")}</td></tr>
+              <tr><td>Country</td><td>${esc(typeof channel.country === "string" ? channel.country.slice(0, 100) : "N/A")}</td></tr>
+              <tr><td>Metrics</td><td>${metric(channel.subscriber_count)} Subscribers | ${metric(channel.view_count, "0")} Views | ${metric(channel.video_count, String(videos.length))} Published Videos</td></tr>
+              <tr><td>Video Hashtags</td><td>${hashtagBadges(youtubeTags) || "None returned"}</td></tr>
+              <tr><td>Quota Units Used</td><td>${esc(quotaText)}</td></tr>
+            </table>
+            ${videoRows ? `<h5 style="margin:10px 0 4px 0;">Recent Public YouTube Videos (Showing ${videos.length})</h5><table><thead><tr><th>Video</th><th>Description</th><th>Published</th><th>Hashtags</th></tr></thead><tbody>${videoRows}</tbody></table>` : ""}
+          </div>
+        </div>`;
+      }
+    }
+
     // RocketReach Card
     const topLevelRR = scrapedData.rocketreach && typeof scrapedData.rocketreach === "object"
       ? scrapedData.rocketreach
@@ -758,10 +941,22 @@ window.LeaPdfExporter = {
 
     // --- 8. Media Gallery HTML ---
     const mediaItems = [];
-    const mediaPlatforms = ["instagram", "linkedin", "tiktok", "twitter", "facebook"];
+    const mediaPlatforms = ["instagram", "linkedin", "tiktok", "twitter", "facebook", "github", "youtube"];
     mediaPlatforms.forEach(plat => {
       const info = scrapedData[plat] || {};
-      const pic = info.profile_pic_url || info.profile_pic_hd || (info.basic_info && (info.basic_info.profile_picture_url || info.basic_info.profile_pic_url));
+      const nestedProfile = info.profile && typeof info.profile === "object"
+        ? info.profile
+        : info.channel && typeof info.channel === "object"
+        ? info.channel
+        : {};
+      const pic = info.profile_pic_url
+        || info.profile_pic_hd
+        || info.profile_picture
+        || info.avatar_url
+        || nestedProfile.profile_pic_url
+        || nestedProfile.profile_picture
+        || nestedProfile.avatar_url
+        || (info.basic_info && (info.basic_info.profile_picture_url || info.basic_info.profile_pic_url));
       if (pic) {
         mediaItems.push({
           url: pic,
@@ -808,6 +1003,26 @@ window.LeaPdfExporter = {
           }
         });
       }
+    }
+
+    if (scrapedData.youtube && typeof scrapedData.youtube === "object") {
+      const videos = Array.isArray(scrapedData.youtube.videos) && scrapedData.youtube.videos.length
+        ? scrapedData.youtube.videos
+        : Array.isArray(scrapedData.youtube.recent_videos) && scrapedData.youtube.recent_videos.length
+        ? scrapedData.youtube.recent_videos
+        : (Array.isArray(scrapedData.youtube.recent_posts) ? scrapedData.youtube.recent_posts : []);
+      videos
+        .filter(video => video && typeof video === "object")
+        .slice(0, 10)
+        .forEach(video => {
+          const thumbnail = video.thumbnail_url || video.thumbnail;
+          if (!thumbnail) return;
+          mediaItems.push({
+            url: thumbnail,
+            source: "YOUTUBE",
+            caption: typeof video.title === "string" ? video.title.slice(0, 500) : "Public YouTube video",
+          });
+        });
     }
 
     let mediaGalleryHTML = "";

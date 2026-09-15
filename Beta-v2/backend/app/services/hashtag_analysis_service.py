@@ -20,6 +20,8 @@ _PLATFORM_CONTENT_FIELDS: dict[str, tuple[str, ...]] = {
     "tiktok": ("videos", "recent_posts"),
     "twitter": ("tweets", "recent_posts"),
     "facebook": ("posts", "recent_posts"),
+    "youtube": ("videos", "recent_videos"),
+    "github": ("recent_activity", "recent_posts", "repositories"),
 }
 _PLATFORM_AGGREGATE_FIELDS: dict[str, tuple[str, ...]] = {
     "instagram": ("post_hashtags", "hashtags", "all_hashtags", "all_hashtags_used"),
@@ -27,9 +29,11 @@ _PLATFORM_AGGREGATE_FIELDS: dict[str, tuple[str, ...]] = {
     "tiktok": ("hashtags", "all_hashtags", "all_hashtags_used"),
     "twitter": ("hashtags", "all_hashtags", "all_hashtags_used"),
     "facebook": ("all_hashtags", "hashtags", "all_hashtags_used"),
+    "youtube": ("all_hashtags", "hashtags", "all_hashtags_used"),
+    "github": ("all_hashtags", "hashtags"),
 }
 _PROFILE_TEXT_FIELDS = ("bio", "description")
-_CONTENT_TEXT_FIELDS = ("caption", "text", "description")
+_CONTENT_TEXT_FIELDS = ("caption", "text", "title", "description")
 _CONTENT_TAG_FIELDS = ("hashtags", "tags")
 _MAX_TAGS_PER_PLATFORM = 100
 _MAX_TOP_TAGS = 50

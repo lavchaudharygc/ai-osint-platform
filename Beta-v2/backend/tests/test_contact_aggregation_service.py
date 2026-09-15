@@ -24,6 +24,44 @@ from app.services.contact_aggregation_service import (
 )
 
 
+class _OfflineGitHubService:
+    async def fetch_profile_and_activity(self, _username: str) -> dict[str, object]:
+        return {
+            "success": False,
+            "found": False,
+            "configured": True,
+            "status": "no_results",
+            "platform": "github",
+            "provider": "github_rest",
+            "repositories": [],
+            "recent_activity": [],
+            "usage": {"calls_made": 0},
+        }
+
+
+class _OfflineYouTubeService:
+    async def fetch_channel_and_videos(self, _username: str) -> dict[str, object]:
+        return {
+            "success": False,
+            "found": False,
+            "configured": False,
+            "status": "disabled",
+            "platform": "youtube",
+            "provider": "youtube_data_api_v3",
+            "videos": [],
+            "all_hashtags": [],
+            "usage": {"calls_made": 0, "quota_units_used": 0},
+        }
+
+
+@pytest.fixture(autouse=True)
+def _keep_dedicated_collectors_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Existing orchestration fixtures must never reach public provider APIs."""
+
+    monkeypatch.setattr(investigation, "GitHubService", _OfflineGitHubService)
+    monkeypatch.setattr(investigation, "YouTubeService", _OfflineYouTubeService)
+
+
 def test_contact_collection_normalizes_deduplicates_and_unions_provenance() -> None:
     discovery = ContactAggregationService.collect(
         target_query="alice",

@@ -745,6 +745,8 @@ function renderHashtagAnalysis(analysis) {
         tiktok: "TikTok",
         twitter: "X",
         facebook: "Facebook",
+        github: "GitHub",
+        youtube: "YouTube",
     };
     const topHTML = top.slice(0, 30).map(item => {
         const tag = item.tag;
@@ -1558,6 +1560,229 @@ function renderPlatformDossiers(scraped) {
         `;
     }
 
+    // GitHub Dossier
+    if (scraped.github && typeof scraped.github === "object") {
+        const gh = scraped.github;
+        const nestedProfile = gh.profile && typeof gh.profile === "object" ? gh.profile : {};
+        const profile = { ...gh, ...nestedProfile };
+        const repositories = (Array.isArray(gh.repositories)
+            ? gh.repositories
+            : Array.isArray(gh.repos)
+            ? gh.repos
+            : [])
+            .filter(repository => repository && typeof repository === "object")
+            .slice(0, 10);
+        const recentActivity = (Array.isArray(gh.recent_activity) ? gh.recent_activity : [])
+            .filter(activity => activity && typeof activity === "object")
+            .slice(0, 10);
+        const hasGitHubData = gh.success === true
+            || profile.username
+            || profile.full_name
+            || profile.profile_url
+            || repositories.length
+            || recentActivity.length;
+
+        if (hasGitHubData) {
+            const username = typeof profile.username === "string"
+                ? profile.username.slice(0, 100)
+                : "";
+            const fullName = typeof profile.full_name === "string"
+                ? profile.full_name.slice(0, 300)
+                : "N/A";
+            const bio = typeof profile.bio === "string" ? profile.bio.slice(0, 2000) : "";
+            const company = typeof profile.company === "string" ? profile.company.slice(0, 300) : "N/A";
+            const location = typeof profile.location === "string" ? profile.location.slice(0, 300) : "N/A";
+            const publicRepoCount = profile.public_repo_count
+                ?? profile.public_repository_count
+                ?? profile.public_repos
+                ?? gh.repository_count;
+            const relationshipCountsSuppressed = profile.relationship_counts_suppressed === true;
+            const followerCountDisplay = relationshipCountsSuppressed
+                ? "Suppressed (public-only)"
+                : formattedCount(profile.follower_count ?? profile.followers);
+            const followingCountDisplay = relationshipCountsSuppressed
+                ? "Suppressed (public-only)"
+                : formattedCount(profile.following_count ?? profile.following);
+            const safeProfileURL = safeAbsoluteHttpURL(profile.profile_url || profile.url);
+            const profileLinkHTML = safeProfileURL
+                ? `<a href="${escapeHTML(safeProfileURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(safeProfileURL)} &#x2197;</a>`
+                : '<span style="color:var(--text-muted);">Profile URL unavailable</span>';
+            const safeAvatarURL = proxiedImageURL(profile.profile_pic_url || profile.avatar_url);
+            const profileWebsite = profile.website || profile.blog;
+            const safeBlogURL = safeAbsoluteHttpURL(profileWebsite);
+            const blogDisplay = safeBlogURL
+                ? `<a href="${escapeHTML(safeBlogURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan);">${escapeHTML(safeBlogURL)}</a>`
+                : escapeHTML(typeof profileWebsite === "string" && profileWebsite ? profileWebsite.slice(0, 500) : "N/A");
+
+            const repositoriesHTML = repositories.map(repository => {
+                const name = typeof repository.name === "string"
+                    ? repository.name.slice(0, 300)
+                    : (typeof repository.full_name === "string" ? repository.full_name.slice(0, 300) : "Repository");
+                const description = typeof repository.description === "string"
+                    ? repository.description.slice(0, 1000)
+                    : "No description returned.";
+                const safeRepositoryURL = safeAbsoluteHttpURL(repository.url || repository.html_url);
+                const nameHTML = safeRepositoryURL
+                    ? `<a href="${escapeHTML(safeRepositoryURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(name)}</a>`
+                    : escapeHTML(name);
+                const topics = Array.isArray(repository.topics)
+                    ? repository.topics.filter(topic => typeof topic === "string").slice(0, 12)
+                    : [];
+                return `
+                    <div style="background:var(--bg-panel); border:1px solid var(--border-divider); border-radius:4px; padding:9px 10px; margin-bottom:7px; font-size:11px; line-height:1.4;">
+                        <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                            <strong>${nameHTML}</strong>
+                            <span style="font-size:9px; color:var(--text-muted);">${escapeHTML(typeof repository.language === "string" ? repository.language.slice(0, 100) : "")}</span>
+                        </div>
+                        <div style="color:var(--text-secondary); margin-top:4px; overflow-wrap:anywhere;">${escapeHTML(description)}</div>
+                        ${topics.length ? `<div style="margin-top:5px;">${topics.map(topic => `<span class="tag-chip">${escapeHTML(topic)}</span>`).join("")}</div>` : ""}
+                        <div style="font-size:9px; color:var(--text-muted); margin-top:5px; display:flex; flex-wrap:wrap; gap:10px;">
+                            <span>Stars: ${formattedCount(boundedInteger(repository.stars ?? repository.stargazers_count, 0, 0, 1000000000))}</span>
+                            <span>Forks: ${formattedCount(boundedInteger(repository.forks ?? repository.forks_count, 0, 0, 1000000000))}</span>
+                            <span>Open issues: ${formattedCount(boundedInteger(repository.open_issues ?? repository.open_issues_count, 0, 0, 1000000000))}</span>
+                            ${repository.archived === true || repository.is_archived === true ? '<span style="color:var(--risk-medium);">ARCHIVED</span>' : ""}
+                        </div>
+                    </div>`;
+            }).join("");
+
+            const activityHTML = recentActivity.map(activity => {
+                const title = typeof activity.title === "string"
+                    ? activity.title.slice(0, 300)
+                    : (typeof activity.type === "string" ? activity.type.slice(0, 100) : "Public activity");
+                const detail = typeof activity.description === "string"
+                    ? activity.description.slice(0, 1000)
+                    : (typeof (activity.text || activity.message) === "string"
+                        ? String(activity.text || activity.message).slice(0, 1000)
+                        : (typeof activity.repository === "string" ? activity.repository.slice(0, 300) : ""));
+                const timestamp = typeof (activity.created_at || activity.timestamp) === "string"
+                    ? String(activity.created_at || activity.timestamp).slice(0, 80)
+                    : "";
+                const safeActivityURL = safeAbsoluteHttpURL(activity.url || activity.html_url);
+                const titleHTML = safeActivityURL
+                    ? `<a href="${escapeHTML(safeActivityURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(title)}</a>`
+                    : escapeHTML(title);
+                return `
+                    <div style="background:var(--bg-panel); border-left:2px solid var(--accent-cyan); padding:6px 9px; margin-bottom:5px; font-size:10px;">
+                        <div style="display:flex; justify-content:space-between; gap:10px;"><strong>${titleHTML}</strong><span style="color:var(--text-muted);">${escapeHTML(timestamp)}</span></div>
+                        ${detail ? `<div style="color:var(--text-secondary); margin-top:3px; overflow-wrap:anywhere;">${escapeHTML(detail)}</div>` : ""}
+                    </div>`;
+            }).join("");
+
+            cardsHTML += `
+                <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
+                        <span style="font-weight:600; color:var(--accent-cyan);">GITHUB PUBLIC DOSSIER</span>
+                        <span class="mono" style="font-size:11px;">${profileLinkHTML}</span>
+                    </div>
+                    <div style="display:flex; gap:16px; align-items:flex-start; margin-bottom:10px; flex-wrap:wrap;">
+                        ${safeAvatarURL ? `<img src="${escapeHTML(safeAvatarURL)}" crossorigin="use-credentials" referrerpolicy="no-referrer" style="width:64px; height:64px; border-radius:50%; border:2px solid var(--accent-cyan); object-fit:cover;" onerror="this.style.display='none';">` : ""}
+                        <div style="flex:1; min-width:220px;">
+                            <div style="font-size:14px; font-weight:700; color:var(--text-primary);">${escapeHTML(fullName)}</div>
+                            <div class="mono" style="font-size:11px; color:var(--accent-cyan); margin-top:2px;">${username ? `@${escapeHTML(username)}` : "Username unavailable"}</div>
+                            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;"><strong>Company:</strong> ${escapeHTML(company)} | <strong>Location:</strong> ${escapeHTML(location)}</div>
+                        </div>
+                    </div>
+                    <table class="soc-table" style="margin-bottom:8px;">
+                        <tr><td style="color:var(--text-muted); width:120px;">Followers</td><td>${followerCountDisplay}</td></tr>
+                        <tr><td style="color:var(--text-muted);">Following</td><td>${followingCountDisplay}</td></tr>
+                        <tr><td style="color:var(--text-muted);">Public Repositories</td><td>${formattedCount(publicRepoCount, repositories.length)} (${repositories.length} returned)</td></tr>
+                        <tr><td style="color:var(--text-muted);">Public Email</td><td>${escapeHTML(typeof profile.email === "string" && profile.email ? profile.email.slice(0, 320) : "None returned")}</td></tr>
+                        <tr><td style="color:var(--text-muted);">Website</td><td>${blogDisplay}</td></tr>
+                    </table>
+                    <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; padding:8px; background:var(--bg-panel); border-radius:4px; white-space:pre-wrap; overflow-wrap:anywhere;">${escapeHTML(bio || "No public GitHub bio returned.")}</div>
+                    ${repositoriesHTML ? `<div style="margin-top:12px;"><div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">PUBLIC REPOSITORIES (SHOWING ${repositories.length})</div>${repositoriesHTML}</div>` : ""}
+                    ${activityHTML ? `<div style="margin-top:12px;"><div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">RECENT PUBLIC GITHUB ACTIVITY (SHOWING ${recentActivity.length})</div>${activityHTML}</div>` : ""}
+                </div>`;
+        }
+    }
+
+    // YouTube Dossier
+    if (scraped.youtube && typeof scraped.youtube === "object") {
+        const yt = scraped.youtube;
+        const nestedChannel = yt.channel && typeof yt.channel === "object" ? yt.channel : {};
+        const channel = { ...yt, ...nestedChannel };
+        const rawVideos = Array.isArray(yt.videos) && yt.videos.length
+            ? yt.videos
+            : Array.isArray(yt.recent_videos) && yt.recent_videos.length
+            ? yt.recent_videos
+            : (Array.isArray(yt.recent_posts) ? yt.recent_posts : []);
+        const videos = rawVideos
+            .filter(video => video && typeof video === "object")
+            .slice(0, 10);
+        const hasYouTubeData = yt.success === true
+            || channel.channel_id
+            || channel.username
+            || channel.full_name
+            || channel.profile_url
+            || videos.length;
+
+        if (hasYouTubeData) {
+            const username = typeof (channel.username || channel.handle) === "string"
+                ? String(channel.username || channel.handle).replace(/^@+/, "").slice(0, 100)
+                : "";
+            const fullName = typeof (channel.full_name || channel.channel_name) === "string"
+                ? String(channel.full_name || channel.channel_name).slice(0, 300)
+                : "N/A";
+            const description = typeof (channel.description || channel.bio) === "string"
+                ? String(channel.description || channel.bio).slice(0, 2500)
+                : "";
+            const safeProfileURL = safeAbsoluteHttpURL(channel.profile_url || channel.url);
+            const profileLinkHTML = safeProfileURL
+                ? `<a href="${escapeHTML(safeProfileURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(safeProfileURL)} &#x2197;</a>`
+                : '<span style="color:var(--text-muted);">Channel URL unavailable</span>';
+            const safeAvatarURL = proxiedImageURL(channel.profile_pic_url || channel.profile_picture || channel.avatar_url);
+            const youtubeTags = combinedHashtagValues(
+                yt.all_hashtags,
+                yt.hashtags,
+                ...videos.map(video => video.hashtags),
+            ).slice(0, 40);
+            const videosHTML = videos.map(video => {
+                const title = typeof video.title === "string" ? video.title.slice(0, 500) : "Public YouTube video";
+                const videoDescription = typeof video.description === "string" ? video.description.slice(0, 1200) : "";
+                const publishedAt = typeof video.published_at === "string" ? video.published_at.slice(0, 80) : "";
+                const safeVideoURL = safeAbsoluteHttpURL(video.url || video.video_url);
+                const safeThumbnailURL = proxiedImageURL(video.thumbnail_url || video.thumbnail);
+                const titleHTML = safeVideoURL
+                    ? `<a href="${escapeHTML(safeVideoURL)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent-cyan); text-decoration:none;">${escapeHTML(title)}</a>`
+                    : escapeHTML(title);
+                const videoTags = normalizedHashtagValues(video.hashtags, 20);
+                return `
+                    <div style="display:flex; gap:10px; background:var(--bg-panel); border:1px solid var(--border-divider); border-radius:4px; padding:9px; margin-bottom:7px; font-size:11px; line-height:1.4;">
+                        ${safeThumbnailURL ? `<img src="${escapeHTML(safeThumbnailURL)}" crossorigin="use-credentials" referrerpolicy="no-referrer" style="width:120px; height:68px; object-fit:cover; border-radius:3px; flex:0 0 auto;" onerror="this.style.display='none';">` : ""}
+                        <div style="min-width:0; flex:1;">
+                            <div style="display:flex; justify-content:space-between; gap:10px;"><strong style="overflow-wrap:anywhere;">${titleHTML}</strong><span style="font-size:9px; color:var(--text-muted); white-space:nowrap;">${escapeHTML(publishedAt)}</span></div>
+                            ${videoDescription ? `<div style="color:var(--text-secondary); margin-top:4px; overflow-wrap:anywhere;">${escapeHTML(videoDescription)}</div>` : ""}
+                            ${videoTags.length ? `<div style="margin-top:5px;">${hashtagChips(videoTags, 20)}</div>` : ""}
+                        </div>
+                    </div>`;
+            }).join("");
+
+            cardsHTML += `
+                <div style="background:var(--bg-elevated); border:1px solid var(--border-divider); border-radius:6px; padding:14px; margin-bottom:14px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
+                        <span style="font-weight:600; color:var(--accent-cyan);">YOUTUBE PUBLIC CHANNEL DOSSIER</span>
+                        <span class="mono" style="font-size:11px;">${profileLinkHTML}</span>
+                    </div>
+                    <div style="display:flex; gap:16px; align-items:flex-start; margin-bottom:10px; flex-wrap:wrap;">
+                        ${safeAvatarURL ? `<img src="${escapeHTML(safeAvatarURL)}" crossorigin="use-credentials" referrerpolicy="no-referrer" style="width:64px; height:64px; border-radius:50%; border:2px solid var(--accent-cyan); object-fit:cover;" onerror="this.style.display='none';">` : ""}
+                        <div style="flex:1; min-width:220px;">
+                            <div style="font-size:14px; font-weight:700; color:var(--text-primary);">${escapeHTML(fullName)}</div>
+                            <div class="mono" style="font-size:11px; color:var(--accent-cyan); margin-top:2px;">${username ? `@${escapeHTML(username)}` : escapeHTML(channel.channel_id || "Handle unavailable")}</div>
+                            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;"><strong>Country:</strong> ${escapeHTML(typeof channel.country === "string" && channel.country ? channel.country.slice(0, 100) : "N/A")}</div>
+                        </div>
+                    </div>
+                    <table class="soc-table" style="margin-bottom:8px;">
+                        <tr><td style="color:var(--text-muted); width:120px;">Subscribers</td><td>${channel.subscriber_count == null ? "N/A" : formattedCount(channel.subscriber_count)}</td></tr>
+                        <tr><td style="color:var(--text-muted);">Total Views</td><td>${formattedCount(channel.view_count)}</td></tr>
+                        <tr><td style="color:var(--text-muted);">Published Videos</td><td>${formattedCount(channel.video_count, videos.length)} (${videos.length} recent returned)</td></tr>
+                    </table>
+                    <div style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; padding:8px; background:var(--bg-panel); border-radius:4px; white-space:pre-wrap; overflow-wrap:anywhere;">${escapeHTML(description || "No public channel description returned.")}</div>
+                    <div style="margin-top:10px;"><div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:5px; letter-spacing:0.05em;">VIDEO HASHTAGS (${youtubeTags.length} UNIQUE)</div><div>${hashtagChips(youtubeTags, 40) || "<span style='color:var(--text-muted); font-size:11px;'>No YouTube hashtags found.</span>"}</div></div>
+                    ${videosHTML ? `<div style="margin-top:12px;"><div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:6px; letter-spacing:0.05em;">RECENT PUBLIC YOUTUBE VIDEOS (SHOWING ${videos.length})</div>${videosHTML}</div>` : ""}
+                </div>`;
+        }
+    }
+
     // Standalone Enrichment Card
     const topLevelRRData = scraped.rocketreach && typeof scraped.rocketreach === "object"
         ? scraped.rocketreach
@@ -1886,19 +2111,60 @@ function renderDiagnosticsPanel(data) {
             skipDetails: "Public LinkedIn posts were intentionally skipped; no post-search Actor call was made.",
             notRunDetails: "The bounded LinkedIn public-post collector did not run or returned no status.",
         },
+        {
+            key: "github",
+            name: "GitHub Public Data Collector",
+            successDetails: "Bounded public GitHub profile, repository, and activity collection completed.",
+            skipDetails: "GitHub collection was intentionally skipped; no GitHub API call was made.",
+            notRunDetails: "The dedicated GitHub collector did not run or returned no status.",
+        },
+        {
+            key: "youtube",
+            name: "YouTube Data API Collector",
+            successDetails: "Bounded public YouTube channel and recent-video collection completed.",
+            skipDetails: "YouTube collection was intentionally skipped; no YouTube Data API quota was used.",
+            notRunDetails: "The dedicated YouTube collector did not run or returned no status.",
+        },
         { key: "signalhire", name: "SignalHire Contact Enrichment" },
         { key: "rocketreach", name: "RocketReach Contact Enrichment" }
     ];
 
     scrapersList.forEach(s => {
         const sd = scraped[s.key] || providerStatuses[s.key];
+        const providerStatus = String(sd?.status || "").toLowerCase();
+        const providerErrorCode = String(sd?.error_code || "").toLowerCase();
+        const isDedicatedPublicCollector = s.key === "github" || s.key === "youtube";
+        const isNotConfigured = ["not_configured", "youtube_not_configured"].includes(providerErrorCode);
+        const isQuotaFailure = ["quota_exhausted", "rate_limited", "youtube_quota_exhausted", "youtube_rate_limited"].includes(providerErrorCode);
+        const isAccessFailure = ["access_denied", "authentication_failed", "forbidden", "youtube_configuration_error"].includes(providerErrorCode);
         const requiredProviderKey = s.key === "signalhire"
             ? "SIGNALHIRE_API_KEY"
             : s.key === "rocketreach"
             ? "ROCKETREACH_API_KEY"
+            : s.key === "github"
+            ? "GITHUB_API_TOKEN"
+            : s.key === "youtube"
+            ? "YOUTUBE_API_KEY"
             : "APIFY_API_TOKEN";
         if (sd) {
-            if (sd.success || sd.status === "completed" || sd.status === "success") {
+            if (isDedicatedPublicCollector && providerStatus === "no_results") {
+                items.push({
+                    name: s.name,
+                    status: "OK",
+                    details: `The bounded ${s.key === "github" ? "GitHub profile" : "YouTube channel"} lookup completed with no matching public account.`,
+                    recovery: null,
+                });
+            } else if (isDedicatedPublicCollector && providerStatus === "partial") {
+                warningsCount++;
+                items.push({
+                    name: s.name,
+                    status: "WARNING",
+                    details: `Public ${s.key === "github" ? "GitHub profile" : "YouTube channel"} data was returned, but one or more bounded enrichment requests failed.`,
+                    recovery: s.key === "github"
+                        ? "Review GitHub rate-limit metadata and the provider error before retrying."
+                        : "Review YouTube quota metadata and the provider error before retrying.",
+                });
+            } else if (sd.success || providerStatus === "completed" || providerStatus === "success") {
                 const creditsRemaining = Number(sd.credits_remaining);
                 const creditDetails = Number.isInteger(creditsRemaining) && creditsRemaining >= 0
                     ? ` Provider credits remaining: ${creditsRemaining}.`
@@ -1906,10 +2172,20 @@ function renderDiagnosticsPanel(data) {
                 const cacheDetails = sd.cache_outcome === "hit" || sd.cache_outcome === "shared"
                     ? " Reused a recent in-memory result; no new provider call was made."
                     : "";
+                const rateLimit = sd.rate_limit && typeof sd.rate_limit === "object" ? sd.rate_limit : {};
+                const rateRemaining = Number(rateLimit.remaining);
+                const rateLimitTotal = Number(rateLimit.limit);
+                const rateLimitDetails = s.key === "github" && Number.isInteger(rateRemaining) && rateRemaining >= 0
+                    ? ` GitHub API requests remaining: ${rateRemaining}${Number.isInteger(rateLimitTotal) && rateLimitTotal >= 0 ? `/${rateLimitTotal}` : ""}.`
+                    : "";
+                const quotaUnitsUsed = Number(sd.quota_units_used);
+                const quotaDetails = s.key === "youtube" && Number.isInteger(quotaUnitsUsed) && quotaUnitsUsed >= 0
+                    ? ` YouTube quota units used: ${quotaUnitsUsed}.`
+                    : "";
                 items.push({
                     name: s.name,
                     status: "OK",
-                    details: `${s.successDetails || "Data fetched successfully."}${cacheDetails}${creditDetails}`,
+                    details: `${s.successDetails || "Data fetched successfully."}${cacheDetails}${creditDetails}${rateLimitDetails}${quotaDetails}`,
                     recovery: null
                 });
             } else if (
@@ -1924,7 +2200,10 @@ function renderDiagnosticsPanel(data) {
                         : "The bounded public LinkedIn post search completed with no attributable posts.",
                     recovery: null,
                 });
-            } else if (sd.status === "skipped" && sd.error_code !== "not_configured") {
+            } else if (
+                (providerStatus === "skipped" || (providerStatus === "disabled" && ["disabled", "youtube_disabled"].includes(providerErrorCode)))
+                && !isNotConfigured
+            ) {
                 const skipDetails = {
                     linkedin_contacts_already_available: "RocketReach was unnecessary because the same confirmed LinkedIn profile supplied both email and phone data.",
                     exact_contact_routed_to_signalhire: "An exact contact lookup was routed only to SignalHire.",
@@ -1933,6 +2212,7 @@ function renderDiagnosticsPanel(data) {
                     no_confirmed_linkedin_profile: "No confirmed LinkedIn profile URL was available.",
                     identifier_not_routed: "This provider was not selected for the contact lookup.",
                     identifier_not_username: "This non-username target was not sent to username-oriented scrapers.",
+                    collector_disabled: "This dedicated collector is disabled by local configuration; no provider call was made.",
                 };
                 items.push({
                     name: s.name,
@@ -1947,19 +2227,31 @@ function renderDiagnosticsPanel(data) {
                 items.push({
                     name: s.name,
                     status: "WARNING",
-                    details: sd.error_code === "not_configured"
+                    details: isNotConfigured
                         ? "Provider key is not configured; no external request was made."
                         : s.key === "linkedin_posts"
                         ? "The bounded public LinkedIn post collection failed; no unverified post data was displayed."
                         : (sd.error || "Empty response or configuration mismatch."),
-                    recovery: sd.error_code === "quota_exhausted"
-                        ? "Raise the Apify monthly usage limit or wait for its cycle to reset; do not repeatedly retry."
-                        : sd.error_code === "access_denied"
-                        ? "Give the token Actor Run permission and review any Actor approval/subscription requirement in Apify Console."
-                        : sd.error_code === "not_configured"
+                    recovery: isQuotaFailure
+                        ? s.key === "youtube"
+                            ? "Wait for the YouTube Data API quota reset or review the project quota in Google Cloud Console; do not repeatedly retry."
+                            : s.key === "github"
+                            ? "Wait for the GitHub API rate-limit reset or review the configured token; do not repeatedly retry."
+                            : "Raise the Apify monthly usage limit or wait for its cycle to reset; do not repeatedly retry."
+                        : isAccessFailure
+                        ? s.key === "github"
+                            ? "Review GITHUB_API_TOKEN access and GitHub API permissions."
+                            : s.key === "youtube"
+                            ? "Review YOUTUBE_API_KEY restrictions and enable YouTube Data API v3 in Google Cloud Console."
+                            : "Give the token Actor Run permission and review any Actor approval/subscription requirement in Apify Console."
+                        : isNotConfigured
                         ? `Configure ${requiredProviderKey} only if this provider route is approved.`
                         : s.key === "linkedin_posts"
                         ? "Review the bounded LinkedIn posts Actor status and APIFY_LINKEDIN_POSTS_ACTOR_ID configuration."
+                        : s.key === "github"
+                        ? "Review the GitHub API status, rate-limit metadata, and GITHUB_API_TOKEN configuration."
+                        : s.key === "youtube"
+                        ? "Review YouTube quota metadata and YOUTUBE_API_KEY configuration in Google Cloud Console."
                         : "Verify the public target exists and review the provider status and Actor configuration."
                 });
             }
@@ -2137,17 +2429,29 @@ function renderMediaGallery(data) {
     const mediaItems = [];
 
     // Profile photos
-    const platforms = ["instagram", "linkedin", "tiktok", "twitter", "facebook"];
+    const platforms = ["instagram", "linkedin", "tiktok", "twitter", "facebook", "github", "youtube"];
     platforms.forEach(plat => {
         const info = scraped[plat] || {};
-        const pic = info.profile_pic_url || info.profile_pic_hd || (info.basic_info && (info.basic_info.profile_picture_url || info.basic_info.profile_pic_url));
+        const nestedProfile = info.profile && typeof info.profile === "object"
+            ? info.profile
+            : info.channel && typeof info.channel === "object"
+            ? info.channel
+            : {};
+        const pic = info.profile_pic_url
+            || info.profile_pic_hd
+            || info.profile_picture
+            || info.avatar_url
+            || nestedProfile.profile_pic_url
+            || nestedProfile.profile_picture
+            || nestedProfile.avatar_url
+            || (info.basic_info && (info.basic_info.profile_picture_url || info.basic_info.profile_pic_url));
         if (pic) {
             mediaItems.push({
                 url: pic,
                 source: plat.toUpperCase(),
                 type: "Profile Photo",
                 caption: `Official profile photo resolved on ${plat.toUpperCase()}`,
-                link: info.url || info.profile_url || (info.basic_info && info.basic_info.profile_url) || "#"
+                link: info.url || info.profile_url || nestedProfile.profile_url || (info.basic_info && info.basic_info.profile_url) || "#"
             });
         }
     });
@@ -2201,6 +2505,29 @@ function renderMediaGallery(data) {
                 }
             });
         }
+    }
+
+    // Bounded YouTube recent-video thumbnails
+    if (scraped.youtube && typeof scraped.youtube === "object") {
+        const videos = Array.isArray(scraped.youtube.videos) && scraped.youtube.videos.length
+            ? scraped.youtube.videos
+            : Array.isArray(scraped.youtube.recent_videos) && scraped.youtube.recent_videos.length
+            ? scraped.youtube.recent_videos
+            : (Array.isArray(scraped.youtube.recent_posts) ? scraped.youtube.recent_posts : []);
+        videos
+            .filter(video => video && typeof video === "object")
+            .slice(0, 10)
+            .forEach(video => {
+                const thumbnail = video.thumbnail_url || video.thumbnail;
+                if (!thumbnail) return;
+                mediaItems.push({
+                    url: thumbnail,
+                    source: "YOUTUBE",
+                    type: "Video Thumbnail",
+                    caption: typeof video.title === "string" ? video.title.slice(0, 500) : "Public YouTube video",
+                    link: video.url || video.video_url || "#",
+                });
+            });
     }
 
     if (badge) badge.textContent = `${mediaItems.length} FILES`;

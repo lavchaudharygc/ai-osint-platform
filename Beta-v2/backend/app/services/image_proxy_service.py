@@ -18,8 +18,10 @@ import httpx
 # - X/Twitter: abs.twimg.com and pbs.twimg.com
 # - LinkedIn: media.licdn.com
 # - Gravatar: documented avatar hosts and *.gravatarusercontent.com
-# - People Search: exact Google thumbnail, GitHub avatar, YouTube avatar, and
-#   Reddit style hosts emitted by the SerpAPI-only profile collector
+# - GitHub: avatars.githubusercontent.com
+# - YouTube: exact channel-avatar and video-thumbnail hosts
+# - People Search: exact Google thumbnail and Reddit style hosts emitted by the
+#   SerpAPI-only profile collector
 # Keep this list collector-specific. General web, platform, user-content, and
 # unrelated image hosting domains are intentionally absent.
 ALLOWED_IMAGE_HOSTNAMES = frozenset(
@@ -34,6 +36,12 @@ ALLOWED_IMAGE_HOSTNAMES = frozenset(
         "encrypted-tbn2.gstatic.com",
         "encrypted-tbn3.gstatic.com",
         "gravatar.com",
+        "i.ytimg.com",
+        "i1.ytimg.com",
+        "i2.ytimg.com",
+        "i3.ytimg.com",
+        "i4.ytimg.com",
+        "img.youtube.com",
         "lh3.googleusercontent.com",
         "media.licdn.com",
         "pbs.twimg.com",

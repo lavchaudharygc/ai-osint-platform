@@ -80,6 +80,31 @@ class Settings(BaseSettings):
     apify_linkedin_profile_actor_id: str = "apimaestro/linkedin-profile-detail"
     apify_linkedin_posts_actor_id: str = "bebity/linkedin-post-search-scraper"
     apify_linkedin_posts_limit: int = Field(default=15, ge=1, le=20)
+
+    # GitHub Target Scan uses only GitHub's official public REST API. A token is
+    # optional (public endpoints also work anonymously), while these server-owned
+    # ceilings prevent callers from expanding per-scan API usage.
+    github_enabled: bool = True
+    github_api_token: str | None = Field(
+        default_factory=lambda: os.getenv("GITHUB_API_TOKEN")
+    )
+    github_timeout_seconds: float = Field(default=12.0, ge=2.0, le=30.0)
+    github_max_requests_per_scan: int = Field(default=3, ge=1, le=3)
+    github_max_repositories: int = Field(default=10, ge=1, le=20)
+    github_max_events: int = Field(default=10, ge=1, le=20)
+    github_user_agent: str = "UPPoliceCyberCell-OSINT/2.0"
+
+    # YouTube Target Scan uses only the official Data API v3. The collector
+    # resolves one handle and reads one uploads page plus one batched details
+    # response, avoiding search.list and unbounded pagination.
+    youtube_enabled: bool = True
+    youtube_api_key: str | None = Field(
+        default_factory=lambda: os.getenv("YOUTUBE_API_KEY")
+    )
+    youtube_timeout_seconds: float = Field(default=12.0, ge=2.0, le=30.0)
+    youtube_max_requests_per_scan: int = Field(default=3, ge=1, le=3)
+    youtube_videos_limit: int = Field(default=10, ge=1, le=20)
+
     signalhire_api_key: str | None = Field(default_factory=lambda: os.getenv("SIGNALHIRE_API_KEY"))
     leakosint_api_key: str | None = Field(default_factory=lambda: os.getenv("LEAKOSINT_API_KEY"))
     serpapi_key: str | None = Field(default_factory=lambda: os.getenv("SERPAPI_KEY"))

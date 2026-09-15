@@ -162,6 +162,46 @@ Operational logging records only status and counts under
 Google dorking uses SerpAPI only. It never launches an Apify Actor or switches
 to another provider when SerpAPI is missing, exhausted, or unavailable.
 
+## Dedicated GitHub and YouTube collectors
+
+Username Target Scan includes two independent, bounded collectors that do not
+depend on Google dorking or Apify:
+
+- GitHub uses the official public REST API for one profile, one page of public
+  repositories, and one page of recent public activity. It works anonymously
+  by default. `GITHUB_API_TOKEN` is optional and only provides authenticated
+  rate limits; if used, keep a read-only token in the recipient's own
+  `backend/.env`. When a token is present, follower/following counts are
+  conservatively suppressed because GitHub may reveal hidden counts to the
+  token owner; only fields with a public-data contract are retained.
+- YouTube uses the official YouTube Data API v3 for an exact channel handle,
+  its uploads playlist, and one batched video-details request. It requires a
+  locally configured `YOUTUBE_API_KEY`; enable YouTube Data API v3 for that key
+  and restrict it to the backend deployment where practical.
+
+```dotenv
+GITHUB_ENABLED=true
+GITHUB_API_TOKEN=
+GITHUB_MAX_REQUESTS_PER_SCAN=3
+GITHUB_MAX_REPOSITORIES=10
+GITHUB_MAX_EVENTS=10
+
+YOUTUBE_ENABLED=true
+YOUTUBE_API_KEY=<recipient's own API key>
+YOUTUBE_MAX_REQUESTS_PER_SCAN=3
+YOUTUBE_VIDEOS_LIMIT=10
+```
+
+The server hard-caps both collectors at three HTTP calls per username scan and
+never retries, paginates, or falls back to a different provider. Non-username
+targets make zero GitHub and YouTube calls. A failure remains isolated and is
+reported in `provider_statuses.github` or `provider_statuses.youtube`; a
+successful collector still appears when the other one fails. GitHub rate-limit
+metadata and YouTube quota units used are shown in diagnostics without exposing
+credentials. Count-only operational summaries use
+`event=target_collector_summary` and never log the searched handle or collected
+content.
+
 ## Target Scan Google dorking
 
 Target Scan now prepares five target-type-aware Google searches for usernames,
@@ -197,8 +237,9 @@ the searched value, generated dorks, API key, titles, snippets, or URLs.
 
 ## Cross-platform hashtag analysis
 
-Successful Instagram, TikTok, X, public Facebook Page, and attributed LinkedIn
-post collections are normalized into the top-level `hashtag_analysis` response.
+Successful Instagram, TikTok, X, public Facebook Page, attributed LinkedIn
+posts, YouTube videos, and explicit hashtags in GitHub public content are
+normalized into the top-level `hashtag_analysis` response.
 The analysis is
 deterministic and local: it makes no additional provider or AI call. Tags from
 public bios and collected posts/videos are case-normalized, counted once per
@@ -342,7 +383,8 @@ guess counts, verification provider-call counts, and cache-reuse counts. These r
 the email address, phone number, lookup identifier, or provider key.
 
 Target Scan normalizes and de-duplicates contacts from the request, LinkedIn,
-Facebook, Instagram, TikTok, X, SignalHire, and RocketReach before verification.
+Facebook, Instagram, TikTok, X, GitHub, YouTube, SignalHire, and RocketReach
+before verification.
 Generated email patterns remain separate, explicitly unverified candidates.
 Local syntax checks never claim that a mailbox is deliverable. Provider national
 phone numbers remain unverified unless a country code is present; only a

@@ -45,6 +45,8 @@ from app.services.contact_aggregation_service import (
 from app.services.contact_result_cache import CacheMode, contact_result_cache
 from app.services.email_investigation_service import _redact_sensitive_payload
 from app.services.image_proxy_service import ImageProxyError, ImageProxyService
+from app.services.github_service import GitHubService
+from app.services.youtube_service import YouTubeService
 from app.security.audit import AuditEvent, AuditUnavailable, get_audit_logger
 from app.security.auth import AuthenticatedUser, require_csrf, require_roles
 
@@ -144,6 +146,53 @@ def _safe_provider_status(result: Any) -> dict[str, Any]:
     cache_outcome = result.get("cache_outcome")
     if cache_outcome in {"hit", "loaded", "refreshed", "bypassed", "shared"}:
         safe_status["cache_outcome"] = cache_outcome
+    if isinstance(result.get("authenticated"), bool):
+        safe_status["authenticated"] = result["authenticated"]
+
+    usage = result.get("usage")
+    if isinstance(usage, dict):
+        safe_usage: dict[str, int] = {}
+        for field in (
+            "calls_made",
+            "calls_allowed",
+            "call_limit",
+            "max_calls",
+            "quota_units_used",
+            "quota_unit_limit",
+            "estimated_quota_units_used",
+        ):
+            value = usage.get(field)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                safe_usage[field] = value
+        if safe_usage:
+            safe_status["usage"] = safe_usage
+
+    quota_units_used = result.get("quota_units_used")
+    if not isinstance(quota_units_used, int) and isinstance(usage, dict):
+        quota_units_used = usage.get("quota_units_used")
+        if not isinstance(quota_units_used, int):
+            quota_units_used = usage.get("estimated_quota_units_used")
+    if (
+        isinstance(quota_units_used, int)
+        and not isinstance(quota_units_used, bool)
+        and quota_units_used >= 0
+    ):
+        safe_status["quota_units_used"] = quota_units_used
+
+    rate_limit = result.get("rate_limit")
+    if isinstance(rate_limit, dict):
+        safe_rate_limit: dict[str, Any] = {}
+        for field in ("limit", "remaining", "used", "retry_after_seconds"):
+            value = rate_limit.get(field)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                safe_rate_limit[field] = value
+        reset_at = rate_limit.get("reset_at") or rate_limit.get("reset")
+        if isinstance(reset_at, str):
+            safe_rate_limit["reset_at"] = reset_at[:100]
+        elif isinstance(reset_at, int) and reset_at >= 0:
+            safe_rate_limit["reset_at"] = reset_at
+        if safe_rate_limit:
+            safe_status["rate_limit"] = safe_rate_limit
     return safe_status
 
 
@@ -229,6 +278,42 @@ async def get_keys_diagnostics(
         )
     return {
         "apify": apify_diagnostics,
+        "github": {
+            "configured": settings.github_enabled,
+            "enabled": settings.github_enabled,
+            "available": settings.github_enabled,
+            "authenticated": bool(settings.github_api_token),
+            "status": (
+                "Disabled"
+                if not settings.github_enabled
+                else "Active (authenticated)"
+                if settings.github_api_token
+                else "Active (public anonymous access)"
+            ),
+            "limits": {
+                "requests_per_scan": settings.github_max_requests_per_scan,
+                "repositories_per_scan": settings.github_max_repositories,
+                "events_per_scan": settings.github_max_events,
+                "timeout_seconds": settings.github_timeout_seconds,
+            },
+        },
+        "youtube": {
+            "configured": bool(settings.youtube_api_key),
+            "enabled": settings.youtube_enabled,
+            "available": bool(settings.youtube_enabled and settings.youtube_api_key),
+            "status": (
+                "Disabled"
+                if not settings.youtube_enabled
+                else "Active"
+                if settings.youtube_api_key
+                else "Missing"
+            ),
+            "limits": {
+                "requests_per_scan": settings.youtube_max_requests_per_scan,
+                "videos_per_scan": settings.youtube_videos_limit,
+                "timeout_seconds": settings.youtube_timeout_seconds,
+            },
+        },
         "groq": {"configured": bool(settings.groq_api_key), "status": "Active" if settings.groq_api_key else "Missing"},
         "gemini": {"configured": bool(settings.gemini_api_key), "status": "Active" if settings.gemini_api_key else "Missing"},
         "serpapi": {
@@ -390,6 +475,23 @@ def classify_input(raw: str) -> str:
     if " " in s:
         return "name"
     return "username"
+
+
+def _normalize_username_target(raw: str) -> str | None:
+    """Return one literal handle without silently parsing paths or queries."""
+
+    candidate = raw.strip()
+    if candidate.startswith("@"):
+        candidate = candidate[1:]
+    if (
+        not candidate
+        or len(candidate) > 100
+        or not candidate.isprintable()
+        or any(character.isspace() for character in candidate)
+        or any(character in candidate for character in "/\\?#&=")
+    ):
+        return None
+    return candidate
 
 
 def _confirmed_linkedin_profile_url(result: Any) -> str | None:
@@ -703,9 +805,23 @@ async def run_investigation(
         investigation_id,
         kind,
     )
-    clean_handle = raw_query.lstrip("@").split("/")[-1].split("?")[0]
+    if kind == "username":
+        clean_handle = _normalize_username_target(raw_query)
+        if clean_handle is None:
+            logger.info(
+                "event=target_investigation_rejected investigation_id=%s "
+                "input_kind=username reason=invalid_username",
+                investigation_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Invalid username target",
+                headers={"Cache-Control": "no-store"},
+            )
+    else:
+        clean_handle = raw_query
 
-    # ── STEP 1: WMN probe + Instagram + TikTok + Twitter + Dorking + Wikidata — all start simultaneously ──
+    # ── STEP 1: independent username collectors — all start simultaneously ──
     # One shared client performs a single read-only quota preflight and shares
     # any permission denial across every Apify-backed step in this request.
     username_collectors_enabled = kind == "username"
@@ -717,6 +833,8 @@ async def run_investigation(
         ig_service = InstagramService(client=apify_client)
         tiktok_service = TikTokService(client=apify_client)
         twitter_service = TwitterService(client=apify_client)
+        github_service = GitHubService()
+        youtube_service = YouTubeService()
         wmn_service = WhatsMyNameService()
         wikidata_service = WikidataService()
         (
@@ -724,6 +842,8 @@ async def run_investigation(
             ig_res,
             tiktok_res,
             twitter_res,
+            github_res,
+            youtube_res,
             dorking_results,
             wikidata_res,
         ) = await asyncio.gather(
@@ -731,6 +851,14 @@ async def run_investigation(
             _safe(ig_service.fetch_profile_and_posts(clean_handle), "instagram"),
             _safe(tiktok_service.fetch_profile_and_videos(clean_handle), "tiktok"),
             _safe(twitter_service.fetch_profile_and_tweets(clean_handle), "twitter"),
+            _safe(
+                github_service.fetch_profile_and_activity(clean_handle),
+                "github",
+            ),
+            _safe(
+                youtube_service.fetch_channel_and_videos(clean_handle),
+                "youtube",
+            ),
             _safe(dork_service.run_dorks(raw_query), "dorking"),
             _safe(wikidata_service.search_and_get_profile(raw_query), "wikidata"),
         )
@@ -782,12 +910,106 @@ async def run_investigation(
             reason="identifier_not_username",
         )
         twitter_res["platform"] = "twitter"
+        github_res = {
+            **_skipped_contact_provider(
+                "github_rest",
+                configured=settings.github_enabled,
+                reason="identifier_not_username",
+            ),
+            "platform": "github",
+            "source": "github_public_api",
+            "profile": None,
+            "repositories": [],
+            "recent_activity": [],
+            "recent_posts": [],
+            "hashtags": [],
+            "all_hashtags": [],
+        }
+        youtube_res = {
+            **_skipped_contact_provider(
+                "youtube_data_api_v3",
+                configured=bool(settings.youtube_api_key),
+                reason="identifier_not_username",
+            ),
+            "platform": "youtube",
+            "source": "youtube_data_api_v3",
+            "channel": None,
+            "videos": [],
+            "recent_posts": [],
+            "hashtags": [],
+            "all_hashtags": [],
+            "quota_units_used": 0,
+        }
 
     wmn_data = wmn_data or {"status": "error", "scanned": 0, "hits_count": 0, "hits": []}
     ig_res = ig_res or {"success": False, "platform": "instagram", "username": clean_handle, "posts": [], "post_hashtags": []}
     tiktok_res = tiktok_res or {"success": False, "platform": "tiktok", "username": clean_handle}
     twitter_res = twitter_res or {"success": False, "platform": "twitter", "username": clean_handle}
+    github_res = github_res or {
+        "success": False,
+        "configured": settings.github_enabled,
+        "status": "error",
+        "platform": "github",
+        "provider": "github_rest",
+        "source": "github_public_api",
+        "profile": None,
+        "repositories": [],
+        "recent_activity": [],
+        "error_code": "missing_result",
+    }
+    youtube_res = youtube_res or {
+        "success": False,
+        "configured": bool(settings.youtube_api_key),
+        "status": "error",
+        "platform": "youtube",
+        "provider": "youtube_data_api_v3",
+        "source": "youtube_data_api_v3",
+        "channel": None,
+        "videos": [],
+        "recent_posts": [],
+        "all_hashtags": [],
+        "error_code": "missing_result",
+    }
     dorking_results = dorking_results or {"status": "error", "results": [], "queries_run": 0, "results_count": 0}
+
+    github_usage = (
+        github_res.get("usage") if isinstance(github_res.get("usage"), dict) else {}
+    )
+    youtube_usage = (
+        youtube_res.get("usage") if isinstance(youtube_res.get("usage"), dict) else {}
+    )
+    logger.info(
+        "event=target_collector_summary platform=github status=%s found=%s calls_made=%d "
+        "repository_count=%d activity_count=%d authenticated=%s",
+        github_res.get("status"),
+        github_res.get("found") is True,
+        github_usage.get("calls_made")
+        if isinstance(github_usage.get("calls_made"), int)
+        else 0,
+        len(github_res.get("repositories"))
+        if isinstance(github_res.get("repositories"), list)
+        else 0,
+        len(github_res.get("recent_activity"))
+        if isinstance(github_res.get("recent_activity"), list)
+        else 0,
+        github_res.get("authenticated") is True,
+    )
+    youtube_quota_units = youtube_res.get("quota_units_used")
+    if not isinstance(youtube_quota_units, int):
+        youtube_quota_units = youtube_usage.get("quota_units_used")
+    logger.info(
+        "event=target_collector_summary platform=youtube status=%s found=%s calls_made=%d "
+        "quota_units_used=%d video_count=%d",
+        youtube_res.get("status"),
+        youtube_res.get("found") is True,
+        youtube_usage.get("calls_made")
+        if isinstance(youtube_usage.get("calls_made"), int)
+        else 0,
+        youtube_quota_units if isinstance(youtube_quota_units, int) else 0,
+        len(youtube_res.get("videos"))
+        if isinstance(youtube_res.get("videos"), list)
+        else 0,
+    )
 
     wmn_hits = wmn_data.get("hits") or []
     discovered_sites = {h.get("site", "").lower() for h in wmn_hits}
@@ -1064,6 +1286,8 @@ async def run_investigation(
         "instagram": _safe_provider_status(ig_res),
         "tiktok": _safe_provider_status(tiktok_res),
         "twitter": _safe_provider_status(twitter_res),
+        "github": _safe_provider_status(github_res),
+        "youtube": _safe_provider_status(youtube_res),
         "facebook": _safe_provider_status(fb_res),
         "linkedin": _safe_provider_status(li_res),
         "linkedin_posts": _safe_provider_status(linkedin_posts_res),
@@ -1207,6 +1431,20 @@ async def run_investigation(
     if twitter_res and twitter_res.get("success"):
         twitter_res["status"] = "success"
         scraped_data["twitter"] = twitter_res
+    if (
+        isinstance(github_res, dict)
+        and github_res.get("success") is True
+        and github_res.get("found") is not False
+    ):
+        github_res["status"] = github_res.get("status") or "success"
+        scraped_data["github"] = github_res
+    if (
+        isinstance(youtube_res, dict)
+        and youtube_res.get("success") is True
+        and youtube_res.get("found") is not False
+    ):
+        youtube_res["status"] = youtube_res.get("status") or "success"
+        scraped_data["youtube"] = youtube_res
     if linkedin_combined and (linkedin_combined.get("success") or linkedin_combined.get("emails") or linkedin_combined.get("phone_numbers") or linkedin_combined.get("rocketreach")):
         linkedin_combined["status"] = "success"
         linkedin_combined["success"] = True
@@ -1252,6 +1490,8 @@ async def run_investigation(
         instagram=ig_res,
         tiktok=tiktok_res,
         twitter=twitter_res,
+        github=github_res,
+        youtube=youtube_res,
     )
 
     # ── STEP 3: Resolve full_name for email patterns ──

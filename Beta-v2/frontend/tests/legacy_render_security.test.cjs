@@ -24,6 +24,9 @@ const VALID_LINKS = {
     tiktok: "https://www.tiktok.com/@valid.profile",
     facebook: "https://www.facebook.com/valid.profile",
     github: "https://github.com/valid-profile",
+    githubRepo: "https://github.com/valid-profile/public-repo",
+    youtube: "https://www.youtube.com/@valid-profile",
+    youtubeVideo: "https://www.youtube.com/watch?v=abcdefghijk",
     x: "https://x.com/valid_profile",
 };
 const VALID_IMAGES = {
@@ -32,6 +35,9 @@ const VALID_IMAGES = {
     tiktok: "https://p16.tiktokcdn.com/valid-tiktok.jpg",
     twitter: "https://pbs.twimg.com/profile_images/valid-twitter.jpg",
     facebook: "https://scontent.fbcdn.net/v/valid-facebook.jpg",
+    github: "https://avatars.githubusercontent.com/u/12345?v=4",
+    youtube: "https://yt3.googleusercontent.com/valid-youtube-avatar",
+    youtubeVideo: "https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg",
 };
 const BAD_URLS = [
     "javascript:alert(1)",
@@ -349,13 +355,13 @@ async function runAppTests() {
     const hashtagFixture = {
         status: "completed",
         total_unique_hashtags: 5,
-        total_mentions: 10,
-        platforms_with_hashtags: 5,
+        total_mentions: 12,
+        platforms_with_hashtags: 7,
         top_hashtags: [
             {
                 tag: "CyberSafe",
-                mentions: 5,
-                platforms: ["instagram", "linkedin", "tiktok", "twitter", "facebook"],
+                mentions: 7,
+                platforms: ["instagram", "linkedin", "tiktok", "twitter", "facebook", "github", "youtube"],
                 cross_platform: true,
             },
             {
@@ -368,8 +374,8 @@ async function runAppTests() {
         ],
         cross_platform_hashtags: [{
             tag: "CyberSafe",
-            mentions: 5,
-            platforms: ["instagram", "linkedin", "tiktok", "twitter", "facebook"],
+            mentions: 7,
+            platforms: ["instagram", "linkedin", "tiktok", "twitter", "facebook", "github", "youtube"],
             cross_platform: true,
         }],
         platforms: {
@@ -378,20 +384,22 @@ async function runAppTests() {
             tiktok: { total_mentions: 2, hashtags: ["CyberSafe"] },
             twitter: { total_mentions: 2, hashtags: ["CyberSafe", "DFIR"] },
             facebook: { total_mentions: 2, hashtags: ["CyberSafe", "UPPolice"] },
+            github: { total_mentions: 1, hashtags: ["CyberSafe"] },
+            youtube: { total_mentions: 1, hashtags: ["CyberSafe"] },
         },
     };
     sandbox.renderHashtagAnalysis(hashtagFixture);
     html = nodeFor("hashtag-analysis-body").innerHTML;
     assert(html.includes("#CyberSafe"), "top hashtag was not rendered");
     assert(html.includes("CROSS-PLATFORM HASHTAGS (1)"), "cross-platform summary was omitted");
-    for (const platform of ["Instagram", "LinkedIn", "TikTok", "X", "Facebook"]) {
+    for (const platform of ["Instagram", "LinkedIn", "TikTok", "X", "Facebook", "GitHub", "YouTube"]) {
         assert(html.includes(`>${platform}<`), `hashtag platform row missing: ${platform}`);
     }
     assert(!html.includes(MARKUP_PAYLOAD), "hashtag markup reached rendered HTML");
     assert(!html.includes(NUMERIC_PAYLOAD), "hashtag count markup reached rendered HTML");
     assert(!html.includes("&lt;img"), "malformed hashtag text was not rejected");
     assert(!html.includes(">#</div>"), "empty hashtag chip was rendered");
-    assert.equal(nodeFor("hashtag-analysis-badge").textContent, "5 UNIQUE · 10 MENTIONS");
+    assert.equal(nodeFor("hashtag-analysis-badge").textContent, "5 UNIQUE · 12 MENTIONS");
 
     sandbox.renderResults({
         hashtag_analysis: hashtagFixture,
@@ -607,6 +615,41 @@ async function runAppTests() {
             page_name: "fixture",
             all_hashtags: [MARKUP_PAYLOAD],
         },
+        github: {
+            success: true,
+            username: MARKUP_PAYLOAD,
+            full_name: MARKUP_PAYLOAD,
+            bio: MARKUP_PAYLOAD,
+            profile_url: BAD_URLS[0],
+            profile_pic_url: ATTRIBUTE_BREAKER,
+            follower_count: NUMERIC_PAYLOAD,
+            repositories: [{
+                name: MARKUP_PAYLOAD,
+                description: MARKUP_PAYLOAD,
+                url: BAD_URLS[1],
+                language: MARKUP_PAYLOAD,
+                stars: NUMERIC_PAYLOAD,
+                topics: [MARKUP_PAYLOAD],
+            }],
+            recent_activity: [{ title: MARKUP_PAYLOAD, description: MARKUP_PAYLOAD, url: BAD_URLS[2] }],
+        },
+        youtube: {
+            success: true,
+            username: MARKUP_PAYLOAD,
+            full_name: MARKUP_PAYLOAD,
+            description: MARKUP_PAYLOAD,
+            profile_url: BAD_URLS[0],
+            profile_pic_url: ATTRIBUTE_BREAKER,
+            subscriber_count: NUMERIC_PAYLOAD,
+            all_hashtags: [MARKUP_PAYLOAD],
+            videos: [{
+                title: MARKUP_PAYLOAD,
+                description: MARKUP_PAYLOAD,
+                url: BAD_URLS[1],
+                thumbnail_url: ATTRIBUTE_BREAKER,
+                hashtags: [MARKUP_PAYLOAD],
+            }],
+        },
     });
     html = nodeFor("platform-dossiers-body").innerHTML;
     assertLinksAreSafe(html, sandbox.hostnameIsClearlyNonPublic, "app malicious platform dossiers");
@@ -665,6 +708,8 @@ async function runAppTests() {
             twitter: { status: "skipped", error_code: "identifier_not_username" },
             linkedin: { status: "skipped", error_code: "identifier_not_username" },
             linkedin_posts: { success: true, status: "completed" },
+            github: { success: true, status: "completed", rate_limit: { remaining: 4997, limit: 5000 } },
+            youtube: { success: true, status: "completed", quota_units_used: 2 },
             signalhire: { success: true, status: "success", credits_remaining: 42 },
             rocketreach: { status: "skipped", error_code: "exact_contact_routed_to_signalhire" },
         },
@@ -678,6 +723,10 @@ async function runAppTests() {
     assert(html.includes("non-username target was not sent to username-oriented scrapers"));
     assert(html.includes("LinkedIn Public Posts Scraper"), "LinkedIn posts diagnostics were merged into the profile collector");
     assert(html.includes("Bounded public LinkedIn post collection completed."), "LinkedIn posts success status lacked bounded-collection wording");
+    assert(html.includes("GitHub Public Data Collector"), "dedicated GitHub diagnostics were omitted");
+    assert(html.includes("GitHub API requests remaining: 4997/5000."), "GitHub rate-limit diagnostics were omitted");
+    assert(html.includes("YouTube Data API Collector"), "dedicated YouTube diagnostics were omitted");
+    assert(html.includes("YouTube quota units used: 2."), "YouTube quota diagnostics were omitted");
     assert(html.includes("Provider credits remaining: 42."));
 
     sandbox.renderDiagnosticsPanel({
@@ -726,6 +775,8 @@ async function runAppTests() {
         wmn_results: { status: "success", hits_count: 0 },
         provider_statuses: {
             instagram: { status: "error", error_code: "not_configured" },
+            github: { status: "error", error_code: "not_configured" },
+            youtube: { status: "error", error_code: "not_configured" },
         },
         scraped_data: {},
         dorking_results: { status: "completed", results_count: 0 },
@@ -734,6 +785,8 @@ async function runAppTests() {
     });
     html = nodeFor("diagnostics-body").innerHTML;
     assert(html.includes("Configure APIFY_API_TOKEN only if this provider route is approved."));
+    assert(html.includes("Configure GITHUB_API_TOKEN only if this provider route is approved."));
+    assert(html.includes("Configure YOUTUBE_API_KEY only if this provider route is approved."));
 
     const rrContactFixture = {
         success: false,
@@ -815,10 +868,68 @@ async function runAppTests() {
             page_name: "fixture",
             all_hashtags: ["CyberSafe", "PublicSafety"],
         },
+        github: {
+            success: true,
+            username: "valid-profile",
+            full_name: "Valid Developer",
+            bio: "Public software projects.",
+            profile_url: VALID_LINKS.github,
+            profile_pic_url: VALID_IMAGES.github,
+            follower_count: 12,
+            following_count: 4,
+            relationship_counts_suppressed: true,
+            public_repo_count: 20,
+            repositories: [{
+                name: "public-repo",
+                description: "A public security utility.",
+                url: VALID_LINKS.githubRepo,
+                language: "Python",
+                stars: 8,
+                forks: 2,
+                topics: ["osint", "security"],
+            }],
+            recent_activity: [{
+                title: "Pushed public commit",
+                description: "Updated documentation.",
+                url: VALID_LINKS.githubRepo,
+                created_at: "2030-01-02T03:04:05Z",
+            }],
+        },
+        youtube: {
+            success: true,
+            channel_id: "UCabcdefghijklmnopqrstuv",
+            username: "valid-profile",
+            full_name: "Valid Channel",
+            description: "Public cyber-safety videos.",
+            profile_url: VALID_LINKS.youtube,
+            profile_pic_url: VALID_IMAGES.youtube,
+            subscriber_count: 1200,
+            view_count: 45000,
+            video_count: 30,
+            country: "IN",
+            all_hashtags: ["CyberSafe", "PublicSafety"],
+            videos: [{
+                video_id: "abcdefghijk",
+                title: "Public safety briefing",
+                description: "A public awareness video.",
+                url: VALID_LINKS.youtubeVideo,
+                thumbnail_url: VALID_IMAGES.youtubeVideo,
+                published_at: "2030-01-02T03:04:05Z",
+                hashtags: ["CyberSafe"],
+            }],
+        },
     });
     html = nodeFor("platform-dossiers-body").innerHTML;
     assertLinksAreSafe(html, sandbox.hostnameIsClearlyNonPublic, "app valid platform dossiers");
-    for (const url of [VALID_LINKS.instagram, VALID_LINKS.tiktok, VALID_LINKS.linkedin]) {
+    for (const url of [
+        VALID_LINKS.instagram,
+        VALID_LINKS.tiktok,
+        VALID_LINKS.linkedin,
+        VALID_LINKS.github,
+        VALID_LINKS.githubRepo,
+        VALID_LINKS.youtube,
+        VALID_LINKS.youtubeVideo,
+    ]) {
         assert(html.includes(`href="${url}"`), `valid platform link disappeared: ${url}`);
     }
     assert(
@@ -826,13 +937,20 @@ async function runAppTests() {
         "valid LinkedIn featured link disappeared",
     );
     assert(html.includes(`href="${VALID_LINKS.linkedinPost}"`), "valid LinkedIn post link disappeared");
-    assertImagesUseAuthenticatedProxy(html, safeURL, "app valid platform images", 3);
+    assertImagesUseAuthenticatedProxy(html, safeURL, "app valid platform images", 6);
     assert(html.includes("PUBLIC POST HASHTAGS (2 UNIQUE)"), "X/Facebook hashtag headings were omitted");
     assert(html.includes("#CyberSafe"), "X/Facebook hashtag chips were omitted");
     assert(html.includes("LINKEDIN POST HASHTAGS (2 UNIQUE)"), "LinkedIn hashtag summary was omitted");
     assert(html.includes("RECENT PUBLIC LINKEDIN POSTS (SHOWING 1)"), "LinkedIn posts section was omitted");
     assert(html.includes("A public LinkedIn post about cyber safety."), "LinkedIn post text was omitted");
     assert(html.includes("Reactions: 12"), "LinkedIn post metrics were omitted");
+    assert(html.includes("GITHUB PUBLIC DOSSIER"), "dedicated GitHub dossier was omitted");
+    assert(html.includes("PUBLIC REPOSITORIES (SHOWING 1)"), "GitHub repository evidence was omitted");
+    assert(html.includes("RECENT PUBLIC GITHUB ACTIVITY (SHOWING 1)"), "GitHub activity evidence was omitted");
+    assert(html.includes("Suppressed (public-only)"), "authenticated-only GitHub relationship counts were rendered");
+    assert(html.includes("YOUTUBE PUBLIC CHANNEL DOSSIER"), "dedicated YouTube dossier was omitted");
+    assert(html.includes("RECENT PUBLIC YOUTUBE VIDEOS (SHOWING 1)"), "YouTube video evidence was omitted");
+    assert(html.includes("VIDEO HASHTAGS (2 UNIQUE)"), "YouTube hashtags were omitted");
     assert(html.includes("returned@example.org"), "empty RocketReach raw email array masked canonical contacts");
     assert(html.includes("+91 11234 56789"), "empty RocketReach raw phone array masked canonical contacts");
     assert(html.includes("CONTACT DATA RETURNED"), "returned contact data was mislabeled");
@@ -856,6 +974,36 @@ async function runAppTests() {
     assert(html.includes("BOUNDED-LINKEDIN-POST-9"), "the tenth bounded LinkedIn post was omitted");
     assert(!html.includes("BOUNDED-LINKEDIN-POST-10"), "more than ten LinkedIn posts reached the dashboard");
 
+    sandbox.renderPlatformDossiers({
+        github: {
+            success: true,
+            username: "bounded",
+            repositories: Array.from({ length: 11 }, (_value, index) => ({
+                name: `BOUNDED-GITHUB-REPOSITORY-${index}`,
+                description: "Public repository",
+            })),
+            recent_activity: Array.from({ length: 11 }, (_value, index) => ({
+                title: `BOUNDED-GITHUB-ACTIVITY-${index}`,
+            })),
+        },
+        youtube: {
+            success: true,
+            username: "bounded",
+            videos: Array.from({ length: 11 }, (_value, index) => ({
+                title: `BOUNDED-YOUTUBE-VIDEO-${index}`,
+            })),
+        },
+    });
+    html = nodeFor("platform-dossiers-body").innerHTML;
+    assert(html.includes("PUBLIC REPOSITORIES (SHOWING 10)"), "GitHub repository previews were not bounded to ten");
+    assert(html.includes("BOUNDED-GITHUB-REPOSITORY-9"), "the tenth GitHub repository was omitted");
+    assert(!html.includes("BOUNDED-GITHUB-REPOSITORY-10"), "more than ten GitHub repositories reached the dashboard");
+    assert(html.includes("RECENT PUBLIC GITHUB ACTIVITY (SHOWING 10)"), "GitHub activity previews were not bounded to ten");
+    assert(!html.includes("BOUNDED-GITHUB-ACTIVITY-10"), "more than ten GitHub activity records reached the dashboard");
+    assert(html.includes("RECENT PUBLIC YOUTUBE VIDEOS (SHOWING 10)"), "YouTube video previews were not bounded to ten");
+    assert(html.includes("BOUNDED-YOUTUBE-VIDEO-9"), "the tenth YouTube video was omitted");
+    assert(!html.includes("BOUNDED-YOUTUBE-VIDEO-10"), "more than ten YouTube videos reached the dashboard");
+
     sandbox.renderMediaGallery({
         scraped_data: {
             instagram: {
@@ -871,6 +1019,12 @@ async function runAppTests() {
                 cover_image_url: "http://169.254.169.254/cover.jpg",
                 url: "http://192.168.1.1/facebook",
                 posts: [{ media: [{ thumbnail: ATTRIBUTE_BREAKER, url: BAD_URLS[0] }] }],
+            },
+            github: { profile_pic_url: "http://127.0.0.1/github.jpg", profile_url: BAD_URLS[0] },
+            youtube: {
+                profile_pic_url: "http://10.0.0.1/youtube.jpg",
+                profile_url: BAD_URLS[1],
+                videos: [{ thumbnail_url: ATTRIBUTE_BREAKER, url: BAD_URLS[0], title: MARKUP_PAYLOAD }],
             },
         },
     });
@@ -895,11 +1049,21 @@ async function runAppTests() {
                 url: VALID_LINKS.facebook,
                 posts: [{ media: [{ thumbnail: VALID_IMAGES.facebook, url: VALID_LINKS.facebook }] }],
             },
+            github: { profile_pic_url: VALID_IMAGES.github, profile_url: VALID_LINKS.github },
+            youtube: {
+                profile_pic_url: VALID_IMAGES.youtube,
+                profile_url: VALID_LINKS.youtube,
+                videos: [{
+                    thumbnail_url: VALID_IMAGES.youtubeVideo,
+                    url: VALID_LINKS.youtubeVideo,
+                    title: "Public safety briefing",
+                }],
+            },
         },
     });
     html = nodeFor("media-gallery-body").innerHTML;
     assertLinksAreSafe(html, sandbox.hostnameIsClearlyNonPublic, "app valid media gallery");
-    assertImagesUseAuthenticatedProxy(html, safeURL, "app valid media gallery", 8);
+    assertImagesUseAuthenticatedProxy(html, safeURL, "app valid media gallery", 11);
 }
 
 function loadExporter() {
@@ -968,6 +1132,40 @@ function maliciousExporterData() {
                 profile_pic_url: "http://192.168.1.1/facebook.jpg",
                 cover_image_url: "http://169.254.169.254/cover.jpg",
                 posts: [{ media: [{ thumbnail: ATTRIBUTE_BREAKER }] }],
+            },
+            github: {
+                success: true,
+                username: MARKUP_PAYLOAD,
+                full_name: MARKUP_PAYLOAD,
+                profile_url: BAD_URLS[0],
+                profile_pic_url: ATTRIBUTE_BREAKER,
+                website: BAD_URLS[1],
+                repositories: [{
+                    name: MARKUP_PAYLOAD,
+                    description: MARKUP_PAYLOAD,
+                    url: BAD_URLS[2],
+                    stars: NUMERIC_PAYLOAD,
+                    topics: [MARKUP_PAYLOAD],
+                }],
+                recent_activity: [{ title: MARKUP_PAYLOAD, text: MARKUP_PAYLOAD, url: BAD_URLS[3] }],
+                rate_limit: { remaining: NUMERIC_PAYLOAD, limit: NUMERIC_PAYLOAD },
+            },
+            youtube: {
+                success: true,
+                username: MARKUP_PAYLOAD,
+                full_name: MARKUP_PAYLOAD,
+                profile_url: BAD_URLS[0],
+                profile_picture: ATTRIBUTE_BREAKER,
+                subscriber_count: NUMERIC_PAYLOAD,
+                quota_units_used: NUMERIC_PAYLOAD,
+                all_hashtags: [MARKUP_PAYLOAD],
+                recent_posts: [{
+                    title: MARKUP_PAYLOAD,
+                    description: MARKUP_PAYLOAD,
+                    url: BAD_URLS[1],
+                    thumbnail: ATTRIBUTE_BREAKER,
+                    hashtags: [MARKUP_PAYLOAD],
+                }],
             },
         },
     };
@@ -1066,6 +1264,60 @@ function validExporterData() {
                 cover_image_url: VALID_IMAGES.facebook,
                 posts: [{ media: [{ thumbnail: VALID_IMAGES.facebook }] }],
             },
+            github: {
+                success: true,
+                username: "valid-profile",
+                full_name: "Valid Developer",
+                bio: "Public software projects.",
+                profile_url: VALID_LINKS.github,
+                profile_pic_url: VALID_IMAGES.github,
+                website: VALID_LINKS.public,
+                email: "developer@example.org",
+                follower_count: 12,
+                following_count: 4,
+                relationship_counts_suppressed: true,
+                public_repo_count: 20,
+                repositories: [{
+                    name: "public-repo",
+                    description: "A public security utility.",
+                    url: VALID_LINKS.githubRepo,
+                    language: "Python",
+                    stars: 8,
+                    forks: 2,
+                    topics: ["osint", "security"],
+                }],
+                recent_activity: [{
+                    title: "Pushed public commit",
+                    text: "Updated documentation.",
+                    url: VALID_LINKS.githubRepo,
+                    created_at: "2030-01-02T03:04:05Z",
+                }],
+                rate_limit: { remaining: 4997, limit: 5000 },
+            },
+            youtube: {
+                success: true,
+                channel_id: "UCabcdefghijklmnopqrstuv",
+                username: "valid-profile",
+                full_name: "Valid Channel",
+                description: "Public cyber-safety videos.",
+                profile_url: VALID_LINKS.youtube,
+                profile_picture: VALID_IMAGES.youtube,
+                subscriber_count: 1200,
+                view_count: 45000,
+                video_count: 30,
+                country: "IN",
+                all_hashtags: ["CyberSafe", "PublicSafety"],
+                quota_units_used: 2,
+                recent_posts: [{
+                    video_id: "abcdefghijk",
+                    title: "Public safety briefing",
+                    description: "A public awareness video.",
+                    url: VALID_LINKS.youtubeVideo,
+                    thumbnail: VALID_IMAGES.youtubeVideo,
+                    published_at: "2030-01-02T03:04:05Z",
+                    hashtags: ["CyberSafe"],
+                }],
+            },
         },
     };
 }
@@ -1090,6 +1342,9 @@ function runExporterTests() {
         VALID_LINKS.instagram,
         VALID_LINKS.facebook,
         VALID_LINKS.github,
+        VALID_LINKS.githubRepo,
+        VALID_LINKS.youtube,
+        VALID_LINKS.youtubeVideo,
         VALID_LINKS.x,
         VALID_LINKS.public,
     ]) {
@@ -1115,11 +1370,19 @@ function runExporterTests() {
     assert(html.includes("Recent Public LinkedIn Posts (Showing 1)"), "PDF omitted LinkedIn posts");
     assert(html.includes("A public LinkedIn post included in the report."), "PDF omitted LinkedIn post text");
     assert(html.includes("Reactions: 12"), "PDF omitted LinkedIn post metrics");
+    assert(html.includes("GitHub Public Profile"), "PDF omitted the dedicated GitHub dossier");
+    assert(html.includes("Public Repositories (Showing 1)"), "PDF omitted GitHub repository evidence");
+    assert(html.includes("Recent Public GitHub Activity (Showing 1)"), "PDF omitted GitHub activity evidence");
+    assert(html.includes("4997/5000 requests remaining"), "PDF omitted safe GitHub rate-limit metadata");
+    assert(html.includes("Suppressed (public-only)"), "PDF rendered authenticated-only GitHub relationship counts");
+    assert(html.includes("YouTube Public Channel"), "PDF omitted the dedicated YouTube dossier");
+    assert(html.includes("Recent Public YouTube Videos (Showing 1)"), "PDF omitted YouTube video evidence");
+    assert(html.includes("Quota Units Used"), "PDF omitted YouTube quota usage metadata");
     assert.equal((html.match(/pdf-returned@example\.org/g) || []).length, 1, "PDF repeated merged RocketReach contacts");
     assert(html.includes("CONTACT DATA RETURNED"), "PDF overstated provider-returned contact data");
     assert(!html.includes("CONFIRMED MATCH"), "PDF presented provider-returned contact data as identity confirmation");
     assert(!html.includes("[object Object]"), "PDF stringified a structured contact object");
-    assertImagesUseAuthenticatedProxy(html, safeURL, "valid PDF media", 8);
+    assertImagesUseAuthenticatedProxy(html, safeURL, "valid PDF media", 11);
 
     const boundedLinkedInReport = validExporterData();
     boundedLinkedInReport.scraped_data.linkedin.posts = [];
@@ -1131,6 +1394,26 @@ function runExporterTests() {
     assert(html.includes("Recent Public LinkedIn Posts (Showing 10)"), "PDF LinkedIn post previews were not bounded to ten");
     assert(html.includes("BOUNDED-PDF-LINKEDIN-POST-9"), "PDF omitted the tenth bounded LinkedIn post");
     assert(!html.includes("BOUNDED-PDF-LINKEDIN-POST-10"), "PDF included more than ten LinkedIn posts");
+
+    const boundedCollectorReport = validExporterData();
+    boundedCollectorReport.scraped_data.github.repositories = Array.from({ length: 11 }, (_value, index) => ({
+        name: `BOUNDED-PDF-GITHUB-REPOSITORY-${index}`,
+    }));
+    boundedCollectorReport.scraped_data.github.recent_activity = Array.from({ length: 11 }, (_value, index) => ({
+        title: `BOUNDED-PDF-GITHUB-ACTIVITY-${index}`,
+    }));
+    boundedCollectorReport.scraped_data.youtube.recent_posts = Array.from({ length: 11 }, (_value, index) => ({
+        title: `BOUNDED-PDF-YOUTUBE-VIDEO-${index}`,
+    }));
+    html = exporter.generateReportHtml(boundedCollectorReport);
+    assert(html.includes("Public Repositories (Showing 10)"), "PDF GitHub repository previews were not bounded to ten");
+    assert(html.includes("BOUNDED-PDF-GITHUB-REPOSITORY-9"), "PDF omitted the tenth GitHub repository");
+    assert(!html.includes("BOUNDED-PDF-GITHUB-REPOSITORY-10"), "PDF included more than ten GitHub repositories");
+    assert(html.includes("Recent Public GitHub Activity (Showing 10)"), "PDF GitHub activity previews were not bounded to ten");
+    assert(!html.includes("BOUNDED-PDF-GITHUB-ACTIVITY-10"), "PDF included more than ten GitHub activity records");
+    assert(html.includes("Recent Public YouTube Videos (Showing 10)"), "PDF YouTube video previews were not bounded to ten");
+    assert(html.includes("BOUNDED-PDF-YOUTUBE-VIDEO-9"), "PDF omitted the tenth YouTube video");
+    assert(!html.includes("BOUNDED-PDF-YOUTUBE-VIDEO-10"), "PDF included more than ten YouTube videos");
 
     const ctiFailureData = validExporterData();
     ctiFailureData.telegram_cti = {

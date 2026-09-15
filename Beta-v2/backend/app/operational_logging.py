@@ -141,6 +141,8 @@ def _configured_sensitive_values() -> tuple[str, ...]:
         "gemini_api_key",
         "deepseek_api_key",
         "apify_api_token",
+        "github_api_token",
+        "youtube_api_key",
         "signalhire_api_key",
         "leakosint_api_key",
         "serpapi_key",

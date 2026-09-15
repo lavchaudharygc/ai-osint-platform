@@ -549,6 +549,8 @@ class ContactAggregationService:
         instagram: Any = None,
         tiktok: Any = None,
         twitter: Any = None,
+        github: Any = None,
+        youtube: Any = None,
         default_phone_region: str = "IN",
     ) -> ContactDiscovery:
         service = cls(default_phone_region=default_phone_region)
@@ -580,6 +582,8 @@ class ContactAggregationService:
         instagram_payload = instagram if _usable_provider_payload(instagram) else None
         tiktok_payload = tiktok if _usable_provider_payload(tiktok) else None
         twitter_payload = twitter if _usable_provider_payload(twitter) else None
+        github_payload = github if _usable_provider_payload(github) else None
+        youtube_payload = youtube if _usable_provider_payload(youtube) else None
 
         linkedin_provider = _provider_label(linkedin_payload, "apify")
         signalhire_platform = (
@@ -595,6 +599,8 @@ class ContactAggregationService:
         )
         tiktok_provider = _provider_label(tiktok_payload, "apify")
         twitter_provider = _provider_label(twitter_payload, "apify")
+        github_provider = _provider_label(github_payload, "github")
+        youtube_provider = _provider_label(youtube_payload, "youtube")
 
         service.add_payload(
             linkedin_payload,
@@ -698,6 +704,34 @@ class ContactAggregationService:
             source="twitter",
             platform="twitter",
             provider=twitter_provider,
+        )
+        service.add_payload(
+            github_payload,
+            source="github",
+            collection_method="public_profile",
+            platform="github",
+            provider=github_provider,
+        )
+        service.add_profile_text(
+            github_payload,
+            fields=("bio", "description"),
+            source="github",
+            platform="github",
+            provider=github_provider,
+        )
+        service.add_payload(
+            youtube_payload,
+            source="youtube",
+            collection_method="public_profile",
+            platform="youtube",
+            provider=youtube_provider,
+        )
+        service.add_profile_text(
+            youtube_payload,
+            fields=("bio", "description"),
+            source="youtube",
+            platform="youtube",
+            provider=youtube_provider,
         )
         return service.result()
 

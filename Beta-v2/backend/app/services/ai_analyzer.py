@@ -164,6 +164,8 @@ class AIAnalyzer:
                     "tiktok",
                     "twitter",
                     "facebook",
+                    "youtube",
+                    "github",
                 ):
                     summary = platform_summaries.get(platform)
                     if not isinstance(summary, dict):
