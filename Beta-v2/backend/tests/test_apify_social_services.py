@@ -152,9 +152,8 @@ async def test_linkedin_posts_are_server_bounded_and_strictly_attributed() -> No
     assert len(fake.calls) == 1
     called_actor, run_input, dataset_limit = fake.calls[0]
     assert called_actor == actor_id
-    assert run_input["keyword"] == "Alice Analyst"
-    assert run_input["limit"] == settings.apify_linkedin_posts_limit
-    assert run_input["total_posts"] == settings.apify_linkedin_posts_limit
+    assert run_input["keywords"] == ["Alice Analyst"]
+    assert run_input["maxPostsPerKeyword"] == settings.apify_linkedin_posts_limit
     assert dataset_limit == settings.apify_linkedin_posts_limit
     assert result["success"] is True
     assert result["status"] == "completed"

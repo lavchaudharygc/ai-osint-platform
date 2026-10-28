@@ -506,7 +506,7 @@ class LinkedInApifyService:
             getattr(settings, "apify_linkedin_actor", None)
             or getattr(settings, "apify_linkedin_profile_actor_id", "apimaestro/linkedin-profile-detail")
         )
-        self.posts_actor_id = getattr(settings, "apify_linkedin_posts_actor_id", "bebity/linkedin-post-search-scraper")
+        self.posts_actor_id = getattr(settings, "apify_linkedin_posts_actor_id", "johnvc/linkedin-post-search-api")
 
     def is_configured(self) -> bool:
         return self.client.is_configured()
@@ -618,32 +618,17 @@ class LinkedInApifyService:
             )
             if canonical_expected_author is None:
                 raise ValueError("Expected author must be a public LinkedIn profile URL")
+        dataset_limit = min(bounded_limit, bounded_total_posts or bounded_limit)
         run_input: dict[str, Any] = {
-            "keyword": clean_keyword,
-            "sort_type": sort_type,
-            "page_number": page_number,
-            "date_filter": date_filter,
-            "limit": bounded_limit,
+            "keywords": [clean_keyword],
+            "maxPostsPerKeyword": dataset_limit,
         }
-        optional_values = {
-            "total_posts": bounded_total_posts,
-            "company_urns": company_urns,
-            "author_company_urns": author_company_urns,
-            "author_industry_urns": author_industry_urns,
-            "author_job_title": author_job_title,
-            "member_urns": member_urns,
-        }
-        run_input.update(
-            {
-                key: value.strip() if isinstance(value, str) else value
-                for key, value in optional_values.items()
-                if value is not None and (not isinstance(value, str) or value.strip())
-            }
-        )
+        posted_within = date_filter.strip().lower()
+        if posted_within in {"day", "week", "month", "year"}:
+            run_input["postedWithin"] = posted_within
 
         if not self.is_configured():
             return self._not_configured(self.posts_actor_id, "posts")
-        dataset_limit = min(bounded_limit, bounded_total_posts or bounded_limit)
         try:
             run = await self.client.run_actor(
                 self.posts_actor_id,
@@ -653,7 +638,11 @@ class LinkedInApifyService:
         except ApifyClientError as exc:
             return self._error(exc, self.posts_actor_id, "posts")
 
-        provider_posts = [self._normalize_post(item) for item in run.items]
+        provider_posts = [
+            self._normalize_post(item)
+            for item in run.items
+            if not (item.get("error_message") or item.get("errorMessage"))
+        ]
         posts = provider_posts
         if canonical_expected_author is not None:
             posts = [
@@ -767,7 +756,7 @@ class LinkedInApifyService:
                 or item.get("url")
             ),
             "text": text,
-            "created_at": item.get("postedAt") or item.get("posted_at") or item.get("publishedAt") or item.get("date"),
+            "created_at": item.get("datePosted") or item.get("postedAt") or item.get("posted_at") or item.get("publishedAt") or item.get("date"),
             "author": {
                 "name": item.get("authorName") or author.get("name") or author_details.get("name"),
                 "profile_url": (

@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     # default returned follower rows that the UI incorrectly labelled tweets.
     apify_twitter_actor_id: str = "automation-lab/twitter-scraper"
     apify_linkedin_profile_actor_id: str = "apimaestro/linkedin-profile-detail"
-    apify_linkedin_posts_actor_id: str = "bebity/linkedin-post-search-scraper"
+    apify_linkedin_posts_actor_id: str = "johnvc/linkedin-post-search-api"
     apify_linkedin_posts_limit: int = Field(default=15, ge=1, le=20)
 
     # GitHub Target Scan uses only GitHub's official public REST API. A token is
